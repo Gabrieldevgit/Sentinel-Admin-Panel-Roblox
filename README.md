@@ -25,7 +25,10 @@ plugs into what's here without modifying it.
 | CommandParser | `.../Core/Parser/CommandParser.lua` | Full grammar: `/command target[:modifier] [subcommand] [arguments...]` |
 | CommandProcessor | `.../Core/Parser/CommandProcessor.lua` | The one function chat/UI calls; walks `&&` chains, stops on first failure |
 | Example commands | `Commands/Moderation/Kick.lua`, `Ban.lua` | Show self-registration + DataStore persistence + Undoable contract |
-| Bootstrap | `ServerScriptService/Sentinel/Init.server.lua` | Starter roles, loads every command module, ban enforcement on join, chat hook |
+| PunishmentService | `Systems/PunishmentService.lua` | Warning ledger + configurable auto-escalation (data-driven, not hardcoded) |
+| ChatModerationService | `Systems/ChatModerationService.lua` | Mute enforcement via `TextChannel.ShouldDeliverCallback` |
+| Moderator Toolkit commands | `Commands/Moderation/Mute.lua`, `Warn.lua`, `Jail.lua`, `Freeze.lua`, `Note.lua`, `AccessList.lua` | `/mute /unmute /warn /warnings /jail /unjail /freeze /unfreeze /note /notes /blacklist /whitelist /whitelistmode` |
+| Bootstrap | `ServerScriptService/Sentinel/init.server.lua` | Starter roles, loads every Systems + Commands module, ban enforcement on join, chat hook |
 
 ## Try it
 
@@ -34,10 +37,18 @@ copy `src/` into the matching Instances by hand. Then, as a player who has
 been assigned the `Owner` role, type in chat:
 
 ```
-/ban Player1:30m Exploiting
-/kick @team Red
-/kick all where Ping>500
+;ban Player1:30m Exploiting
+;kick @team Red
+;kick all where Ping>500
 ```
+
+**Why `;` and not `/`:** Roblox's default chat reserves several
+`/`-prefixed commands for itself (e.g. `/w` for whisper), which silently
+swallow matching messages before `Player.Chatted` ever sees them —
+this caused `/warn`'s alias `w` to intermittently "not work." `;` isn't
+reserved by anything Roblox ships, so it's collision-proof regardless of
+what commands or aliases get added later. Change `COMMAND_PREFIX` in
+`init.server.lua` if you'd like a different trigger character.
 
 Assign yourself the `Owner` role from a temporary script for testing:
 
@@ -81,7 +92,7 @@ No switch statement, no registry edits, no core changes required.
 
 - [x] **1. Core Engine** — parser, tokenizer, command registry, event bus, permission system, logging foundation
 - [x] **2. Command Framework** — aliases, selectors, duration parser, quantity parser, execution pipeline (autocomplete UI still pending — needs Phase 7)
-- [ ] **3. Moderator Toolkit** — kick/ban done as references; mute, jail, warnings/strikes, freeze, notes, blacklist/whitelist still to build
+- [x] **3. Moderator Toolkit** — kick, ban, mute/unmute, warn (with auto-escalation), jail/unjail, freeze/unfreeze, staff notes, blacklist/whitelist + whitelist-mode
 - [ ] **4. Player & Server Systems** — economy, inventory, server state, announcements, events, environment controls
 - [ ] **5. Developer Suite** — live explorer, remote inspector, datastore viewer, profiling
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights
@@ -108,10 +119,29 @@ No switch statement, no registry edits, no core changes required.
   pattern (`Sentinel_Bans_v1`), so Phase 6's cross-server analytics can
   read them independently without a shared mega-table.
 
+## New in Phase 3 — setup notes
+
+- **Jail** looks for a Part named `SentinelJailSpawn` anywhere in
+  `Workspace`. Add one before using `/jail`, or it degrades to a sky cell
+  (500 studs up) with a warning in the server log.
+- **Command routing uses `TextChannel.MessageReceived` directly**, not
+  `Player.Chatted`. The legacy `Chatted` event is bridged from
+  `TextChatService` for backward compatibility, and that bridge can
+  silently drop messages — which is what caused commands to "randomly"
+  not fire. `MessageReceived` fires directly on the server with no
+  bridge involved.
+- **Warn** ships with a default escalation policy (3 warnings → auto-kick,
+  5 → 1-day auto-ban) defined at the top of `Warn.lua` via
+  `PunishmentService.RegisterEscalationRule` — change the thresholds/actions
+  there, nothing else needs to change.
+- All new permission nodes (`moderation.mute`, `moderation.warn`,
+  `moderation.notes`, `moderation.blacklist`, `moderation.whitelist`,
+  `player.freeze`, `player.jail`) are already covered by the `Admin` and
+  `Owner` wildcard roles — no role setup needed to use them.
+
 ## Next recommended step
 
-Phase 3 (Moderator Toolkit) is the natural continuation: mute, jail,
-warnings with a strike system, and staff notes all reuse everything built
-here (they're just more `CommandRegistry.Register` calls plus small
-per-feature DataStores, exactly like `Ban.lua`). Say the word and I'll
-build that phase next in the same style.
+Phase 4 (Player & Server Systems) is next: economy controls, inventory,
+server state (lock/unlock, maintenance mode), announcements, event tools,
+and environment controls (weather, day/night, lighting presets). Same
+pattern throughout — say the word and I'll build it next.
