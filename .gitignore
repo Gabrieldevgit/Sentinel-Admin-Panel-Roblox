@@ -1,0 +1,8 @@
+# Project place file
+/Sentinel Admin Panel Roblox Stud.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+sourcemap.json
