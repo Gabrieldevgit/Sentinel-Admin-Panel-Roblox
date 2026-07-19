@@ -29,6 +29,9 @@ plugs into what's here without modifying it.
 | ChatModerationService | `Systems/ChatModerationService.lua` | Mute enforcement via `TextChannel.ShouldDeliverCallback` |
 | Moderator Toolkit commands | `Commands/Moderation/Mute.lua`, `Warn.lua`, `Jail.lua`, `Freeze.lua`, `Note.lua`, `AccessList.lua` | `/mute /unmute /warn /warnings /jail /unjail /freeze /unfreeze /note /notes /blacklist /whitelist /whitelistmode` |
 | Bootstrap | `ServerScriptService/Sentinel/init.server.lua` | Starter roles, loads every Systems + Commands module, ban enforcement on join, chat hook |
+| EconomyService / InventoryService | `Systems/EconomyService.lua`, `InventoryService.lua` | leaderstats-backed currency/XP/level/gems + badge grants; tool give/remove/duplicate/save/restore |
+| ServerStateService / EnvironmentService | `Systems/ServerStateService.lua`, `EnvironmentService.lua` | lock/maintenance/slowmode; weather/time/fog/lighting presets |
+| Phase 4 commands | `Commands/Economy/*`, `Commands/Server/*`, `Commands/Environment/*` | `/givecurrency /setbalance /addxp /setlevel /grantbadge /giveitem /removeitem /duplicatetool /saveinventory /restoreinventory /shutdown /lockserver /maintenancemode /slowmode /announce /countdown /weather /daynight /timefreeze /fog /lightingpreset` |
 
 ## Try it
 
@@ -93,8 +96,8 @@ No switch statement, no registry edits, no core changes required.
 - [x] **1. Core Engine** — parser, tokenizer, command registry, event bus, permission system, logging foundation
 - [x] **2. Command Framework** — aliases, selectors, duration parser, quantity parser, execution pipeline (autocomplete UI still pending — needs Phase 7)
 - [x] **3. Moderator Toolkit** — kick, ban, mute/unmute, warn (with auto-escalation), jail/unjail, freeze/unfreeze, staff notes, blacklist/whitelist + whitelist-mode
-- [ ] **4. Player & Server Systems** — economy, inventory, server state, announcements, events, environment controls
-- [ ] **5. Developer Suite** — live explorer, remote inspector, datastore viewer, profiling
+- [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
+- [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights
 - [ ] **7. UI/UX** — command palette, dockable windows, themes, autocomplete, mobile support
 - [ ] **8. Automation & Plugins** — scheduler, triggers, plugin loader, webhook integrations
@@ -124,12 +127,14 @@ No switch statement, no registry edits, no core changes required.
 - **Jail** looks for a Part named `SentinelJailSpawn` anywhere in
   `Workspace`. Add one before using `/jail`, or it degrades to a sky cell
   (500 studs up) with a warning in the server log.
-- **Command routing uses `TextChannel.MessageReceived` directly**, not
-  `Player.Chatted`. The legacy `Chatted` event is bridged from
-  `TextChatService` for backward compatibility, and that bridge can
-  silently drop messages — which is what caused commands to "randomly"
-  not fire. `MessageReceived` fires directly on the server with no
-  bridge involved.
+- **Command routing uses `Players.PlayerChatted`.** An earlier iteration of
+  this file tried `TextChannel.MessageReceived` instead, which seemed like
+  the more "modern" choice — but that event is documented by Roblox as
+  **client-only** ("This event is only fired on the client"), so it never
+  once fires on the server no matter how correctly it's wired up. Chatted
+  is bridged from `TextChatService` for backward compatibility and works
+  reliably on the server under both chat systems, so it's the correct
+  choice here, not a legacy fallback.
 - **Warn** ships with a default escalation policy (3 warnings → auto-kick,
   5 → 1-day auto-ban) defined at the top of `Warn.lua` via
   `PunishmentService.RegisterEscalationRule` — change the thresholds/actions
@@ -139,9 +144,27 @@ No switch statement, no registry edits, no core changes required.
   `player.freeze`, `player.jail`) are already covered by the `Admin` and
   `Owner` wildcard roles — no role setup needed to use them.
 
+## New in Phase 4 — setup notes
+
+- **Currency/XP/Level/Gems** show up as standard `leaderstats` — no extra
+  setup needed, they appear in the default player list automatically.
+- **`/giveitem`, `/removeitem`, `/duplicatetool`** need a Folder named
+  `SentinelTools` in `ServerStorage`, containing the `Tool` instances you
+  want referenced by name (e.g. a Tool named "Sword" → `/giveitem
+  Player1 Sword`).
+- **`/announce` and `/countdown`** work via a small `RemoteEvent`
+  (`AnnounceRemote`, auto-created under `ReplicatedStorage.Shared.Sentinel`)
+  and display using each client's own chat system message — no custom UI
+  needed, works under both chat systems.
+- New permission namespaces (`economy.*`, `inventory.*`, `server.*`,
+  `environment.*`) are already covered by the `Admin`/`Owner` wildcard
+  roles from Phase 1.
+- **`/shutdown`** kicks everyone with a message but does not relaunch a
+  fresh server — true zero-downtime restarts need Reserved Servers /
+  `TeleportService`, which is a Phase 9 (Enterprise) concern.
+
 ## Next recommended step
 
-Phase 4 (Player & Server Systems) is next: economy controls, inventory,
-server state (lock/unlock, maintenance mode), announcements, event tools,
-and environment controls (weather, day/night, lighting presets). Same
-pattern throughout — say the word and I'll build it next.
+Phase 5 (Developer Suite) is next: a live server/instance explorer, remote
+event/function inspector, DataStore viewer, and performance profiling
+tools. Say the word and I'll build it next in the same style.

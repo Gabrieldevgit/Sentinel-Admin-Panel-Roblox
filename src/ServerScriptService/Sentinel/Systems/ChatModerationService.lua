@@ -94,26 +94,29 @@ local function attachDeliveryGate(channel: TextChannel)
 	end
 end
 
--- IMPORTANT: TextChatService creates its default channels (RBXGeneral, etc.)
--- ASYNCHRONOUSLY, a short moment after server start — not synchronously at
--- t=0. An instant FindFirstChild check here can get a false "doesn't exist"
--- simply because the folder hasn't been created YET, even on a place that
--- is genuinely using TextChatService. WaitForChild with a bounded timeout
--- gives it a real chance to appear while still falling back cleanly (no
--- infinite yield) on a place that is truly on legacy chat.
-local textChannelsFolder = TextChatService:WaitForChild("TextChannels", 10)
-
-if textChannelsFolder then
-	for _, channel in ipairs(textChannelsFolder:GetChildren()) do
-		if channel:IsA("TextChannel") then
-			attachDeliveryGate(channel)
+-- IMPORTANT: TextChatService.TextChannels (and its default channels) exist
+-- in the DataModel on modern Roblox regardless of which chat system is
+-- actually active — their presence is NOT a valid way to detect this. The
+-- authoritative flag is TextChatService.ChatVersion. Only attach the
+-- delivery gate when that says TextChatService is actually in use;
+-- otherwise mute enforcement genuinely isn't available (Roblox doesn't
+-- expose a supported server-side delivery gate for legacy chat), so warn
+-- once and move on rather than attaching to channels nothing routes
+-- through.
+if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+	local textChannelsFolder = TextChatService:WaitForChild("TextChannels", 10)
+	if textChannelsFolder then
+		for _, channel in ipairs(textChannelsFolder:GetChildren()) do
+			if channel:IsA("TextChannel") then
+				attachDeliveryGate(channel)
+			end
 		end
+		textChannelsFolder.ChildAdded:Connect(function(child: Instance)
+			if child:IsA("TextChannel") then
+				attachDeliveryGate(child)
+			end
+		end)
 	end
-	textChannelsFolder.ChildAdded:Connect(function(child: Instance)
-		if child:IsA("TextChannel") then
-			attachDeliveryGate(child)
-		end
-	end)
 else
 	warn(
 		"[Sentinel.ChatModerationService] This place uses legacy chat, not TextChatService — "

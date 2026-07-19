@@ -6,7 +6,7 @@
 		Sentinel's server entry point. Loads Core systems, defines the
 		starter role hierarchy, requires every command module (which
 		self-register via CommandRegistry.Register), checks bans on join,
-		and hooks Players.PlayerChatted so "/command" text works with no
+		and hooks Players.PlayerChatted so ";command" text works with no
 		client-side dependency (the future command-palette UI in Phase 7
 		will call CommandProcessor.Process directly instead of going
 		through chat).
@@ -16,7 +16,7 @@
 		- Define default roles (Owner / Admin / Moderator)
 		- Require every Commands/** module so they register themselves
 		- Enforce bans on PlayerAdded
-		- Route chat messages starting with "/" into CommandProcessor
+		- Route chat messages starting with ";" into CommandProcessor
 
 	Dependencies:
 		Everything under Core and Commands.
@@ -51,6 +51,18 @@ PermissionSystem.DefineRole("Moderator", {
 PermissionSystem.DefineRole("Admin", {
 	"moderation.*",
 	"player.*",
+	"economy.*",
+	"inventory.*",
+	"server.*",
+	"environment.*",
+	-- Developer Suite: only the READ-ONLY diagnostic nodes are granted to
+	-- Admin by default. "developer.datastore.write" and "developer.execute"
+	-- are deliberately excluded — they can corrupt persisted data or run
+	-- arbitrary server code, so only Owner ("*") has them out of the box.
+	"developer.stats",
+	"developer.console",
+	"developer.remotemonitor",
+	"developer.datastore.read",
 }, { "Moderator" })
 
 PermissionSystem.DefineRole("Owner", {
@@ -105,22 +117,21 @@ end)
 -- the primary UX with a dockable command palette that calls
 -- CommandProcessor.Process directly (no chat round-trip needed).
 --
--- IMPORTANT: Roblox places can run on either the legacy Chat system or the
--- newer TextChatService, and there is no reliable way to know which one a
--- given place uses without checking at runtime — assuming wrong means chat
--- commands silently never fire. So: detect TextChatService.TextChannels
--- with FindFirstChild (non-yielding). If it exists, use the modern,
--- reliable TextChannel.MessageReceived. If it doesn't, fall back to
--- Players.PlayerChatted, which — despite being an unreliable bridge under
--- TextChatService — is the correct, direct, first-party event under
--- legacy chat and works fine there.
+-- IMPORTANT: TextChannel.MessageReceived is a CLIENT-ONLY event (confirmed
+-- by Roblox's own documentation: "This event is only fired on the
+-- client.") — connecting to it from a server Script silently never fires.
+-- An earlier version of this file tried exactly that. Players.PlayerChatted
+-- is the correct server-side entry point instead: it fires on the server
+-- under both the legacy Chat system and TextChatService (TextChatService
+-- bridges to it internally for backward compatibility), so it works
+-- reliably regardless of which chat system the place uses — no runtime
+-- detection needed.
 --
 -- The trigger is ";" rather than "/", since Roblox's default TextChatService
 -- reserves several "/"-prefixed commands for itself (notably "/w" for
 -- whisper).
 -- ---------------------------------------------------------------------------
 local COMMAND_PREFIX = ";"
-local TextChatService = game:GetService("TextChatService")
 
 local function handleCommandText(player: Player, text: string)
 	if text:sub(1, 1) ~= COMMAND_PREFIX then
@@ -136,49 +147,18 @@ local function handleCommandText(player: Player, text: string)
 	end
 end
 
--- IMPORTANT: TextChatService creates its default channels asynchronously,
--- a moment after server start — not synchronously at t=0. An instant check
--- can wrongly conclude "legacy chat" on a place that's genuinely using
--- TextChatService, simply because it checked too early. WaitForChild with
--- a bounded timeout gives it a real chance to appear, while a truly
--- legacy-chat place still falls back cleanly after the timeout instead of
--- hanging forever.
-local textChannelsFolder = TextChatService:WaitForChild("TextChannels", 10)
-
-if textChannelsFolder then
-	print("[Sentinel] TextChatService detected — routing commands via TextChannel.MessageReceived.")
-
-	local function attachCommandListener(channel: TextChannel)
-		channel.MessageReceived:Connect(function(message: TextChatMessage)
-			local speaker = message.TextSource
-			if not speaker then
-				return
-			end
-			local player = Players:GetPlayerByUserId(speaker.UserId)
-			if player then
-				handleCommandText(player, message.Text)
-			end
-		end)
-	end
-
-	for _, channel in ipairs(textChannelsFolder:GetChildren()) do
-		if channel:IsA("TextChannel") then
-			attachCommandListener(channel)
-		end
-	end
-	textChannelsFolder.ChildAdded:Connect(function(child: Instance)
-		if child:IsA("TextChannel") then
-			attachCommandListener(child)
-		end
+local function onPlayerAddedForChat(player: Player)
+	player.Chatted:Connect(function(message: string)
+		handleCommandText(player, message)
 	end)
-else
-	print("[Sentinel] Legacy chat detected — routing commands via Players.PlayerChatted.")
+end
 
-	Players.PlayerAdded:Connect(function(player: Player)
-		player.Chatted:Connect(function(message: string)
-			handleCommandText(player, message)
-		end)
-	end)
+Players.PlayerAdded:Connect(onPlayerAddedForChat)
+
+-- Handle players already in the game when this script starts (e.g. if
+-- Sentinel is ever hot-reloaded, or a future architecture defers its load).
+for _, player in ipairs(Players:GetPlayers()) do
+	onPlayerAddedForChat(player)
 end
 
 print("[Sentinel] Core Engine + Command Framework + Moderator Toolkit loaded.")
