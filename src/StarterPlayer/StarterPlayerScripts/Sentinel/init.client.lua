@@ -37,7 +37,7 @@ local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Se
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "SentinelUI"
+screenGui.Name = "SentinelOverlay"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.DisplayOrder = 100
@@ -189,4 +189,60 @@ if countdownRemote and countdownRemote:IsA("RemoteEvent") then
 	end)
 end
 
-print("[Sentinel] Client shell loaded (UI arrives in Phase 7).")
+-- ---------------------------------------------------------------------------
+-- Main Sentinel UI shell (Phase 7): sidebar, top bar, status bar, command
+-- palette, and per-section pages. Placed in StarterGui.SentinelUI, which
+-- Roblox clones into this player's PlayerGui automatically — same as any
+-- other StarterGui content.
+-- ---------------------------------------------------------------------------
+local UserInputService = game:GetService("UserInputService")
+
+local sentinelUIFolder = playerGui:WaitForChild("SentinelUI", 15)
+if sentinelUIFolder then
+	local Theme = require(sentinelUIFolder:WaitForChild("Theme", 15))
+	local Shell = require(sentinelUIFolder:WaitForChild("Shell", 15))
+	local CommandPalette = require(sentinelUIFolder:WaitForChild("CommandPalette", 15))
+	local DashboardPage = require(sentinelUIFolder:WaitForChild("DashboardPage", 15))
+
+	Shell.Init()
+	CommandPalette.Init()
+
+	DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"))
+
+	-- Placeholder pages for sections not built yet — keeps the sidebar fully
+	-- navigable while each section gets its real content in follow-up passes.
+	for _, id in ipairs({ "Players", "Moderation", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
+		local page = Shell.RegisterPage(id, id, "")
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(1, 0, 0, 30)
+		label.Font = Theme.Font.Bold
+		label.TextSize = 20
+		label.TextColor3 = Theme.Colors.Text
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Text = id .. " — coming soon"
+		label.Parent = page
+	end
+
+	-- F6 toggles the main Sentinel panel. NOT "P" — this game's other admin
+	-- panel (AdminPanelClient) already binds P for its own UI, so reusing it
+	-- here would collide. Ctrl+Shift+P is reserved solely for the Command
+	-- Palette, per the design spec, and doesn't conflict since it requires
+	-- both modifier keys held.
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.F6 then
+			Shell.Toggle()
+		end
+	end)
+
+	Shell.searchButton.MouseButton1Click:Connect(function()
+		CommandPalette.Open()
+	end)
+
+	print("[Sentinel] UI shell ready — F6 to open the panel, Ctrl+Shift+P for the command palette.")
+end
+
+print("[Sentinel] Client shell loaded.")

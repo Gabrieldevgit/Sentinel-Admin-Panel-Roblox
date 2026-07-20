@@ -98,10 +98,12 @@ No switch statement, no registry edits, no core changes required.
 - [x] **3. Moderator Toolkit** — kick, ban, mute/unmute, warn (with auto-escalation), jail/unjail, freeze/unfreeze, staff notes, blacklist/whitelist + whitelist-mode
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
-- [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights
-- [ ] **7. UI/UX** — command palette, dockable windows, themes, autocomplete, mobile support
-- [ ] **8. Automation & Plugins** — scheduler, triggers, plugin loader, webhook integrations
-- [ ] **9. Enterprise Features** — web dashboard, cross-server admin, MFA, collaborative moderation, rollback tool, AI-assisted command generation
+- [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
+- [ ] **7. UI/UX** — IN PROGRESS. Mission-Control-style dockable UI, command palette, dashboard, developer tool tabs, notification center. See `/reference/UI-UX-design-docs/` for the full ChatGPT-collaborated design spec this phase is being built against.
+- [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
+- [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.
+
+- [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading is dropped from this phase's original scope.
 
 ## Design decisions worth knowing
 
@@ -163,8 +165,33 @@ No switch statement, no registry edits, no core changes required.
   fresh server — true zero-downtime restarts need Reserved Servers /
   `TeleportService`, which is a Phase 9 (Enterprise) concern.
 
+## Phase 7 progress (in this drop)
+
+**Built:** Core UI Shell (top bar, sidebar nav, status bar, page container),
+Command Palette (Ctrl+Shift+P — fuzzy search, inline docs, live command
+history, executes through the same CommandRegistry.Dispatch path as chat),
+and a first-slice Dashboard page (summary cards only). Sidebar links to
+Players/Moderation/Economy/Server/Analytics/Developer/Settings show
+"coming soon" placeholders — those pages are the next increments.
+
+- **Open the panel:** press **F6** (not "P" — deliberately avoided, since
+  this game's separate AdminPanelClient already binds P for its own UI).
+- **Command Palette:** **Ctrl+Shift+P** anywhere, or click the search bar
+  in the panel's top bar.
+- New server-side bridge: `Systems/UIBridge.lua` exposes exactly three
+  narrow remotes (`GetCommandListRemote`, `ExecuteCommandRemote`,
+  `GetServerStatsRemote`) — execution goes through the identical
+  `CommandRegistry.Dispatch` permission/cooldown/logging path as chat, so
+  there's no separate security surface to reason about.
+- Reference design docs and the old Admin Panel extraction are saved
+  under `/reference/` for the remaining Phase 7 pages and the later
+  Player Controls phase.
+
 ## Next recommended step
 
-Phase 5 (Developer Suite) is next: a live server/instance explorer, remote
-event/function inspector, DataStore viewer, and performance profiling
-tools. Say the word and I'll build it next in the same style.
+Continue Phase 7: Player Explorer table + detail panel, Moderation Queue,
+Developer Tools tabs (wiring Phase 5's backend into the new Developer
+page), Notification Center, and live health charts on the Dashboard. Say
+which piece to build next, or I'll default to Player Explorer since
+almost everything else references it (right-click actions, target
+picking in the Command Palette's future Target Builder).

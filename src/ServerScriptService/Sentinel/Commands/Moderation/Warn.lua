@@ -26,14 +26,19 @@ local PunishmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild(
 -- ---------------------------------------------------------------------------
 -- Default escalation policy. Tune here.
 -- ---------------------------------------------------------------------------
-PunishmentService.RegisterEscalationRule(3, function(target: Player)
-	target:Kick("Automatically kicked: 3 warnings reached.")
+PunishmentService.RegisterEscalationRule(3, function(target: Player, warnings: { PunishmentService.WarningRecord })
+	local lastReason = warnings[#warnings] and warnings[#warnings].Reason or "unspecified"
+	target:Kick(("Automatically kicked: 3 warnings reached (latest: %s)."):format(lastReason))
 end)
 
-PunishmentService.RegisterEscalationRule(5, function(target: Player)
+PunishmentService.RegisterEscalationRule(5, function(target: Player, warnings: { PunishmentService.WarningRecord })
+	local reasonSummary = {}
+	for _, w in ipairs(warnings) do
+		table.insert(reasonSummary, w.Reason)
+	end
 	local record = {
 		BannedBy = 0, -- SYSTEM
-		Reason = "Automatically banned: 5 warnings reached.",
+		Reason = ("Automatically banned: 5 warnings reached (%s)."):format(table.concat(reasonSummary, "; ")),
 		IssuedAt = os.time(),
 		ExpiresAt = os.time() + 86400, -- 1 day
 	}
