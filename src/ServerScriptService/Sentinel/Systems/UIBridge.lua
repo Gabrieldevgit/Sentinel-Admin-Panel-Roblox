@@ -18,6 +18,9 @@
 		  result of an executed command back to the client that ran it.
 		- GetServerStatsRemote (RemoteFunction): thin wrapper around
 		  DeveloperService.GetServerStats() for the UI's status bar.
+		- GetPlayerListRemote (RemoteFunction): read-only snapshot of every
+		  connected player (Name/DisplayName/Team/Health/Ping/Roles) for the
+		  Player Explorer page.
 
 	Responsibilities:
 		- Create these remotes once under ReplicatedStorage.Shared.Sentinel
@@ -27,14 +30,16 @@
 	Dependencies:
 		Types.lua (Shared)
 		CommandRegistry.lua, Parser/CommandProcessor.lua (Core)
-		DeveloperService.lua (Systems)
+		DeveloperService.lua, PermissionSystem.lua (Systems/Core)
 --]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Sentinel = script.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
 local CommandProcessor = require(Sentinel:WaitForChild("Core"):WaitForChild("Parser"):WaitForChild("CommandProcessor"))
+local PermissionSystem = require(Sentinel:WaitForChild("Core"):WaitForChild("PermissionSystem"))
 local DeveloperService = require(Sentinel:WaitForChild("Systems"):WaitForChild("DeveloperService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
@@ -54,6 +59,7 @@ local getCommandListRemote = getOrCreate("GetCommandListRemote", "RemoteFunction
 local executeCommandRemote = getOrCreate("ExecuteCommandRemote", "RemoteEvent") :: RemoteEvent
 local commandResultRemote = getOrCreate("CommandResultRemote", "RemoteEvent") :: RemoteEvent
 local getServerStatsRemote = getOrCreate("GetServerStatsRemote", "RemoteFunction") :: RemoteFunction
+local getPlayerListRemote = getOrCreate("GetPlayerListRemote", "RemoteFunction") :: RemoteFunction
 
 function getCommandListRemote.OnServerInvoke(_player: Player)
 	local list = {}
@@ -72,6 +78,25 @@ end
 
 function getServerStatsRemote.OnServerInvoke(_player: Player)
 	return DeveloperService.GetServerStats()
+end
+
+function getPlayerListRemote.OnServerInvoke(_player: Player)
+	local list = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		local character = p.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		table.insert(list, {
+			UserId = p.UserId,
+			Name = p.Name,
+			DisplayName = p.DisplayName,
+			Team = if p.Team then p.Team.Name else nil,
+			Health = if humanoid then math.floor(humanoid.Health) else nil,
+			MaxHealth = if humanoid then math.floor(humanoid.MaxHealth) else nil,
+			Ping = DeveloperService.GetPing(p),
+			Roles = PermissionSystem.GetRoles(p),
+		})
+	end
+	return list
 end
 
 executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: string)

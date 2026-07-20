@@ -170,9 +170,10 @@ No switch statement, no registry edits, no core changes required.
 **Built:** Core UI Shell (top bar, sidebar nav, status bar, page container),
 Command Palette (Ctrl+Shift+P — fuzzy search, inline docs, live command
 history, executes through the same CommandRegistry.Dispatch path as chat),
-and a first-slice Dashboard page (summary cards only). Sidebar links to
-Players/Moderation/Economy/Server/Analytics/Developer/Settings show
-"coming soon" placeholders — those pages are the next increments.
+a first-slice Dashboard page (summary cards), and a Player Explorer page
+(searchable table, detail panel with Kick/Freeze/Jail quick actions).
+Moderation/Economy/Server/Analytics/Developer/Settings still show "coming
+soon" placeholders — those are the next increments.
 
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).

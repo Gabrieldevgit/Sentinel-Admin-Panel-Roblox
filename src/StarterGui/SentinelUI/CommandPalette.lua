@@ -33,12 +33,12 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
-local Theme = require(script.Parent:WaitForChild("Theme"))
+local Theme = require(script.Parent:WaitForChild("Theme", 15))
 
 local CommandPalette = {}
 
 local localPlayer = Players.LocalPlayer
-local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
+local SentinelShared = ReplicatedStorage:WaitForChild("Shared", 15):WaitForChild("Sentinel", 15)
 
 type CommandMeta = {
 	Name: string,
@@ -359,10 +359,10 @@ function CommandPalette.Init()
 end
 
 function CommandPalette.Open()
-	fetchCommandList() -- warm the cache
 	CommandPalette.screenGui.Enabled = true
 	CommandPalette.inputBox.Text = ""
 	CommandPalette.inputBox:CaptureFocus()
+	task.spawn(fetchCommandList) -- warm the cache without blocking the UI
 end
 
 function CommandPalette.Close()

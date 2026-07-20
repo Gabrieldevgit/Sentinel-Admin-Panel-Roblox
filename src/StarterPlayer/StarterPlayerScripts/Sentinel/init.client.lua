@@ -199,19 +199,32 @@ local UserInputService = game:GetService("UserInputService")
 
 local sentinelUIFolder = playerGui:WaitForChild("SentinelUI", 15)
 if sentinelUIFolder then
-	local Theme = require(sentinelUIFolder:WaitForChild("Theme", 15))
-	local Shell = require(sentinelUIFolder:WaitForChild("Shell", 15))
-	local CommandPalette = require(sentinelUIFolder:WaitForChild("CommandPalette", 15))
-	local DashboardPage = require(sentinelUIFolder:WaitForChild("DashboardPage", 15))
+	local themeModule = sentinelUIFolder:WaitForChild("Theme", 15)
+	local shellModule = sentinelUIFolder:WaitForChild("Shell", 15)
+	local commandPaletteModule = sentinelUIFolder:WaitForChild("CommandPalette", 15)
+	local dashboardPageModule = sentinelUIFolder:WaitForChild("DashboardPage", 15)
+	local playersPageModule = sentinelUIFolder:WaitForChild("PlayersPage", 15)
+
+	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule) then
+		warn("[Sentinel] One or more SentinelUI modules failed to load within 15s — UI shell not started.")
+		return
+	end
+
+	local Theme = require(themeModule)
+	local Shell = require(shellModule)
+	local CommandPalette = require(commandPaletteModule)
+	local DashboardPage = require(dashboardPageModule)
+	local PlayersPage = require(playersPageModule)
 
 	Shell.Init()
 	CommandPalette.Init()
 
 	DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"))
+	PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 
 	-- Placeholder pages for sections not built yet — keeps the sidebar fully
 	-- navigable while each section gets its real content in follow-up passes.
-	for _, id in ipairs({ "Players", "Moderation", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
+	for _, id in ipairs({ "Moderation", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
 		local page = Shell.RegisterPage(id, id, "")
 		local label = Instance.new("TextLabel")
 		label.BackgroundTransparency = 1
