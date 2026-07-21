@@ -170,10 +170,31 @@ No switch statement, no registry edits, no core changes required.
 **Built:** Core UI Shell (top bar, sidebar nav, status bar, page container),
 Command Palette (Ctrl+Shift+P — fuzzy search, inline docs, live command
 history, executes through the same CommandRegistry.Dispatch path as chat),
-a first-slice Dashboard page (summary cards), and a Player Explorer page
-(searchable table, detail panel with Kick/Freeze/Jail quick actions).
-Moderation/Economy/Server/Analytics/Developer/Settings still show "coming
-soon" placeholders — those are the next increments.
+a Dashboard page (summary cards + Quick Actions panel), a Player Explorer
+page (searchable table, detail panel with Kick/Freeze/Jail), and a
+Moderation Queue page (live recent-actions feed). Economy/Server/
+Analytics/Developer/Settings still show "coming soon" placeholders.
+
+**Quick Actions (new):** card-based, color-coded by risk (green/orange/
+red), per the design doc — Announce (opens Command Palette pre-filled),
+Freeze All, Lock Server + Maintenance Mode (real on/off toggles reflecting
+live server state, not one-shot buttons), and Shutdown (gated behind a
+typed-confirmation dialog requiring "SHUTDOWN"). Deliberately NOT included:
+Heal All, Teleport, true Restart, Cleanup Map, Auto Moderation toggle —
+none have a backing command yet, so no cards were added for them.
+
+**Toggle switches:** the functional mechanism (live state polling, click
+to flip, optimistic UI update) is built, but the switch's visual design
+is a plain placeholder (green/red pill) — swap `QuickActionsPanel.lua`'s
+`makeToggleCard` internals once the custom switch design is ready.
+
+**Panel access gate (new):** the entire UI shell — not just command
+execution — now requires the server to confirm (via `CanOpenPanelRemote`)
+that the player has at least one role before anything is built client-
+side. Previously, non-staff players could see the whole panel (player
+list, roles, moderation log) even though every command they ran would be
+denied. F6 re-checks this every time until access is granted, so a player
+promoted mid-session doesn't need to rejoin.
 
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).

@@ -3,23 +3,23 @@
 	DashboardPage.lua
 
 	Purpose:
-		First slice of the Dashboard page from the design doc: summary
-		cards (Players/FPS/Memory/Ping) using the same GetServerStatsRemote
-		the status bar uses. Live health bars, activity feed, and the
-		"Today's Overview" briefing are follow-up increments — this
-		establishes the page/card pattern the rest of Sentinel's UI reuses.
+		Dashboard page from the design doc: summary cards (Players/FPS/
+		Memory/Ping) using the same GetServerStatsRemote the status bar
+		uses, plus the Quick Actions panel. Live health bars, the activity
+		feed, and the "Today's Overview" briefing are follow-up increments.
 
 	Dependencies:
-		Theme.lua
+		Theme.lua, QuickActionsPanel.lua
 
 	Public API:
-		DashboardPage.Build(container: Frame): ()
+		DashboardPage.Build(container: Frame, commandPalette: any): ()
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local QuickActionsPanel = require(script.Parent:WaitForChild("QuickActionsPanel"))
 
 local DashboardPage = {}
 
@@ -60,7 +60,7 @@ local function makeCard(parent: Instance, layoutOrder: number, label: string): (
 	return card, valueText
 end
 
-function DashboardPage.Build(container: Frame)
+function DashboardPage.Build(container: Frame, commandPalette: any)
 	local header = Instance.new("TextLabel")
 	header.BackgroundTransparency = 1
 	header.Size = UDim2.new(1, 0, 0, 30)
@@ -89,9 +89,17 @@ function DashboardPage.Build(container: Frame)
 	local _, memoryValue = makeCard(cardRow, 3, "Memory")
 	local _, pingValue = makeCard(cardRow, 4, "Your Ping")
 
+	local quickActionsContainer = Instance.new("Frame")
+	quickActionsContainer.Name = "QuickActions"
+	quickActionsContainer.Position = UDim2.new(0, 0, 0, 136)
+	quickActionsContainer.Size = UDim2.new(1, 0, 0, 140)
+	quickActionsContainer.BackgroundTransparency = 1
+	quickActionsContainer.Parent = container
+	QuickActionsPanel.Build(quickActionsContainer, commandPalette)
+
 	local placeholder = Instance.new("TextLabel")
 	placeholder.BackgroundTransparency = 1
-	placeholder.Position = UDim2.new(0, 0, 0, 140)
+	placeholder.Position = UDim2.new(0, 0, 0, 284)
 	placeholder.Size = UDim2.new(1, 0, 0, 24)
 	placeholder.Font = Theme.Font.Regular
 	placeholder.TextSize = 13

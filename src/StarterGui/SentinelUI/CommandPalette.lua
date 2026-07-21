@@ -362,7 +362,7 @@ function CommandPalette.Open()
 	CommandPalette.screenGui.Enabled = true
 	CommandPalette.inputBox.Text = ""
 	CommandPalette.inputBox:CaptureFocus()
-	task.spawn(fetchCommandList) -- warm the cache without blocking the UI
+	task.spawn(fetchCommandList) -- warm the cache without blocking the UI from opening
 end
 
 function CommandPalette.Close()

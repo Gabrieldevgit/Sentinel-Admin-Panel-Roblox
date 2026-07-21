@@ -21,6 +21,10 @@
 		- GetPlayerListRemote (RemoteFunction): read-only snapshot of every
 		  connected player (Name/DisplayName/Team/Health/Ping/Roles) for the
 		  Player Explorer page.
+		- CanOpenPanelRemote (RemoteFunction): the client calls this before
+		  building ANY UI at all. Returns false for non-staff, so the panel
+		  is never even constructed client-side for players who can't use
+		  it — not just gated at the command-execution step.
 
 	Responsibilities:
 		- Create these remotes once under ReplicatedStorage.Shared.Sentinel
@@ -40,7 +44,9 @@ local Sentinel = script.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
 local CommandProcessor = require(Sentinel:WaitForChild("Core"):WaitForChild("Parser"):WaitForChild("CommandProcessor"))
 local PermissionSystem = require(Sentinel:WaitForChild("Core"):WaitForChild("PermissionSystem"))
+local Logger = require(Sentinel:WaitForChild("Core"):WaitForChild("Logger"))
 local DeveloperService = require(Sentinel:WaitForChild("Systems"):WaitForChild("DeveloperService"))
+local ServerStateService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ServerStateService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -60,6 +66,38 @@ local executeCommandRemote = getOrCreate("ExecuteCommandRemote", "RemoteEvent") 
 local commandResultRemote = getOrCreate("CommandResultRemote", "RemoteEvent") :: RemoteEvent
 local getServerStatsRemote = getOrCreate("GetServerStatsRemote", "RemoteFunction") :: RemoteFunction
 local getPlayerListRemote = getOrCreate("GetPlayerListRemote", "RemoteFunction") :: RemoteFunction
+local getModerationLogRemote = getOrCreate("GetModerationLogRemote", "RemoteFunction") :: RemoteFunction
+local canOpenPanelRemote = getOrCreate("CanOpenPanelRemote", "RemoteFunction") :: RemoteFunction
+local getServerStateRemote = getOrCreate("GetServerStateRemote", "RemoteFunction") :: RemoteFunction
+
+local function isStaff(player: Player): boolean
+	return #PermissionSystem.GetRoles(player) > 0
+end
+
+-- The client calls this BEFORE building any UI at all (Shell, Command
+-- Palette, pages) — not just before running commands. Without this, a
+-- non-staff player could still see the whole panel (player list, roles,
+-- moderation log, dashboard stats) even though every command they tried
+-- would be denied. This is the single source of truth for "should this
+-- client even construct the UI" — the client must not decide that on its
+-- own.
+function canOpenPanelRemote.OnServerInvoke(player: Player)
+	return isStaff(player)
+end
+
+-- Read-only snapshot of toggleable server state, for Quick Action cards
+-- that need to show their current status (e.g. "Lock Server: 🟢 Unlocked")
+-- rather than being blind one-shot buttons.
+function getServerStateRemote.OnServerInvoke(player: Player)
+	if not isStaff(player) then
+		return {}
+	end
+	return {
+		Locked = ServerStateService.IsLocked(),
+		MaintenanceMode = ServerStateService.IsMaintenanceMode(),
+		SlowModeSeconds = ServerStateService.GetSlowMode(),
+	}
+end
 
 function getCommandListRemote.OnServerInvoke(_player: Player)
 	local list = {}
@@ -80,7 +118,10 @@ function getServerStatsRemote.OnServerInvoke(_player: Player)
 	return DeveloperService.GetServerStats()
 end
 
-function getPlayerListRemote.OnServerInvoke(_player: Player)
+function getPlayerListRemote.OnServerInvoke(player: Player)
+	if not isStaff(player) then
+		return {}
+	end
 	local list = {}
 	for _, p in ipairs(Players:GetPlayers()) do
 		local character = p.Character
@@ -97,6 +138,20 @@ function getPlayerListRemote.OnServerInvoke(_player: Player)
 		})
 	end
 	return list
+end
+
+function getModerationLogRemote.OnServerInvoke(player: Player, count: number?)
+	if not isStaff(player) then
+		return {}
+	end
+	local all = Logger.Query(nil)
+	local n = count or 30
+	local result = {}
+	local startIndex = math.max(1, #all - n + 1)
+	for i = startIndex, #all do
+		table.insert(result, all[i])
+	end
+	return result
 end
 
 executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: string)

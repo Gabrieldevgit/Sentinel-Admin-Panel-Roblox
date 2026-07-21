@@ -204,58 +204,98 @@ if sentinelUIFolder then
 	local commandPaletteModule = sentinelUIFolder:WaitForChild("CommandPalette", 15)
 	local dashboardPageModule = sentinelUIFolder:WaitForChild("DashboardPage", 15)
 	local playersPageModule = sentinelUIFolder:WaitForChild("PlayersPage", 15)
+	local moderationPageModule = sentinelUIFolder:WaitForChild("ModerationPage", 15)
 
-	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule) then
+	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule and moderationPageModule) then
 		warn("[Sentinel] One or more SentinelUI modules failed to load within 15s — UI shell not started.")
 		return
 	end
 
-	local Theme = require(themeModule)
-	local Shell = require(shellModule)
-	local CommandPalette = require(commandPaletteModule)
-	local DashboardPage = require(dashboardPageModule)
-	local PlayersPage = require(playersPageModule)
+	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
-	Shell.Init()
-	CommandPalette.Init()
+	-- IMPORTANT: the UI is NOT built eagerly on join. It's built the first
+	-- time the server confirms (via CanOpenPanelRemote) that this player
+	-- actually has a staff role — otherwise a non-staff player could see
+	-- the whole panel (player list, roles, moderation log, dashboard
+	-- stats) even though every command they tried would be denied. This
+	-- was a real gap in an earlier version of this file.
+	local uiBuilt = false
+	local Shell, CommandPalette
 
-	DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"))
-	PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
+	local function buildUI()
+		local Theme = require(themeModule)
+		Shell = require(shellModule)
+		CommandPalette = require(commandPaletteModule)
+		local DashboardPage = require(dashboardPageModule)
+		local PlayersPage = require(playersPageModule)
+		local ModerationPage = require(moderationPageModule)
 
-	-- Placeholder pages for sections not built yet — keeps the sidebar fully
-	-- navigable while each section gets its real content in follow-up passes.
-	for _, id in ipairs({ "Moderation", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
-		local page = Shell.RegisterPage(id, id, "")
-		local label = Instance.new("TextLabel")
-		label.BackgroundTransparency = 1
-		label.Size = UDim2.new(1, 0, 0, 30)
-		label.Font = Theme.Font.Bold
-		label.TextSize = 20
-		label.TextColor3 = Theme.Colors.Text
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.Text = id .. " — coming soon"
-		label.Parent = page
+		Shell.Init()
+		CommandPalette.Init()
+
+		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
+		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
+		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
+
+		-- Placeholder pages for sections not built yet — keeps the sidebar
+		-- fully navigable while each section gets its real content later.
+		for _, id in ipairs({ "Economy", "Server", "Analytics", "Developer", "Settings" }) do
+			local page = Shell.RegisterPage(id, id, "")
+			local label = Instance.new("TextLabel")
+			label.BackgroundTransparency = 1
+			label.Size = UDim2.new(1, 0, 0, 30)
+			label.Font = Theme.Font.Bold
+			label.TextSize = 20
+			label.TextColor3 = Theme.Colors.Text
+			label.TextXAlignment = Enum.TextXAlignment.Left
+			label.Text = id .. " — coming soon"
+			label.Parent = page
+		end
+
+		Shell.searchButton.MouseButton1Click:Connect(function()
+			CommandPalette.Open()
+		end)
+
+		uiBuilt = true
+		Shell.Toggle() -- open immediately on first successful build, since this call came from an explicit F6 press
+		print("[Sentinel] UI shell built and opened — Ctrl+Shift+P for the command palette.")
+	end
+
+	-- Re-checks permission every time until the UI is actually built, so a
+	-- player promoted mid-session (e.g. via /assignrole while testing)
+	-- doesn't need to rejoin — they just press F6 again after being granted
+	-- a role.
+	local function tryOpenPanel()
+		if uiBuilt then
+			Shell.Toggle()
+			return
+		end
+		if not canOpenPanelRemote then
+			return
+		end
+		local ok, allowed = pcall(function()
+			return canOpenPanelRemote:InvokeServer()
+		end)
+		if ok and allowed then
+			buildUI()
+		end
+		-- Deliberately silent on denial — no UI flash, no error, nothing
+		-- to indicate the panel exists at all to a non-staff player.
 	end
 
 	-- F6 toggles the main Sentinel panel. NOT "P" — this game's other admin
 	-- panel (AdminPanelClient) already binds P for its own UI, so reusing it
 	-- here would collide. Ctrl+Shift+P is reserved solely for the Command
-	-- Palette, per the design spec, and doesn't conflict since it requires
-	-- both modifier keys held.
+	-- Palette (wired up inside CommandPalette.Init, which only runs after
+	-- access is confirmed), so it does nothing for non-staff either.
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then
 			return
 		end
 		if input.KeyCode == Enum.KeyCode.F6 then
-			Shell.Toggle()
+			tryOpenPanel()
 		end
 	end)
-
-	Shell.searchButton.MouseButton1Click:Connect(function()
-		CommandPalette.Open()
-	end)
-
-	print("[Sentinel] UI shell ready — F6 to open the panel, Ctrl+Shift+P for the command palette.")
 end
 
 print("[Sentinel] Client shell loaded.")
