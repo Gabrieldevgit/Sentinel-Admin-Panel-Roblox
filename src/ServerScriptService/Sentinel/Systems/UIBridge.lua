@@ -19,8 +19,9 @@
 		- GetServerStatsRemote (RemoteFunction): thin wrapper around
 		  DeveloperService.GetServerStats() for the UI's status bar.
 		- GetPlayerListRemote (RemoteFunction): read-only snapshot of every
-		  connected player (Name/DisplayName/Team/Health/Ping/Roles) for the
-		  Player Explorer page.
+		  connected player (Name/DisplayName/Team/Health/Ping/Roles/
+		  IsFrozen/IsJailed/IsMuted) for the Player Explorer page's table
+		  and its Freeze/Jail/Mute toggle switches.
 		- CanOpenPanelRemote (RemoteFunction): the client calls this before
 		  building ANY UI at all. Returns false for non-staff, so the panel
 		  is never even constructed client-side for players who can't use
@@ -47,6 +48,7 @@ local PermissionSystem = require(Sentinel:WaitForChild("Core"):WaitForChild("Per
 local Logger = require(Sentinel:WaitForChild("Core"):WaitForChild("Logger"))
 local DeveloperService = require(Sentinel:WaitForChild("Systems"):WaitForChild("DeveloperService"))
 local ServerStateService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ServerStateService"))
+local ChatModerationService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ChatModerationService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -135,6 +137,13 @@ function getPlayerListRemote.OnServerInvoke(player: Player)
 			MaxHealth = if humanoid then math.floor(humanoid.MaxHealth) else nil,
 			Ping = DeveloperService.GetPing(p),
 			Roles = PermissionSystem.GetRoles(p),
+			-- Read directly via attributes rather than importing Freeze/Jail
+			-- modules — those attributes ("SentinelFrozen"/"SentinelJailed")
+			-- are the actual, single source of truth those commands already
+			-- use, so this stays in sync automatically with no extra coupling.
+			IsFrozen = p:GetAttribute("SentinelFrozen") == true,
+			IsJailed = p:GetAttribute("SentinelJailed") == true,
+			IsMuted = ChatModerationService.IsMuted(p.UserId),
 		})
 	end
 	return list

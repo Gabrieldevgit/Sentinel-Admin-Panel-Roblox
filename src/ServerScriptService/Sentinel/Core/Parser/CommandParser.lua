@@ -182,12 +182,18 @@ local function parseSegment(segment: string): ParsedCommand?
 		table.insert(arguments, tokensWithoutWhere[i])
 	end
 
+	local plainArguments: { string } = {}
+	for i = 2, #tokensWithoutWhere do
+		table.insert(plainArguments, tokensWithoutWhere[i])
+	end
+
 	return {
 		CommandName = commandName,
 		RawInput = segment,
 		TargetSelectors = selectors,
 		Modifier = modifier,
 		Arguments = arguments,
+		PlainArguments = plainArguments,
 		NextCommand = nil,
 	} :: ParsedCommand
 end

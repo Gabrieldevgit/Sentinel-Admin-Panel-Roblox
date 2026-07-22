@@ -42,6 +42,7 @@ local NAV_ITEMS = {
 	{ Id = "Dashboard", Label = "Dashboard", Icon = "🏠" },
 	{ Id = "Players", Label = "Players", Icon = "👥" },
 	{ Id = "Moderation", Label = "Moderation", Icon = "🛡" },
+	{ Id = "Commands", Label = "Commands", Icon = "📜" },
 	{ Id = "Economy", Label = "Economy", Icon = "💰" },
 	{ Id = "Server", Label = "Server", Icon = "🌎" },
 	{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
@@ -287,7 +288,14 @@ function Shell.Init(): ScreenGui
 		end
 	end)
 
-	Shell.ShowPage("Dashboard")
+	-- NOTE: does NOT call Shell.ShowPage("Dashboard") here. Pages are
+	-- registered by the caller (init.client.lua) AFTER Init() returns, so
+	-- calling ShowPage this early would set currentPageId to "Dashboard"
+	-- before any page frame exists — the real Dashboard page registered
+	-- later would then silently stay hidden (ShowPage's no-op guard for
+	-- "already the current page") until the user switched tabs and back.
+	-- The caller is responsible for calling ShowPage once all pages (and
+	-- placeholders) are registered.
 
 	return screenGui
 end

@@ -64,7 +64,21 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 			break
 		end
 
-		local targets = TargetResolver.Resolve(executor, current.TargetSelectors)
+		-- IMPORTANT: only run target resolution when the command actually
+		-- declares it wants a target. Otherwise a target-less command's
+		-- first word (e.g. "on" in "maintenancemode on") gets swallowed by
+		-- the parser's target-guessing logic and silently vanishes from
+		-- Arguments — this was a real bug (maintenance/weather/slowmode/
+		-- etc. all executed with empty Arguments).
+		local targets: { Player } = {}
+		local ctxArguments: { string } = current.PlainArguments
+		local ctxModifier: string? = nil
+
+		if def.RequiresTarget then
+			targets = TargetResolver.Resolve(executor, current.TargetSelectors)
+			ctxArguments = current.Arguments
+			ctxModifier = current.Modifier
+		end
 
 		if def.RequiresTarget and #targets == 0 then
 			table.insert(results, {
@@ -77,8 +91,8 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 		local ctx: Types.CommandContext = {
 			Executor = executor,
 			Targets = targets,
-			Modifier = current.Modifier,
-			Arguments = current.Arguments,
+			Modifier = ctxModifier,
+			Arguments = ctxArguments,
 			RawInput = current.RawInput,
 		}
 

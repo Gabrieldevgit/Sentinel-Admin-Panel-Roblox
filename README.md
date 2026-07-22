@@ -171,9 +171,10 @@ No switch statement, no registry edits, no core changes required.
 Command Palette (Ctrl+Shift+P — fuzzy search, inline docs, live command
 history, executes through the same CommandRegistry.Dispatch path as chat),
 a Dashboard page (summary cards + Quick Actions panel), a Player Explorer
-page (searchable table, detail panel with Kick/Freeze/Jail), and a
-Moderation Queue page (live recent-actions feed). Economy/Server/
-Analytics/Developer/Settings still show "coming soon" placeholders.
+page (searchable table, detail panel with Kick button + Freeze/Jail/Mute
+toggle switches), a Moderation Queue page (live recent-actions feed), and
+a Commands placeholder tab. Economy/Server/Analytics/Developer/Settings
+still show "coming soon" placeholders.
 
 **Quick Actions (new):** card-based, color-coded by risk (green/orange/
 red), per the design doc — Announce (opens Command Palette pre-filled),
@@ -186,15 +187,50 @@ none have a backing command yet, so no cards were added for them.
 **Toggle switches:** the functional mechanism (live state polling, click
 to flip, optimistic UI update) is built, but the switch's visual design
 is a plain placeholder (green/red pill) — swap `QuickActionsPanel.lua`'s
-`makeToggleCard` internals once the custom switch design is ready.
+`makeToggleCard` (and `PlayersPage.lua`'s `makeToggleRow`) internals once
+the custom switch design is ready.
 
-**Panel access gate (new):** the entire UI shell — not just command
-execution — now requires the server to confirm (via `CanOpenPanelRemote`)
-that the player has at least one role before anything is built client-
-side. Previously, non-staff players could see the whole panel (player
-list, roles, moderation log) even though every command they ran would be
-denied. F6 re-checks this every time until access is granted, so a player
-promoted mid-session doesn't need to rejoin.
+**Panel access gate:** the entire UI shell — not just command execution —
+requires the server to confirm (via `CanOpenPanelRemote`) that the player
+has at least one role before anything is built client-side. F6 re-checks
+this every time until access is granted, so a player promoted mid-session
+doesn't need to rejoin.
+
+**Bug fixes in this drop:**
+
+1. **Argument-eating parser bug (significant).** Any command with
+   `RequiresTarget = false` (maintenancemode, weather, daynight, fog,
+   slowmode, lightingpreset, countdown, shutdown, execute, datastoreset,
+   datastorelist, datastoreget, whitelistmode...) was silently losing its
+   first argument — the parser always assumed the second token was a
+   player target, so `/maintenancemode on` parsed `"on"` as an (unfound)
+   target and threw it away, leaving `Arguments` empty. This is why
+   toggling Maintenance appeared to "do nothing." Fixed by having the
+   parser track both interpretations (`Arguments` assuming a target,
+   `PlainArguments` without one) and having `CommandProcessor` pick the
+   correct one based on the resolved command's actual `RequiresTarget`
+   flag. This also fixes several other commands that had the same latent
+   bug (`/datastoreset` was almost completely broken by this).
+2. **Dashboard invisible until switching tabs.** `Shell.Init()` called
+   `ShowPage("Dashboard")` before any pages were registered, so the
+   real Dashboard page (registered afterward) got silently skipped by
+   `ShowPage`'s "already the current page" guard. Fixed by moving that
+   call to after all pages (including placeholders) are registered.
+3. **Freeze/Jail/Mute quick actions had no way to turn back off.** These
+   are reversible states, not one-shot actions, so the Player Explorer's
+   detail panel now shows them as toggle switches (same pattern as the
+   Dashboard's Quick Actions) reflecting live status via three new fields
+   on `GetPlayerListRemote` (`IsFrozen`/`IsJailed`/`IsMuted`), rather than
+   plain buttons that could only ever turn them on. Kick stays a plain
+   button since it has no "undo." The selected player's toggles also
+   re-sync every 4s from the live poll, correcting the optimistic UI
+   update if a toggle click was actually denied.
+4. **Commands tab** added to the sidebar as a placeholder (real content —
+   a full command reference/browser — is a follow-up increment).
+
+**Still open:** a layout concern about the panel not being "cadré"
+(framed/aligned) relative to the game view or the other Admin Panel —
+under investigation, needs a bit more detail to pin down before fixing.
 
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).

@@ -239,7 +239,7 @@ if sentinelUIFolder then
 
 		-- Placeholder pages for sections not built yet — keeps the sidebar
 		-- fully navigable while each section gets its real content later.
-		for _, id in ipairs({ "Economy", "Server", "Analytics", "Developer", "Settings" }) do
+		for _, id in ipairs({ "Commands", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
 			local page = Shell.RegisterPage(id, id, "")
 			local label = Instance.new("TextLabel")
 			label.BackgroundTransparency = 1
@@ -255,6 +255,12 @@ if sentinelUIFolder then
 		Shell.searchButton.MouseButton1Click:Connect(function()
 			CommandPalette.Open()
 		end)
+
+		-- Show Dashboard now that every page (real and placeholder) has
+		-- actually been registered. Calling this any earlier (e.g. inside
+		-- Shell.Init itself) was the cause of an earlier bug where the
+		-- Dashboard page stayed invisible until switching tabs and back.
+		Shell.ShowPage("Dashboard")
 
 		uiBuilt = true
 		Shell.Toggle() -- open immediately on first successful build, since this call came from an explicit F6 press

@@ -75,7 +75,12 @@ export type ParsedCommand = {
 	RawInput: string,
 	TargetSelectors: { TargetSelector },
 	Modifier: string?, -- text after ":" on the target, e.g. "30m" or "5"
-	Arguments: { string }, -- remaining free-text arguments
+	Arguments: { string }, -- remaining free-text arguments, ASSUMING a target was present
+	PlainArguments: { string }, -- every token after the command name, untouched by target-guessing —
+		-- used for commands where RequiresTarget is false, since those
+		-- commands have no target concept and the first token is a real
+		-- argument (e.g. "maintenancemode on" — "on" must not be
+		-- swallowed as an attempted target selector).
 	NextCommand: ParsedCommand?, -- set when "&&" chains commands
 }
 
