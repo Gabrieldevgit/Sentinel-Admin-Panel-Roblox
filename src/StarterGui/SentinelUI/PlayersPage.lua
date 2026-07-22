@@ -186,6 +186,7 @@ function PlayersPage.Build(container: Frame)
 	local tabsNote = Instance.new("TextLabel")
 	tabsNote.Name = "TabsNote"
 	tabsNote.Size = UDim2.new(1, 0, 0, 40)
+	tabsNote.BackgroundColor3 = Theme.Colors.SurfaceRaised
 	tabsNote.Font = Theme.Font.Regular
 	tabsNote.TextSize = 12
 	tabsNote.TextColor3 = Theme.Colors.TextSecondary
@@ -193,6 +194,8 @@ function PlayersPage.Build(container: Frame)
 	tabsNote.Text = "Inventory / Statistics / Moderation History / Permissions / Session / Notes tabs are coming in a follow-up pass."
 	tabsNote.Visible = false
 	tabsNote.Parent = detailScroll
+	Theme.corner(tabsNote, Theme.Radius.S)
+	Theme.padding(tabsNote, Theme.Spacing.S)
 
 	local selectedRow: TextButton? = nil
 	local selectedUserId: number? = nil
@@ -206,7 +209,7 @@ function PlayersPage.Build(container: Frame)
 	local function makeActionButton(parent: Instance, layoutOrder: number, label: string, onClick: () -> ())
 		local button = Instance.new("TextButton")
 		button.LayoutOrder = layoutOrder
-		button.Size = UDim2.new(0, 70, 1, 0)
+		button.Size = UDim2.new(1, 0, 0, 34)
 		button.BackgroundColor3 = Theme.Colors.SurfaceRaised
 		button.AutoButtonColor = true
 		button.Font = Theme.Font.Medium

@@ -27,6 +27,7 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
@@ -161,14 +162,43 @@ function Shell.Init(): ScreenGui
 	userLabel.Name = "UserLabel"
 	userLabel.BackgroundTransparency = 1
 	userLabel.AnchorPoint = Vector2.new(1, 0.5)
-	userLabel.Position = UDim2.new(1, -16, 0.5, 0)
-	userLabel.Size = UDim2.new(0, 200, 1, 0)
+	userLabel.Position = UDim2.new(1, -78, 0.5, 0)
+	userLabel.Size = UDim2.new(0, 150, 1, 0)
 	userLabel.Font = Theme.Font.Medium
 	userLabel.TextSize = 14
 	userLabel.TextColor3 = Theme.Colors.TextSecondary
 	userLabel.TextXAlignment = Enum.TextXAlignment.Right
 	userLabel.Text = localPlayer.Name .. "  ▾"
 	userLabel.Parent = topBar
+
+	-- Window controls (minimize, close)
+	local minimizeButton = Instance.new("TextButton")
+	minimizeButton.Name = "MinimizeButton"
+	minimizeButton.AnchorPoint = Vector2.new(1, 0.5)
+	minimizeButton.Position = UDim2.new(1, -42, 0.5, 0)
+	minimizeButton.Size = UDim2.new(0, 28, 0, 28)
+	minimizeButton.BackgroundTransparency = 1
+	minimizeButton.Text = "−"
+	minimizeButton.TextColor3 = Theme.Colors.TextSecondary
+	minimizeButton.Font = Theme.Font.Medium
+	minimizeButton.TextSize = 16
+	minimizeButton.Parent = topBar
+
+	local closeButton = Instance.new("TextButton")
+	closeButton.Name = "CloseButton"
+	closeButton.AnchorPoint = Vector2.new(1, 0.5)
+	closeButton.Position = UDim2.new(1, -8, 0.5, 0)
+	closeButton.Size = UDim2.new(0, 28, 0, 28)
+	closeButton.BackgroundTransparency = 1
+	closeButton.Text = "✕"
+	closeButton.TextColor3 = Theme.Colors.TextSecondary
+	closeButton.Font = Theme.Font.Medium
+	closeButton.TextSize = 14
+	closeButton.Parent = topBar
+
+	closeButton.MouseButton1Click:Connect(function()
+		Shell.Close()
+	end)
 
 	-- ------------------------------------------------------------------
 	-- Sidebar
@@ -288,6 +318,104 @@ function Shell.Init(): ScreenGui
 		end
 	end)
 
+	-- ------------------------------------------------------------------
+	-- Resize handle (bottom-right corner)
+	-- ------------------------------------------------------------------
+	local resizeHandle = Instance.new("Frame")
+	resizeHandle.Name = "ResizeHandle"
+	resizeHandle.AnchorPoint = Vector2.new(1, 1)
+	resizeHandle.Position = UDim2.new(1, -2, 1, -2)
+	resizeHandle.Size = UDim2.new(0, 12, 0, 12)
+	resizeHandle.BackgroundColor3 = Theme.Colors.SurfaceRaised
+	resizeHandle.BorderSizePixel = 0
+	resizeHandle.Parent = root
+	Theme.corner(resizeHandle, UDim.new(0, 2))
+
+	-- ------------------------------------------------------------------
+	-- Window management state
+	-- ------------------------------------------------------------------
+	local isMinimized = false
+	local fullSizeBeforeMinimize = nil
+	local isDragging = false
+	local isResizing = false
+
+	-- Minimize / restore
+	minimizeButton.MouseButton1Click:Connect(function()
+		isMinimized = not isMinimized
+		if isMinimized then
+			fullSizeBeforeMinimize = root.Size
+			sidebar.Visible = false
+			workspaceFrame.Visible = false
+			statusBar.Visible = false
+			resizeHandle.Visible = false
+			root.Size = UDim2.new(root.Size.X.Scale, root.Size.X.Offset, 0, 48)
+			minimizeButton.Text = "□"
+		else
+			sidebar.Visible = true
+			workspaceFrame.Visible = true
+			statusBar.Visible = true
+			resizeHandle.Visible = true
+			if fullSizeBeforeMinimize then
+				root.Size = fullSizeBeforeMinimize
+			end
+			minimizeButton.Text = "−"
+		end
+	end)
+
+	-- Drag reposition via top bar
+	topBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isDragging = true
+		end
+	end)
+
+	topBar.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isDragging = false
+		end
+	end)
+
+	-- Resize via handle
+	resizeHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isResizing = true
+			local abs = root.AbsoluteSize
+			root.Size = UDim2.new(0, abs.X, 0, abs.Y)
+		end
+	end)
+
+	resizeHandle.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isResizing = false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			if isDragging then
+				local delta = input.Delta
+				root.Position = UDim2.new(
+					0.5, root.Position.X.Offset + delta.X,
+					0.5, root.Position.Y.Offset + delta.Y
+				)
+			elseif isResizing then
+				local delta = input.Delta
+				local cur = root.Size
+				root.Size = UDim2.new(
+					0, math.max(640, cur.X.Offset + delta.X),
+					0, math.max(400, cur.Y.Offset + delta.Y)
+				)
+			end
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isDragging = false
+			isResizing = false
+		end
+	end)
+
 	-- NOTE: does NOT call Shell.ShowPage("Dashboard") here. Pages are
 	-- registered by the caller (init.client.lua) AFTER Init() returns, so
 	-- calling ShowPage this early would set currentPageId to "Dashboard"
@@ -303,6 +431,12 @@ end
 function Shell.Toggle()
 	if Shell.screenGui then
 		Shell.screenGui.Enabled = not Shell.screenGui.Enabled
+	end
+end
+
+function Shell.Close()
+	if Shell.screenGui then
+		Shell.screenGui.Enabled = false
 	end
 end
 
