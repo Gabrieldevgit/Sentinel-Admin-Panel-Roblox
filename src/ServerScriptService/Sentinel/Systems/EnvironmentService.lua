@@ -56,6 +56,10 @@ function EnvironmentService.SetTimeFrozen(frozen: boolean)
 	EventBus.Publish("Environment.TimeFrozenChanged", frozen)
 end
 
+function EnvironmentService.IsTimeFrozen(): boolean
+	return timeFrozen
+end
+
 -- Roblox doesn't natively pause day/night progression, so if a game's
 -- Lighting is configured to auto-cycle (e.g. via a separate day/night
 -- script), this loop re-pins ClockTime every frame while frozen. Games

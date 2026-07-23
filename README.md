@@ -98,7 +98,7 @@ No switch statement, no registry edits, no core changes required.
 - [x] **3. Moderator Toolkit** — kick, ban, mute/unmute, warn (with auto-escalation), jail/unjail, freeze/unfreeze, staff notes, blacklist/whitelist + whitelist-mode
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
-- [x] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
+- [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
 - [ ] **7. UI/UX** — IN PROGRESS. Mission-Control-style dockable UI, command palette, dashboard, developer tool tabs, notification center. See `/reference/UI-UX-design-docs/` for the full ChatGPT-collaborated design spec this phase is being built against.
 - [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
 - [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.
@@ -167,14 +167,25 @@ No switch statement, no registry edits, no core changes required.
 
 ## Phase 7 progress (in this drop)
 
-**Built:** Core UI Shell (top bar, sidebar nav, status bar, page container),
-Command Palette (Ctrl+Shift+P — fuzzy search, inline docs, live command
-history, executes through the same CommandRegistry.Dispatch path as chat),
-a Dashboard page (summary cards + Quick Actions panel), a Player Explorer
-page (searchable table, detail panel with Kick button + Freeze/Jail/Mute
-toggle switches), a Moderation Queue page (live recent-actions feed), and
-a Commands placeholder tab. Economy/Server/Analytics/Developer/Settings
-still show "coming soon" placeholders.
+**Built:** Core UI Shell (top bar, sidebar nav, status bar, page container,
+now resizable/minimizable/closable), Command Palette (Ctrl+Shift+P), a
+Dashboard page (summary cards + Quick Actions panel), a Player Explorer
+page (searchable table, scrollable detail panel, Kick button + Freeze/
+Jail/Mute toggle switches), a Moderation Queue page (live recent-actions
+feed), and a Server page (Lock/Maintenance/Time Freeze toggles via a new
+shared `ToggleSwitch.lua` component, Slow Mode input, Weather/Lighting
+preset buttons). Commands/Economy/Analytics/Developer/Settings still show
+"coming soon" placeholders.
+
+**Reconciliation note:** this drop was built by pulling the user's GitHub
+repo (the actual source of truth — their own edits had pulled ahead of
+what this session had in a couple of areas) and adding the Server page on
+top. `ToggleSwitch.lua` is a genuinely new shared component, used by
+`ServerPage` only for now — `QuickActionsPanel` and `PlayersPage` keep
+their own working, already-tested inline toggle implementations rather
+than risk a regression refactoring them mid-session. Consolidating all
+three onto `ToggleSwitch.lua` is a safe, low-priority follow-up whenever
+wanted, not required.
 
 **Quick Actions (new):** card-based, color-coded by risk (green/orange/
 red), per the design doc — Announce (opens Command Palette pre-filled),

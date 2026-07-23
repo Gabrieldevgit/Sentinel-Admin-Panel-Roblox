@@ -205,8 +205,9 @@ if sentinelUIFolder then
 	local dashboardPageModule = sentinelUIFolder:WaitForChild("DashboardPage", 15)
 	local playersPageModule = sentinelUIFolder:WaitForChild("PlayersPage", 15)
 	local moderationPageModule = sentinelUIFolder:WaitForChild("ModerationPage", 15)
+	local serverPageModule = sentinelUIFolder:WaitForChild("ServerPage", 15)
 
-	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule and moderationPageModule) then
+	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule and moderationPageModule and serverPageModule) then
 		warn("[Sentinel] One or more SentinelUI modules failed to load within 15s — UI shell not started.")
 		return
 	end
@@ -229,6 +230,7 @@ if sentinelUIFolder then
 		local DashboardPage = require(dashboardPageModule)
 		local PlayersPage = require(playersPageModule)
 		local ModerationPage = require(moderationPageModule)
+		local ServerPage = require(serverPageModule)
 
 		Shell.Init()
 		CommandPalette.Init()
@@ -236,10 +238,11 @@ if sentinelUIFolder then
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
+		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
 
 		-- Placeholder pages for sections not built yet — keeps the sidebar
 		-- fully navigable while each section gets its real content later.
-		for _, id in ipairs({ "Commands", "Economy", "Server", "Analytics", "Developer", "Settings" }) do
+		for _, id in ipairs({ "Commands", "Economy", "Analytics", "Developer", "Settings" }) do
 			local page = Shell.RegisterPage(id, id, "")
 			local label = Instance.new("TextLabel")
 			label.BackgroundTransparency = 1

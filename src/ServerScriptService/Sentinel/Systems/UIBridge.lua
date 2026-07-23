@@ -49,6 +49,7 @@ local Logger = require(Sentinel:WaitForChild("Core"):WaitForChild("Logger"))
 local DeveloperService = require(Sentinel:WaitForChild("Systems"):WaitForChild("DeveloperService"))
 local ServerStateService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ServerStateService"))
 local ChatModerationService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ChatModerationService"))
+local EnvironmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild("EnvironmentService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -98,6 +99,7 @@ function getServerStateRemote.OnServerInvoke(player: Player)
 		Locked = ServerStateService.IsLocked(),
 		MaintenanceMode = ServerStateService.IsMaintenanceMode(),
 		SlowModeSeconds = ServerStateService.GetSlowMode(),
+		TimeFrozen = EnvironmentService.IsTimeFrozen(),
 	}
 end
 
