@@ -321,15 +321,18 @@ function Shell.Init(): ScreenGui
 	-- ------------------------------------------------------------------
 	-- Resize handle (bottom-right corner)
 	-- ------------------------------------------------------------------
-	local resizeHandle = Instance.new("Frame")
+	local resizeHandle = Instance.new("ImageButton")
 	resizeHandle.Name = "ResizeHandle"
 	resizeHandle.AnchorPoint = Vector2.new(1, 1)
 	resizeHandle.Position = UDim2.new(1, -2, 1, -2)
-	resizeHandle.Size = UDim2.new(0, 12, 0, 12)
+	resizeHandle.Size = UDim2.new(0, 14, 0, 14)
 	resizeHandle.BackgroundColor3 = Theme.Colors.SurfaceRaised
 	resizeHandle.BorderSizePixel = 0
+	resizeHandle.Image = "rbxasset://textures/ui/GuiImageResize.png"
+	resizeHandle.ImageColor3 = Theme.Colors.TextSecondary
+	resizeHandle.ScaleType = Enum.ScaleType.Fit
 	resizeHandle.Parent = root
-	Theme.corner(resizeHandle, UDim.new(0, 2))
+	Theme.corner(resizeHandle, UDim.new(0, 3))
 
 	-- ------------------------------------------------------------------
 	-- Window management state
@@ -363,6 +366,7 @@ function Shell.Init(): ScreenGui
 	end)
 
 	-- Drag reposition via top bar
+	topBar.Active = true
 	topBar.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			isDragging = true
@@ -376,30 +380,25 @@ function Shell.Init(): ScreenGui
 	end)
 
 	-- Resize via handle
-	resizeHandle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			isResizing = true
-			local abs = root.AbsoluteSize
-			root.Size = UDim2.new(0, abs.X, 0, abs.Y)
-		end
+	resizeHandle.MouseButton1Down:Connect(function()
+		isResizing = true
+		local abs = root.AbsoluteSize
+		root.Size = UDim2.new(0, abs.X, 0, abs.Y)
 	end)
 
-	resizeHandle.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			isResizing = false
-		end
+	resizeHandle.MouseButton1Up:Connect(function()
+		isResizing = false
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = UserInputService:GetMouseDelta()
 			if isDragging then
-				local delta = input.Delta
 				root.Position = UDim2.new(
 					0.5, root.Position.X.Offset + delta.X,
 					0.5, root.Position.Y.Offset + delta.Y
 				)
 			elseif isResizing then
-				local delta = input.Delta
 				local cur = root.Size
 				root.Size = UDim2.new(
 					0, math.max(640, cur.X.Offset + delta.X),
