@@ -48,6 +48,7 @@ local NAV_ITEMS = {
 	{ Id = "Server", Label = "Server", Icon = "🌎" },
 	{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
 	{ Id = "Developer", Label = "Developer", Icon = "🔧" },
+	{ Id = "Notifications", Label = "Notifications", Icon = "🔔" },
 	{ Id = "Settings", Label = "Settings", Icon = "⚙" },
 }
 
@@ -177,24 +178,26 @@ function Shell.Init(): ScreenGui
 	minimizeButton.AnchorPoint = Vector2.new(1, 0.5)
 	minimizeButton.Position = UDim2.new(1, -42, 0.5, 0)
 	minimizeButton.Size = UDim2.new(0, 28, 0, 28)
-	minimizeButton.BackgroundTransparency = 1
-	minimizeButton.Text = "−"
-	minimizeButton.TextColor3 = Theme.Colors.TextSecondary
-	minimizeButton.Font = Theme.Font.Medium
-	minimizeButton.TextSize = 16
+	minimizeButton.BackgroundColor3 = Theme.Colors.Warning
+	minimizeButton.Text = "-"
+	minimizeButton.TextColor3 = Color3.new(1, 1, 1)
+	minimizeButton.Font = Theme.Font.Bold
+	minimizeButton.TextSize = 18
 	minimizeButton.Parent = topBar
+	Theme.corner(minimizeButton, Theme.Radius.S)
 
 	local closeButton = Instance.new("TextButton")
 	closeButton.Name = "CloseButton"
 	closeButton.AnchorPoint = Vector2.new(1, 0.5)
 	closeButton.Position = UDim2.new(1, -8, 0.5, 0)
 	closeButton.Size = UDim2.new(0, 28, 0, 28)
-	closeButton.BackgroundTransparency = 1
-	closeButton.Text = "✕"
-	closeButton.TextColor3 = Theme.Colors.TextSecondary
-	closeButton.Font = Theme.Font.Medium
+	closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	closeButton.Text = "X"
+	closeButton.TextColor3 = Color3.new(1, 1, 1)
+	closeButton.Font = Theme.Font.Bold
 	closeButton.TextSize = 14
 	closeButton.Parent = topBar
+	Theme.corner(closeButton, Theme.Radius.S)
 
 	closeButton.MouseButton1Click:Connect(function()
 		Shell.Close()
@@ -352,7 +355,7 @@ function Shell.Init(): ScreenGui
 			statusBar.Visible = false
 			resizeHandle.Visible = false
 			root.Size = UDim2.new(root.Size.X.Scale, root.Size.X.Offset, 0, 48)
-			minimizeButton.Text = "□"
+			minimizeButton.Text = "+"
 		else
 			sidebar.Visible = true
 			workspaceFrame.Visible = true
@@ -361,21 +364,25 @@ function Shell.Init(): ScreenGui
 			if fullSizeBeforeMinimize then
 				root.Size = fullSizeBeforeMinimize
 			end
-			minimizeButton.Text = "−"
+			minimizeButton.Text = "-"
 		end
 	end)
 
-	-- Drag reposition via top bar
-	topBar.Active = true
-	topBar.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			isDragging = true
-		end
-	end)
+	-- Drag reposition via the title area
+	local dragHandle = Instance.new("TextButton")
+	dragHandle.Name = "DragHandle"
+	dragHandle.Size = UDim2.new(0, 200, 1, 0)
+	dragHandle.BackgroundTransparency = 1
+	dragHandle.Text = ""
+	dragHandle.Parent = topBar
 
-	topBar.InputEnded:Connect(function(input)
+	dragHandle.MouseButton1Down:Connect(function()
+		isDragging = true
+	end)
+	UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			isDragging = false
+			isResizing = false
 		end
 	end)
 
@@ -384,10 +391,6 @@ function Shell.Init(): ScreenGui
 		isResizing = true
 		local abs = root.AbsoluteSize
 		root.Size = UDim2.new(0, abs.X, 0, abs.Y)
-	end)
-
-	resizeHandle.MouseButton1Up:Connect(function()
-		isResizing = false
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
@@ -405,13 +408,6 @@ function Shell.Init(): ScreenGui
 					0, math.max(400, cur.Y.Offset + delta.Y)
 				)
 			end
-		end
-	end)
-
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			isDragging = false
-			isResizing = false
 		end
 	end)
 

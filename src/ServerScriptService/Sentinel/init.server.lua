@@ -23,6 +23,7 @@
 --]]
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- IMPORTANT: this script's own Instance *is* the Sentinel container (it sits
 -- inside ServerScriptService.Sentinel as that folder's entry point), so we
@@ -133,15 +134,21 @@ end)
 -- ---------------------------------------------------------------------------
 local COMMAND_PREFIX = ";"
 
+-- Both chat-issued and UI-issued commands now surface through the exact
+-- same remote, so Phase 7D's Notification Center (toasts + persistent
+-- log) shows feedback regardless of how the command was actually typed.
+local commandResultRemote = ReplicatedStorage:WaitForChild("Shared")
+	:WaitForChild("Sentinel")
+	:WaitForChild("CommandResultRemote") :: RemoteEvent
+
 local function handleCommandText(player: Player, text: string)
 	if text:sub(1, 1) ~= COMMAND_PREFIX then
 		return
 	end
 	local results = CommandProcessor.Process(player, text:sub(2))
+	commandResultRemote:FireClient(player, results)
 	for _, result in ipairs(results) do
 		if result.Message then
-			-- Placeholder feedback channel; Phase 7 UI replaces this
-			-- with a proper notification system.
 			print(("[Sentinel -> %s] %s"):format(player.Name, result.Message))
 		end
 	end

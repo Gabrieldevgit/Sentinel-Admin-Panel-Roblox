@@ -199,18 +199,49 @@ local UserInputService = game:GetService("UserInputService")
 
 local sentinelUIFolder = playerGui:WaitForChild("SentinelUI", 15)
 if sentinelUIFolder then
-	local themeModule = sentinelUIFolder:WaitForChild("Theme", 15)
-	local shellModule = sentinelUIFolder:WaitForChild("Shell", 15)
-	local commandPaletteModule = sentinelUIFolder:WaitForChild("CommandPalette", 15)
-	local dashboardPageModule = sentinelUIFolder:WaitForChild("DashboardPage", 15)
-	local playersPageModule = sentinelUIFolder:WaitForChild("PlayersPage", 15)
-	local moderationPageModule = sentinelUIFolder:WaitForChild("ModerationPage", 15)
-	local serverPageModule = sentinelUIFolder:WaitForChild("ServerPage", 15)
+	local moduleWaitList = {
+		{ Name = "Theme" },
+		{ Name = "Shell" },
+		{ Name = "CommandPalette" },
+		{ Name = "DashboardPage" },
+		{ Name = "PlayersPage" },
+		{ Name = "ModerationPage" },
+		{ Name = "ServerPage" },
+		{ Name = "EconomyPage" },
+		{ Name = "DeveloperPage" },
+		{ Name = "NotificationCenter" },
+	}
+	local loadedModules: { [string]: ModuleScript } = {}
+	local missingModules: { string } = {}
+	for _, entry in ipairs(moduleWaitList) do
+		local instance = sentinelUIFolder:WaitForChild(entry.Name, 15)
+		if instance then
+			loadedModules[entry.Name] = instance :: ModuleScript
+		else
+			table.insert(missingModules, entry.Name)
+		end
+	end
 
-	if not (themeModule and shellModule and commandPaletteModule and dashboardPageModule and playersPageModule and moderationPageModule and serverPageModule) then
-		warn("[Sentinel] One or more SentinelUI modules failed to load within 15s — UI shell not started.")
+	if #missingModules > 0 then
+		warn(
+			("[Sentinel] SentinelUI module(s) not found under StarterGui.SentinelUI within 15s: %s. "
+				.. "Check they exist in StarterGui > SentinelUI in the Explorer and that Rojo is connected/synced — UI shell not started."):format(
+				table.concat(missingModules, ", ")
+			)
+		)
 		return
 	end
+
+	local themeModule = loadedModules.Theme
+	local shellModule = loadedModules.Shell
+	local commandPaletteModule = loadedModules.CommandPalette
+	local dashboardPageModule = loadedModules.DashboardPage
+	local playersPageModule = loadedModules.PlayersPage
+	local moderationPageModule = loadedModules.ModerationPage
+	local serverPageModule = loadedModules.ServerPage
+	local economyPageModule = loadedModules.EconomyPage
+	local developerPageModule = loadedModules.DeveloperPage
+	local notificationCenterModule = loadedModules.NotificationCenter
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -231,6 +262,9 @@ if sentinelUIFolder then
 		local PlayersPage = require(playersPageModule)
 		local ModerationPage = require(moderationPageModule)
 		local ServerPage = require(serverPageModule)
+		local EconomyPage = require(economyPageModule)
+		local DeveloperPage = require(developerPageModule)
+		local NotificationCenter = require(notificationCenterModule)
 
 		Shell.Init()
 		CommandPalette.Init()
@@ -239,10 +273,14 @@ if sentinelUIFolder then
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
 		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
+		EconomyPage.Build(Shell.RegisterPage("Economy", "Economy", "🪙"))
+		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
+		NotificationCenter.Init()
+		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
 
 		-- Placeholder pages for sections not built yet — keeps the sidebar
 		-- fully navigable while each section gets its real content later.
-		for _, id in ipairs({ "Commands", "Economy", "Analytics", "Developer", "Settings" }) do
+		for _, id in ipairs({ "Commands", "Analytics", "Settings" }) do
 			local page = Shell.RegisterPage(id, id, "")
 			local label = Instance.new("TextLabel")
 			label.BackgroundTransparency = 1

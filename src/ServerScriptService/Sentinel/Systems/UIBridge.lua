@@ -72,6 +72,9 @@ local getPlayerListRemote = getOrCreate("GetPlayerListRemote", "RemoteFunction")
 local getModerationLogRemote = getOrCreate("GetModerationLogRemote", "RemoteFunction") :: RemoteFunction
 local canOpenPanelRemote = getOrCreate("CanOpenPanelRemote", "RemoteFunction") :: RemoteFunction
 local getServerStateRemote = getOrCreate("GetServerStateRemote", "RemoteFunction") :: RemoteFunction
+local getEconomySnapshotRemote = getOrCreate("GetEconomySnapshotRemote", "RemoteFunction") :: RemoteFunction
+local getRecentLogsRemote = getOrCreate("GetRecentLogsRemote", "RemoteFunction") :: RemoteFunction
+local getRecentRemoteCallsRemote = getOrCreate("GetRecentRemoteCallsRemote", "RemoteFunction") :: RemoteFunction
 
 local function isStaff(player: Player): boolean
 	return #PermissionSystem.GetRoles(player) > 0
@@ -163,6 +166,38 @@ function getModerationLogRemote.OnServerInvoke(player: Player, count: number?)
 		table.insert(result, all[i])
 	end
 	return result
+end
+
+local EconomyService = require(Sentinel:WaitForChild("Systems"):WaitForChild("EconomyService"))
+
+function getEconomySnapshotRemote.OnServerInvoke(player: Player, userId: number)
+	if not isStaff(player) or type(userId) ~= "number" then
+		return nil
+	end
+	local target = Players:GetPlayerByUserId(userId)
+	if not target then
+		return nil
+	end
+	return {
+		Coins = EconomyService.GetBalance(target, "Coins"),
+		Gems = EconomyService.GetBalance(target, "Gems"),
+		XP = EconomyService.GetBalance(target, "XP"),
+		Level = EconomyService.GetBalance(target, "Level"),
+	}
+end
+
+function getRecentLogsRemote.OnServerInvoke(player: Player, count: number?)
+	if not isStaff(player) then
+		return {}
+	end
+	return DeveloperService.GetRecentLogs(count)
+end
+
+function getRecentRemoteCallsRemote.OnServerInvoke(player: Player, count: number?)
+	if not isStaff(player) then
+		return {}
+	end
+	return DeveloperService.GetRecentRemoteCalls(count)
 end
 
 executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: string)

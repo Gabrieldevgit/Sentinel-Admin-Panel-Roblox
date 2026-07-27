@@ -1,13 +1,14 @@
 # Sentinel
 
 An enterprise-grade Live Operations Platform for Roblox — administration,
-moderation, developer tools, analytics, automation, and a plugin
-architecture, unified under one command grammar.
+moderation, developer tools, analytics, cross-server coordination, and
+player controls, unified under one command grammar.
 
-This drop is **Phase 1 (Core Engine) + the start of Phase 2 (Command
-Framework)**, fully working end to end, plus two reference commands
-(`/kick`, `/ban`) that prove the pipeline. Everything else in the roadmap
-plugs into what's here without modifying it.
+Phases 1–5 are complete and battle-tested in Studio. Phase 6 (Analytics &
+Audit) is intentionally deferred until after Phase 7. **Phase 7 (UI/UX)
+is in progress** — a dark "Mission Control"-style dockable panel — and is
+the current focus. See the Roadmap status section below for exactly
+what's built versus still coming.
 
 ## What's implemented
 
@@ -32,6 +33,11 @@ plugs into what's here without modifying it.
 | EconomyService / InventoryService | `Systems/EconomyService.lua`, `InventoryService.lua` | leaderstats-backed currency/XP/level/gems + badge grants; tool give/remove/duplicate/save/restore |
 | ServerStateService / EnvironmentService | `Systems/ServerStateService.lua`, `EnvironmentService.lua` | lock/maintenance/slowmode; weather/time/fog/lighting presets |
 | Phase 4 commands | `Commands/Economy/*`, `Commands/Server/*`, `Commands/Environment/*` | `/givecurrency /setbalance /addxp /setlevel /grantbadge /giveitem /removeitem /duplicatetool /saveinventory /restoreinventory /shutdown /lockserver /maintenancemode /slowmode /announce /countdown /weather /daynight /timefreeze /fog /lightingpreset` |
+| DeveloperService | `Systems/DeveloperService.lua` | Server stats, ping tracking, error console capture, remote-call monitor, DataStore get/set/list, arbitrary module execution |
+| Phase 5 commands | `Commands/Developer/Diagnostics.lua` | `/serverstats /pingview /errorconsole /remotelog /datastoreget /datastoreset /datastorelist /execute` — the latter two are deliberately Owner-only (not in Admin's wildcards) since they can corrupt data or run arbitrary code |
+| UIBridge | `Systems/UIBridge.lua` | The only place the Phase 7 UI talks to the server — every remote either stays open (harmless metadata) or is gated behind `isStaff()`; command execution always goes through `CommandProcessor` → `CommandRegistry.Dispatch`, identical to chat |
+| Phase 7 UI shell | `StarterGui/SentinelUI/Theme.lua`, `Shell.lua`, `CommandPalette.lua` | Design tokens; resizable/draggable/minimizable sidebar shell; Ctrl+Shift+P fuzzy-search command palette |
+| Phase 7 pages | `StarterGui/SentinelUI/DashboardPage.lua`, `PlayersPage.lua`, `ModerationPage.lua`, `ServerPage.lua`, `EconomyPage.lua`, `DeveloperPage.lua`, `NotificationCenter.lua` | Dashboard (summary cards + Quick Actions), Player Explorer (searchable table + Freeze/Jail/Mute toggles), Moderation Queue (live actions feed), Server controls (lock/maintenance/slowmode/weather/lighting), Economy (currency/XP/level/badge grant forms), Developer Tools (Performance/Console/Remotes/DataStores tabs), Notification Center (toast overlay + persistent log page) |
 
 ## Try it
 
@@ -99,11 +105,10 @@ No switch statement, no registry edits, no core changes required.
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
-- [ ] **7. UI/UX** — IN PROGRESS. Mission-Control-style dockable UI, command palette, dashboard, developer tool tabs, notification center. See `/reference/UI-UX-design-docs/` for the full ChatGPT-collaborated design spec this phase is being built against.
+- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette, Dashboard, Player Explorer, Moderation Queue, Server page, Economy page, Developer Tools page, and Notification Center (7A–7D). Still to come: Settings (7E), remaining Player Explorer tabs (7F), Command History/Favorites (7G), plus an end-of-phase resize/reflow fix pass — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
+- [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading was dropped from this phase's original scope.
 - [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
 - [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.
-
-- [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading is dropped from this phase's original scope.
 
 ## Design decisions worth knowing
 
@@ -164,6 +169,17 @@ No switch statement, no registry edits, no core changes required.
 - **`/shutdown`** kicks everyone with a message but does not relaunch a
   fresh server — true zero-downtime restarts need Reserved Servers /
   `TeleportService`, which is a Phase 9 (Enterprise) concern.
+
+## New in Phase 5 — setup notes
+
+- **`/execute` and `/datastoreset`** are deliberately excluded from the
+  `Admin` role's wildcard grants and only work for `Owner` — both can
+  corrupt live data or run arbitrary Luau, so they're opt-in per-role
+  rather than bundled into `moderation.*`/`developer.*` wildcards.
+- **`/remotewatch`** hooks `RemoteEvent`/`RemoteFunction` firings for
+  visibility — it observes, it does not intercept or block traffic.
+- No new setup required beyond the `Owner` role already having the
+  `developer.*` node from Phase 1's default roles.
 
 ## Phase 7 progress (in this drop)
 
@@ -243,24 +259,106 @@ doesn't need to rejoin.
 (framed/aligned) relative to the game view or the other Admin Panel —
 under investigation, needs a bit more detail to pin down before fixing.
 
+### 7B — Economy page (new in this drop)
+
+Built `EconomyPage.lua`: a compact player list (plus a pinned "All
+Players" row, since every underlying command accepts the `all` selector)
+and a form panel wrapping the Phase 5 economy commands — Coins (Give/
+Remove/Set), Gems (Give only — `removepremium`/`setpremium` don't exist
+yet, so no dead buttons for them), XP (Give/Remove), Level (Set), and a
+Badge ID + Grant row.
+
+- Live Coins/Gems/XP/Level readout for the selected player, via a new
+  `GetEconomySnapshotRemote` (staff-gated, keyed by `UserId`). Kept
+  separate from `GetPlayerListRemote` rather than bolted on, so the
+  list — which every page polls every 4s — doesn't get four extra
+  numbers per player when most pages never need them.
+- The readout hides itself in All-Players mode, since one arbitrary
+  player's numbers next to an everyone-targeted grant would be
+  misleading.
+- Inventory (`/giveitem` etc.) is intentionally NOT on this page — the
+  roadmap scopes 7B to currency/XP/level/badges only. Item grants belong
+  to the Player Explorer's future Inventory tab (7F).
+- Grant results show inline via a status line listening to
+  `CommandResultRemote` (the same event the Command Palette listens to),
+  so success/failure is visible without opening the palette.
+
+### 7C — Developer Tools page (new in this drop)
+
+Built `DeveloperPage.lua`: four tabs, matching the handoff's scoped-down
+list rather than the original design doc's full Explorer/Inspector/
+Memory/Network/Plugin-Dashboard spread (Automation & Plugins is a
+non-goal per the roadmap; Explorer/Inspector/Memory/Network weren't in
+the phase's remaining-work plan either).
+
+- **Performance** — live `Uptime/Heartbeat/Memory/PlayerCount` plus a
+  per-player ping list, color-coded (green <100ms, yellow <200ms, red
+  above).
+- **Console** — recent `LogService` errors/warnings via a new
+  `GetRecentLogsRemote`, most-recent-first, same live-feed-row look as
+  the Moderation Queue.
+- **Remotes** — recent `RemoteEvent`/`RemoteFunction` call log via a new
+  `GetRecentRemoteCallsRemote`.
+- **DataStores** — Get/Set/List a DataStore key. Deliberately routed
+  through `ExecuteCommandRemote` (`/datastoreget /datastoreset
+  /datastorelist`) rather than a dedicated remote, so `/datastoreset`'s
+  Owner-only permission node is actually enforced by
+  `CommandRegistry.Dispatch` — a bespoke remote here would've had to
+  reimplement that check in a second place or risk skipping it.
+- Console and Remotes only poll their `GetRecentLogsRemote`/
+  `GetRecentRemoteCallsRemote` while their tab is the one currently
+  visible, so an idle Developer page sitting open doesn't fire two extra
+  RemoteFunctions every 4s nobody's looking at.
+
+### 7D — Notification Center (new in this drop)
+
+Built `NotificationCenter.lua`: a toast overlay (its own top-level
+ScreenGui, independent of Shell's, so a toast still shows even if the
+panel's been closed via F6) plus a persistent "Notifications" log page
+in the sidebar.
+
+- Replaces the placeholder feedback path called out directly in
+  `init.server.lua`'s chat hook comment ("Placeholder feedback channel;
+  Phase 7 UI replaces this with a proper notification system.") — that
+  hook now also fires `CommandResultRemote`, so `;command` results toast
+  the same as UI-issued ones. Caught a real `script` vs `script.Parent`
+  mismatch while wiring this (that file's `script` IS the Sentinel
+  folder, so the Shared remotes are under `ReplicatedStorage`, not
+  `script.Parent`) — same bug class as the one already logged in the
+  handoff notes.
+- Loosely based on the old Admin Panel V4.3's toast system
+  (`reference/OldAdminPanel/`) for the slide-in/dismiss-button shape, but
+  stacks multiple toasts at once instead of a strict one-at-a-time queue,
+  and pulls colors from `Theme.lua` instead of the old panel's
+  `Config.THEMES`.
+- The persistent log is honestly scoped to "results of commands that ran
+  because of something this client did" — there's no separate server-
+  side alert stream (e.g. "another admin changed server state"), so nothing
+  fakes one. History is an in-memory ring buffer (last 100), reset on
+  rejoin, same as the old panel's notifications.
+
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).
 - **Command Palette:** **Ctrl+Shift+P** anywhere, or click the search bar
   in the panel's top bar.
-- New server-side bridge: `Systems/UIBridge.lua` exposes exactly three
-  narrow remotes (`GetCommandListRemote`, `ExecuteCommandRemote`,
-  `GetServerStatsRemote`) — execution goes through the identical
-  `CommandRegistry.Dispatch` permission/cooldown/logging path as chat, so
-  there's no separate security surface to reason about.
+- New server-side bridge: `Systems/UIBridge.lua` has grown alongside each
+  Phase 7 page — `GetCommandListRemote`/`GetServerStatsRemote` stay open
+  (harmless metadata), while `GetPlayerListRemote`, `GetModerationLogRemote`,
+  `CanOpenPanelRemote`, `GetServerStateRemote`, `GetEconomySnapshotRemote`,
+  `GetRecentLogsRemote`, and `GetRecentRemoteCallsRemote` are all gated
+  behind `isStaff()`. Execution still goes through the identical
+  `CommandRegistry.Dispatch` permission/cooldown/logging path as chat
+  either way, so there's no separate security surface to reason about.
 - Reference design docs and the old Admin Panel extraction are saved
   under `/reference/` for the remaining Phase 7 pages and the later
   Player Controls phase.
 
 ## Next recommended step
 
-Continue Phase 7: Player Explorer table + detail panel, Moderation Queue,
-Developer Tools tabs (wiring Phase 5's backend into the new Developer
-page), Notification Center, and live health charts on the Dashboard. Say
-which piece to build next, or I'll default to Player Explorer since
-almost everything else references it (right-click actions, target
-picking in the Command Palette's future Target Builder).
+Continue Phase 7: **7E, Settings** — a read-only Permissions viewer
+against `PermissionSystem`, a few real client prefs, and explicit
+"not implemented" notes for Discord/Slack integration and 2FA rather
+than dead toggles. After that: 7F remaining Player Explorer tabs
+(Inventory/Statistics/Moderation History/Permissions/Session/Notes),
+7G Command History/Favorites, then the end-of-phase resize/reflow fix
+pass logged in `/reference/PHASE7-KNOWN-ISSUES.md`.
