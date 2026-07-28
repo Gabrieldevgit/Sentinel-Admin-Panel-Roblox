@@ -369,4 +369,15 @@ function CommandPalette.Close()
 	CommandPalette.screenGui.Enabled = false
 end
 
+-- Client-only, session-scoped command history (see the module-level
+-- `history` table above). Exposed for the Settings page (Phase 7E) so
+-- "Clear Command History" is a real action, not a placeholder button.
+function CommandPalette.ClearHistory()
+	table.clear(history)
+end
+
+function CommandPalette.GetHistoryCount(): number
+	return #history
+end
+
 return CommandPalette

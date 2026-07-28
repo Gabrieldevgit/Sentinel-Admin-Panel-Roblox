@@ -66,6 +66,28 @@ local history: { HistoryEntry } = {}
 local historyChanged: (() -> ())? = nil
 local initialized = false
 
+-- Client-only prefs, set from the Settings page (Phase 7E). Neither
+-- persists across sessions (no client DataStore access) — they're
+-- honestly scoped as "for this session" until a real prefs store exists.
+local mutedToasts = false
+local reducedMotion = false
+
+function NotificationCenter.SetMuted(muted: boolean)
+	mutedToasts = muted
+end
+
+function NotificationCenter.IsMuted(): boolean
+	return mutedToasts
+end
+
+function NotificationCenter.SetReducedMotion(reduced: boolean)
+	reducedMotion = reduced
+end
+
+function NotificationCenter.IsReducedMotion(): boolean
+	return reducedMotion
+end
+
 local function pushHistory(entry: HistoryEntry)
 	table.insert(history, entry)
 	if #history > MAX_HISTORY then
@@ -177,6 +199,10 @@ function NotificationCenter.Init()
 				return
 			end
 			dismissed = true
+			if reducedMotion then
+				frame:Destroy()
+				return
+			end
 			local tweenOut = TweenService:Create(frame, Theme.Motion.Fast, { BackgroundTransparency = 1 })
 			tweenOut:Play()
 			for _, descendant in ipairs(frame:GetDescendants()) do
@@ -192,20 +218,25 @@ function NotificationCenter.Init()
 
 		dismissButton.MouseButton1Click:Connect(dismiss)
 
-		-- Fade/slide in.
-		frame.BackgroundTransparency = 1
-		for _, descendant in ipairs(frame:GetDescendants()) do
-			if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-				descendant.TextTransparency = 1
+		-- Fade/slide in (skipped entirely under Reduced Motion — the
+		-- frame just appears fully opaque immediately).
+		if reducedMotion then
+			frame.BackgroundTransparency = 0
+		else
+			frame.BackgroundTransparency = 1
+			for _, descendant in ipairs(frame:GetDescendants()) do
+				if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+					descendant.TextTransparency = 1
+				end
 			end
-		end
-		local tweenIn = TweenService:Create(frame, Theme.Motion.Normal, { BackgroundTransparency = 0 })
-		tweenIn:Play()
-		for _, descendant in ipairs(frame:GetDescendants()) do
-			if descendant:IsA("TextLabel") then
-				TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
-			elseif descendant:IsA("TextButton") then
-				TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
+			local tweenIn = TweenService:Create(frame, Theme.Motion.Normal, { BackgroundTransparency = 0 })
+			tweenIn:Play()
+			for _, descendant in ipairs(frame:GetDescendants()) do
+				if descendant:IsA("TextLabel") then
+					TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
+				elseif descendant:IsA("TextButton") then
+					TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
+				end
 			end
 		end
 
@@ -218,7 +249,11 @@ function NotificationCenter.Init()
 		commandResultRemote.OnClientEvent:Connect(function(results: { any })
 			for _, result in ipairs(results) do
 				if result.Message then
-					showToast(result.Success == true, result.Message)
+					-- The persistent log always gets every result — mute
+					-- only suppresses the popup, not the record of it.
+					if not mutedToasts then
+						showToast(result.Success == true, result.Message)
+					end
 					pushHistory({
 						Timestamp = os.time(),
 						Success = result.Success == true,

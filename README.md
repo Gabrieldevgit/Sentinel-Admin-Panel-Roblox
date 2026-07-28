@@ -37,7 +37,7 @@ what's built versus still coming.
 | Phase 5 commands | `Commands/Developer/Diagnostics.lua` | `/serverstats /pingview /errorconsole /remotelog /datastoreget /datastoreset /datastorelist /execute` — the latter two are deliberately Owner-only (not in Admin's wildcards) since they can corrupt data or run arbitrary code |
 | UIBridge | `Systems/UIBridge.lua` | The only place the Phase 7 UI talks to the server — every remote either stays open (harmless metadata) or is gated behind `isStaff()`; command execution always goes through `CommandProcessor` → `CommandRegistry.Dispatch`, identical to chat |
 | Phase 7 UI shell | `StarterGui/SentinelUI/Theme.lua`, `Shell.lua`, `CommandPalette.lua` | Design tokens; resizable/draggable/minimizable sidebar shell; Ctrl+Shift+P fuzzy-search command palette |
-| Phase 7 pages | `StarterGui/SentinelUI/DashboardPage.lua`, `PlayersPage.lua`, `ModerationPage.lua`, `ServerPage.lua`, `EconomyPage.lua`, `DeveloperPage.lua`, `NotificationCenter.lua` | Dashboard (summary cards + Quick Actions), Player Explorer (searchable table + Freeze/Jail/Mute toggles), Moderation Queue (live actions feed), Server controls (lock/maintenance/slowmode/weather/lighting), Economy (currency/XP/level/badge grant forms), Developer Tools (Performance/Console/Remotes/DataStores tabs), Notification Center (toast overlay + persistent log page) |
+| Phase 7 pages | `StarterGui/SentinelUI/DashboardPage.lua`, `PlayersPage.lua`, `ModerationPage.lua`, `ServerPage.lua`, `EconomyPage.lua`, `DeveloperPage.lua`, `NotificationCenter.lua`, `SettingsPage.lua` | Dashboard (summary cards + Quick Actions), Player Explorer (searchable table + 7-tab detail panel: Overview/Inventory/Statistics/Moderation History/Permissions/Session/Notes), Moderation Queue (live actions feed), Server controls (lock/maintenance/slowmode/weather/lighting), Economy (currency/XP/level/badge grant forms), Developer Tools (Performance/Console/Remotes/DataStores tabs), Notification Center (toast overlay + persistent log page), Settings (read-only Permissions viewer + real prefs) |
 
 ## Try it
 
@@ -105,7 +105,7 @@ No switch statement, no registry edits, no core changes required.
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
-- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette, Dashboard, Player Explorer, Moderation Queue, Server page, Economy page, Developer Tools page, and Notification Center (7A–7D). Still to come: Settings (7E), remaining Player Explorer tabs (7F), Command History/Favorites (7G), plus an end-of-phase resize/reflow fix pass — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
+- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette, Dashboard, Player Explorer (now with all seven tabs), Moderation Queue, Server page, Economy page, Developer Tools page, Notification Center, and Settings (7A–7F). Still to come: Command History/Favorites (7G), plus an end-of-phase resize/reflow fix pass and the remaining batch of bugs found during 7A–7D testing — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
 - [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading was dropped from this phase's original scope.
 - [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
 - [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.
@@ -337,6 +337,77 @@ in the sidebar.
   fakes one. History is an in-memory ring buffer (last 100), reset on
   rejoin, same as the old panel's notifications.
 
+### 7E — Settings (new in this drop)
+
+Built `SettingsPage.lua`: a read-only Permissions viewer against
+`PermissionSystem`, three real client preferences, and an explicit
+"Not Implemented" section — no dead toggles for Discord/Slack or 2FA.
+
+- **Permissions viewer** shows the calling player's own roles plus a
+  read-only catalog of every DEFINED role (nodes + inherited roles),
+  via a new `GetPermissionsSnapshotRemote`. No assign/revoke controls —
+  role assignment isn't exposed anywhere in Sentinel's UI yet (it's
+  done via `PermissionSystem.AssignRole` calls in bootstrap code), and
+  adding that here would be a much bigger, separate feature. Loaded
+  once (not polled — role definitions don't churn mid-session) with a
+  manual Refresh button for the rare case they do.
+- **Preferences are real, not placeholders:** Mute Notification Toasts
+  and Reduce Motion both call straight into new `NotificationCenter`
+  setters (`SetMuted`/`SetReducedMotion`) that the toast pipeline
+  actually checks; Clear Command History calls a new
+  `CommandPalette.ClearHistory()`. Reused the shared `ToggleSwitch.lua`
+  component for both toggles rather than adding a fourth inline
+  copy-pasted switch to the pile already flagged as tech debt. None of
+  these persist across sessions — there's no client prefs store yet, so
+  this is honestly session-only.
+- **Not Implemented section** — Discord/Slack integration and Two-Factor
+  Authentication rows are inert (dimmed, tagged, no click handler) per
+  the explicit instruction not to build fake settings for features with
+  no backend.
+
+### 7F — Remaining Player Explorer tabs (new in this drop)
+
+Rebuilt `PlayersPage.lua`'s detail panel as a 7-tab view: Overview (the
+existing Kick button + Freeze/Jail/Mute toggles) plus Inventory,
+Statistics, Moderation History, Permissions, Session, and Notes.
+
+- **Inventory** reads `Backpack`/equipped `Tool` instances directly — no
+  new `InventoryService` function, since "list what's currently there"
+  isn't business logic that module owns (it only knows give/remove/
+  duplicate/save/restore).
+- **Statistics** reuses `GetEconomySnapshotRemote` from the Economy page
+  rather than a new remote — the data already exists.
+- **Moderation History** is a new `GetPlayerModerationHistoryRemote`.
+  Found along the way: `Logger.Query`'s `Player` filter does an EXACT
+  match against `Target`, which is a comma-joined string for multi-
+  target commands (`"kick p1,p2"` stores `Target="p1,p2"`) — an exact
+  filter for `"p1"` would silently miss that entry. Filtered correctly
+  here (split on comma, check membership) rather than changing
+  `Logger.Query` itself, since other callers may depend on its current
+  exact-match behavior.
+- **Permissions** reuses the row's own `Roles` field plus
+  `GetPermissionsSnapshotRemote`'s role catalog (both already existed)
+  for the node breakdown of each role the player actually has.
+- **Session** is a new `GetPlayerSessionRemote`. Needed a join-time
+  source that didn't exist anywhere — added a small in-memory tracker
+  directly in `UIBridge.lua` (seeded for already-connected players at
+  load time, in case a live Rojo sync re-runs this script mid-session)
+  rather than a whole new SessionService module for one consumer.
+- **Notes** is read-only via a new `GetPlayerNotesRemote` (which
+  required exporting `Note.lua`'s `GetNotes` instead of returning a bare
+  `true` — same pattern `Ban.lua` already uses for `GetActiveBan`) plus
+  a real Add Note action that still goes through `ExecuteCommandRemote`
+  (`/note target text`), so `moderation.notes` permission is actually
+  enforced rather than bypassed by a write-capable remote.
+- Only the selected player's currently-open tab is fetched — switching
+  tabs doesn't pull all six at once, and an unselected player's data is
+  never requested.
+- **Also fixed along the way:** known issue #3 (Player Explorer losing
+  its selection highlight) — rebuilding this exact file for the new tabs
+  touched the same `renderTable()`/`selectedRow` code the bug lived in,
+  so it was fixed directly instead of left for the end-of-phase pass.
+  See `/reference/PHASE7-KNOWN-ISSUES.md` for details.
+
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).
 - **Command Palette:** **Ctrl+Shift+P** anywhere, or click the search bar
@@ -345,20 +416,24 @@ in the sidebar.
   Phase 7 page — `GetCommandListRemote`/`GetServerStatsRemote` stay open
   (harmless metadata), while `GetPlayerListRemote`, `GetModerationLogRemote`,
   `CanOpenPanelRemote`, `GetServerStateRemote`, `GetEconomySnapshotRemote`,
-  `GetRecentLogsRemote`, and `GetRecentRemoteCallsRemote` are all gated
-  behind `isStaff()`. Execution still goes through the identical
-  `CommandRegistry.Dispatch` permission/cooldown/logging path as chat
-  either way, so there's no separate security surface to reason about.
+  `GetRecentLogsRemote`, `GetRecentRemoteCallsRemote`,
+  `GetPermissionsSnapshotRemote`, `GetPlayerInventoryRemote`,
+  `GetPlayerModerationHistoryRemote`, `GetPlayerSessionRemote`, and
+  `GetPlayerNotesRemote` are all gated behind `isStaff()`. Execution still
+  goes through the identical `CommandRegistry.Dispatch` permission/
+  cooldown/logging path as chat either way, so there's no separate
+  security surface to reason about.
 - Reference design docs and the old Admin Panel extraction are saved
   under `/reference/` for the remaining Phase 7 pages and the later
   Player Controls phase.
 
 ## Next recommended step
 
-Continue Phase 7: **7E, Settings** — a read-only Permissions viewer
-against `PermissionSystem`, a few real client prefs, and explicit
-"not implemented" notes for Discord/Slack integration and 2FA rather
-than dead toggles. After that: 7F remaining Player Explorer tabs
-(Inventory/Statistics/Moderation History/Permissions/Session/Notes),
-7G Command History/Favorites, then the end-of-phase resize/reflow fix
-pass logged in `/reference/PHASE7-KNOWN-ISSUES.md`.
+Continue Phase 7: **7G, Command History + Favorites** in the Command
+Palette (including the AI-assisted inline syntax suggestion ask logged
+in `/reference/PHASE7-KNOWN-ISSUES.md` issue #5). After that: the
+end-of-phase fix pass covering the resize/reflow issue and the remaining
+batch of bugs found during 7A–7D testing (drag/resize erratic, Gems
+economy grant failing silently, Command Palette losing suggestions after
+running a command) —
+all logged in `/reference/PHASE7-KNOWN-ISSUES.md`.

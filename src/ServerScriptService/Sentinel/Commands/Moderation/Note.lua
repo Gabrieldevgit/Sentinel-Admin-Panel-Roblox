@@ -47,6 +47,14 @@ local function addNote(userId: number, addedBy: string, text: string)
 	end
 end
 
+-- Exported (rather than the bare `true` most Commands/** files return) so
+-- the Player Explorer's Notes tab (Phase 7F) can read notes without a
+-- duplicate DataStore-reading implementation in UIBridge.lua — same
+-- pattern Ban.lua already uses for GetActiveBan.
+local NoteCommand = {
+	GetNotes = getNotes,
+}
+
 CommandRegistry.Register({
 	Name = "note",
 	Aliases = { "n" },
@@ -98,4 +106,4 @@ CommandRegistry.Register({
 	end,
 })
 
-return true
+return NoteCommand

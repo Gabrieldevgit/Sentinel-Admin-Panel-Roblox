@@ -159,6 +159,21 @@ function PermissionSystem.GetRoles(player: Player): { string }
 	return list
 end
 
+-- Read-only snapshot of every DEFINED role (not a specific player's
+-- roles) — for the Settings page's Permissions viewer (Phase 7E). Returns
+-- copies, not the live internal tables, so a UI holding onto this can't
+-- accidentally mutate role definitions.
+function PermissionSystem.GetAllRoleDefinitions(): { [string]: { Nodes: { string }, Inherits: { string } } }
+	local snapshot = {}
+	for roleName, def in pairs(roles) do
+		snapshot[roleName] = {
+			Nodes = table.clone(def.Nodes),
+			Inherits = table.clone(def.Inherits),
+		}
+	end
+	return snapshot
+end
+
 game:GetService("Players").PlayerRemoving:Connect(function(player: Player)
 	playerRoles[player.UserId] = nil
 	temporaryGrants[player.UserId] = nil

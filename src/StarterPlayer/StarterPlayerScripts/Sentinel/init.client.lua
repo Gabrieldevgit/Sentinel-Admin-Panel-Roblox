@@ -210,6 +210,7 @@ if sentinelUIFolder then
 		{ Name = "EconomyPage" },
 		{ Name = "DeveloperPage" },
 		{ Name = "NotificationCenter" },
+		{ Name = "SettingsPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -242,6 +243,7 @@ if sentinelUIFolder then
 	local economyPageModule = loadedModules.EconomyPage
 	local developerPageModule = loadedModules.DeveloperPage
 	local notificationCenterModule = loadedModules.NotificationCenter
+	local settingsPageModule = loadedModules.SettingsPage
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -265,6 +267,7 @@ if sentinelUIFolder then
 		local EconomyPage = require(economyPageModule)
 		local DeveloperPage = require(developerPageModule)
 		local NotificationCenter = require(notificationCenterModule)
+		local SettingsPage = require(settingsPageModule)
 
 		Shell.Init()
 		CommandPalette.Init()
@@ -277,10 +280,11 @@ if sentinelUIFolder then
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
+		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
 
 		-- Placeholder pages for sections not built yet — keeps the sidebar
 		-- fully navigable while each section gets its real content later.
-		for _, id in ipairs({ "Commands", "Analytics", "Settings" }) do
+		for _, id in ipairs({ "Commands", "Analytics" }) do
 			local page = Shell.RegisterPage(id, id, "")
 			local label = Instance.new("TextLabel")
 			label.BackgroundTransparency = 1
