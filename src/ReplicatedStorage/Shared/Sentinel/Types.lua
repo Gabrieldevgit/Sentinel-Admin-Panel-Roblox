@@ -98,6 +98,7 @@ export type CommandContext = {
 	ParsedQuantity: ParsedQuantity?,
 	Arguments: { string },
 	RawInput: string,
+	CommandName: string?, -- name or alias the executor typed (lowercased)
 }
 
 export type CommandResult = {

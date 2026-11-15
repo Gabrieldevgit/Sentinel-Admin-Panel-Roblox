@@ -94,6 +94,7 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 			Modifier = ctxModifier,
 			Arguments = ctxArguments,
 			RawInput = current.RawInput,
+			CommandName = current.CommandName, -- the name or alias as typed (lowercased), e.g. "superfling"
 		}
 
 		local result = CommandRegistry.Dispatch(def, executor, ctx)

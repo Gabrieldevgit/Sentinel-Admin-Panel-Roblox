@@ -54,21 +54,25 @@ type EconomyRecord = {
 local DEFAULT_RECORD: EconomyRecord = { Coins = 0, Gems = 0, XP = 0, Level = 1 }
 
 local function ensureLeaderstats(player: Player): Folder
+	-- Another game script (e.g. a DataHandler) may already have created
+	-- leaderstats. Reuse it, but always make sure our stats exist inside it —
+	-- returning a folder without them made every grant a silent no-op.
 	local leaderstats = player:FindFirstChild("leaderstats") :: Folder?
-	if leaderstats then
-		return leaderstats
+	if not leaderstats then
+		leaderstats = Instance.new("Folder")
+		leaderstats.Name = "leaderstats"
+		leaderstats.Parent = player
 	end
-	leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player
 
 	for _, name in ipairs({ "Coins", "Gems", "Level", "XP" }) do
-		local value = Instance.new("IntValue")
-		value.Name = name
-		value.Parent = leaderstats
+		if not leaderstats:FindFirstChild(name) then
+			local value = Instance.new("IntValue")
+			value.Name = name
+			value.Parent = leaderstats
+		end
 	end
 
-	return leaderstats
+	return leaderstats :: Folder
 end
 
 local function loadRecord(player: Player): EconomyRecord
@@ -82,16 +86,22 @@ local function loadRecord(player: Player): EconomyRecord
 end
 
 local function saveRecord(player: Player)
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if not leaderstats then
-		return
+	local function read(name: string): number?
+		for _, child in ipairs(player:GetChildren()) do
+			if child.Name == "leaderstats" then
+				local stat = child:FindFirstChild(name)
+				if stat and stat:IsA("IntValue") then
+					return stat.Value
+				end
+			end
+		end
+		return nil
 	end
-	local record: EconomyRecord = {
-		Coins = (leaderstats:FindFirstChild("Coins") :: IntValue).Value,
-		Gems = (leaderstats:FindFirstChild("Gems") :: IntValue).Value,
-		XP = (leaderstats:FindFirstChild("XP") :: IntValue).Value,
-		Level = (leaderstats:FindFirstChild("Level") :: IntValue).Value,
-	}
+	local coins, gems, xp, level = read("Coins"), read("Gems"), read("XP"), read("Level")
+	if coins == nil or gems == nil or xp == nil or level == nil then
+		return -- stats never got created; don't overwrite saved data with zeros
+	end
+	local record: EconomyRecord = { Coins = coins, Gems = gems, XP = xp, Level = level }
 	local ok, err = pcall(function()
 		EconomyStore:SetAsync(tostring(player.UserId), record)
 	end)
@@ -128,6 +138,17 @@ task.spawn(function()
 end)
 
 local function getStat(player: Player, statName: string): IntValue?
+	-- Search every leaderstats folder, not just the first: a duplicate folder
+	-- from another script must not hide our stats.
+	for _, child in ipairs(player:GetChildren()) do
+		if child.Name == "leaderstats" then
+			local stat = child:FindFirstChild(statName)
+			if stat and stat:IsA("IntValue") then
+				return stat
+			end
+		end
+	end
+	ensureLeaderstats(player)
 	local leaderstats = player:FindFirstChild("leaderstats")
 	return leaderstats and (leaderstats:FindFirstChild(statName) :: IntValue?)
 end
