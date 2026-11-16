@@ -182,16 +182,19 @@ Rules that keep it sound:
   `;hint`, alias variants (`superfling`, `bigexplosion`), fly + bottom-right
   fly menu (Deactivate / Noclip toggle / Close), mute/unmute/timed mute,
   panel drag from the whole top bar (clamped on-screen).
-- Committed on `main`: `527f146` (boot crash, Gems, utility commands),
-  `b73b056` (fly, fly menu, mute, drag). Not pushed.
-- Uncommitted: lots of the user's own in-progress work (README, UIBridge,
-  pages, `Commands/Movement/Teleport.lua`, `Commands/Player/*`, new UI
-  pages, `reference/PHASE7-KNOWN-ISSUES.md`), plus this `HANDOFF.md`.
+- On `main` and pushed to GitHub: `527f146` (boot crash, Gems, utility
+  commands), `b73b056` (fly, fly menu, mute, drag), `0ea0146` (this
+  handoff + CLAUDE.md), `dad045a` (the user's Phase 7 in-progress work:
+  new pages, `Commands/Player/*`, `Teleport.lua`, `Config.lua`, feature
+  blueprint, README/known-issues updates). Working tree clean.
 - Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
   reuses an existing `leaderstats` folder. Saved as place version 82.
 - Feature blueprint: no items checked yet.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (later)** — Pushed the fix/handoff commits to GitHub;
+  committed and pushed the user's remaining in-progress work as `dad045a`.
 
 - **2026-11-15** — Fixed: server boot crash (duplicate alias `m` →
   `msg`), silent Gems grants (duplicate `leaderstats`), `/message` &
