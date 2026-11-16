@@ -79,6 +79,9 @@ local DeveloperService = require(Sentinel:WaitForChild("Systems"):WaitForChild("
 local ServerStateService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ServerStateService"))
 local ChatModerationService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ChatModerationService"))
 local EnvironmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild("EnvironmentService"))
+local CommandHistory = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandHistory"))
+local CommandLibraryService = require(Sentinel:WaitForChild("Systems"):WaitForChild("CommandLibraryService"))
+local ConfigService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ConfigService"))
 local NoteCommand = require(Sentinel:WaitForChild("Commands"):WaitForChild("Moderation"):WaitForChild("Note"))
 
 -- Session tab (Phase 7F) needs a join time, and nothing in Sentinel
@@ -152,6 +155,9 @@ local LIMITS: { [string]: { number } } = {
 	GetAutocompleteDataRemote = { 4, 1 },
 	PreviewCommandRemote = { 10, 5 },
 	GetPlayerListRemote = { 6, 2 },
+	GetCommandHistoryRemote = { 6, 2 },
+	GetCommandLibraryRemote = { 4, 1 },
+	UpdateCommandLibraryRemote = { 6, 1 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -278,7 +284,15 @@ bindInvoke(getCommandListRemote, function(player: Player)
 		if CommandPolicy.IsOwnerOnly(def) and not isOwner then
 			continue
 		end
+		if (def :: any).Hidden then
+			continue
+		end
+		local anyDef = def :: any
 		table.insert(list, {
+			Subcategory = anyDef.Subcategory,
+			Tags = anyDef.Tags,
+			Cancellable = anyDef.Cancellable == true,
+			CanUndo = type(anyDef.Undo) == "function" or (CommandHistory.InverseFor(def)) ~= nil,
 			Risk = CommandPolicy.GetRisk(def),
 			OwnerOnly = CommandPolicy.IsOwnerOnly(def),
 			Name = def.Name,
@@ -675,8 +689,67 @@ executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: any
 		return
 	end
 	local confirmed = type(options) == "table" and options.Confirmed == true
-	local results = CommandProcessor.Process(player, rawText, { Confirmed = confirmed })
+	-- The panel may send a typed prefix; strip one leading prefix char.
+	rawText = rawText:gsub("^%s+", "")
+	if ConfigService.MatchPrefix(rawText) then
+		rawText = rawText:sub(2)
+	end
+	local results = CommandProcessor.Process(player, rawText, { Confirmed = confirmed, Source = "panel" })
+	if isStaff(player) and results[1] and not (results[1].Message or ""):find("^Unknown command") then
+		CommandLibraryService.NoteRecent(player, rawText)
+	end
 	commandResultRemote:FireClient(player, results)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Command framework (W07): result history, undo/redo counts, running
+-- operations, and the personal command library (favorites, presets,
+-- templates, recent). Library writes are validated by the service.
+-- ---------------------------------------------------------------------------
+local getCommandHistoryRemote = getOrCreate("GetCommandHistoryRemote", "RemoteFunction") :: RemoteFunction
+local getCommandLibraryRemote = getOrCreate("GetCommandLibraryRemote", "RemoteFunction") :: RemoteFunction
+local updateCommandLibraryRemote = getOrCreate("UpdateCommandLibraryRemote", "RemoteFunction") :: RemoteFunction
+
+bindInvoke(getCommandHistoryRemote, function(player: Player, options: any)
+	if not isStaff(player) then
+		return nil
+	end
+	local clean: any = {}
+	if type(options) == "table" then
+		if type(options.Search) == "string" and #options.Search <= 60 then
+			clean.Search = options.Search
+		end
+		clean.Limit = clampCount(options.Limit, 50, 200)
+		clean.FailedOnly = options.FailedOnly == true
+	end
+	local undo, redo = CommandHistory.Counts(player)
+	local top = CommandHistory.PeekUndo(player)
+	local nextRedo = CommandHistory.PeekRedo(player)
+	return {
+		Entries = CommandHistory.Get(player, clean),
+		UndoCount = undo,
+		RedoCount = redo,
+		NextUndo = top and top.Input,
+		NextRedo = nextRedo and nextRedo.Input,
+		Running = CommandRegistry.ListRunning(player),
+	}
+end)
+
+bindInvoke(getCommandLibraryRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
+	local lib = CommandLibraryService.Get(player)
+	lib.Prefixes = ConfigService.GetPrefixes()
+	return lib
+end)
+
+bindInvoke(updateCommandLibraryRemote, function(player: Player, action: any, payload: any)
+	if not isStaff(player) or type(action) ~= "string" or #action > 20 then
+		return { Success = false, Message = "Not allowed." }
+	end
+	local ok, message = CommandLibraryService.Apply(player, action, payload)
+	return { Success = ok, Message = message }
 end)
 
 return true

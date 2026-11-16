@@ -99,6 +99,10 @@ export type CommandContext = {
 	Arguments: { string },
 	RawInput: string,
 	CommandName: string?, -- name or alias the executor typed (lowercased)
+	-- W07, set by CommandRegistry.Dispatch:
+	Track: ((label: string, cancel: () -> ()) -> any)?, -- register a cancellable operation
+	IsCancelled: (() -> boolean)?,
+	Source: string?, -- "chat" | "panel" | "undo" | "redo" | "preset" | ...
 }
 
 export type CommandResult = {
@@ -110,6 +114,11 @@ export type CommandResult = {
 	NeedsConfirmation: boolean?,
 	ConfirmId: string?,
 	Risk: string?,
+	-- W07, filled in by Dispatch / CommandProcessor
+	Command: string?,
+	DurationMs: number?,
+	Cancelled: boolean?,
+	HistoryId: number?,
 }
 
 export type CommandDefinition = {
@@ -135,6 +144,16 @@ export type CommandDefinition = {
 	Args: { any }?,
 	ArgHints: { [any]: any }?,
 	Examples: { string }?,
+	-- W07 framework metadata
+	Subcategory: string?,
+	Tags: { string }?,
+	Hidden: boolean?, -- registered but not listed in the palette / Commands page
+	Cancellable: boolean?, -- uses ctx.Track; ;cancel stops it
+	-- Undo: either the name of the command that reverses this one (run with
+	-- the same targets, modifier and arguments), or a function that undoes
+	-- it from the result's UndoData.
+	Inverse: string?,
+	Undo: ((ctx: CommandContext, result: CommandResult) -> CommandResult)?,
 	Execute: (ctx: CommandContext) -> CommandResult,
 }
 

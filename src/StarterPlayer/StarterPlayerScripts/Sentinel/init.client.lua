@@ -547,6 +547,8 @@ if sentinelUIFolder then
 		{ Name = "SettingsPage" },
 		{ Name = "RankManagementPage" },
 		{ Name = "ConfirmDialog" },
+		{ Name = "LibraryPage" },
+		{ Name = "CommandBuilder" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -584,6 +586,8 @@ if sentinelUIFolder then
 	local settingsPageModule = loadedModules.SettingsPage
 	local rankPageModule = loadedModules.RankManagementPage
 	local confirmDialogModule = loadedModules.ConfirmDialog
+	local libraryPageModule = loadedModules.LibraryPage
+	local commandBuilderModule = loadedModules.CommandBuilder
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -614,11 +618,15 @@ if sentinelUIFolder then
 
 		Shell.Init()
 		CommandPalette.Init()
+		local CommandBuilder = require(commandBuilderModule)
+		local LibraryPage = require(libraryPageModule)
+		CommandBuilder.Init(CommandPalette)
 
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
-		CommandsPage.Build(Shell.RegisterPage("Commands", "Commands", "📜"), CommandPalette)
+		CommandsPage.Build(Shell.RegisterPage("Commands", "Commands", "📜"), CommandPalette, CommandBuilder)
+		LibraryPage.Build(Shell.RegisterPage("Library", "Library", "📚"), CommandPalette, CommandBuilder)
 		EconomyPage.Build(Shell.RegisterPage("Economy", "Economy", "🪙"))
 		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))

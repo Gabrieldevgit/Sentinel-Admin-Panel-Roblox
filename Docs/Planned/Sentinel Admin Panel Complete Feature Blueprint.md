@@ -40,21 +40,21 @@ raycast.com
 
 
 Command execution
-- Chat commands with configurable prefixes (;, /, !, .).
+- ✅ Chat commands with configurable prefixes (;, /, !, .).
 - ✅ Graphical command palette.
 - Command bar.
 - ✅ Command aliases and shortcuts.
 - ✅ Command chaining and sequential execution.
 - Multiple target selection.
-- Command categories and subcategories.
+- ✅ Command categories and subcategories.
 - ✅ Permission-aware command visibility.
 - ✅ Command cooldowns.
-- Command cancellation where supported.
-- Undo and redo for reversible commands.
+- ✅ Command cancellation where supported.
+- ✅ Undo and redo for reversible commands.
 - ✅ Command execution preview.
-- Command result history.
+- ✅ Command result history.
 - Success, failure and permission-denied feedback.
-- Execution duration measurement.
+- ✅ Execution duration measurement.
 Intelligent autocomplete
 - ✅ Fuzzy command search.
 - ✅ Command name suggestions.
@@ -74,7 +74,7 @@ Intelligent autocomplete
 - ✅ Required and optional argument indicators.
 Advanced command intelligence
 - ✅ Live command parser.
-- Interactive command builder.
+- ✅ Interactive command builder.
 - Natural-language-to-command assistant.
 - Suggested commands based on context.
 - ✅ Command documentation viewer.
@@ -83,11 +83,11 @@ Advanced command intelligence
 - ✅ Risk indicators for destructive actions.
 - ✅ Preview of affected players.
 - ✅ Bulk-action confirmation.
-- Command templates.
-- Saved command presets.
-- Favorites.
-- Recently used commands.
-- Searchable history.
+- ✅ Command templates.
+- ✅ Saved command presets.
+- ✅ Favorites.
+- ✅ Recently used commands.
+- ✅ Searchable history.
 - ✅ Keyboard navigation.
 Developer command framework
 - Custom command registration through ModuleScripts.
@@ -95,14 +95,14 @@ Developer command framework
 - ✅ Custom argument/type API.
 - ✅ Custom validation functions.
 - ✅ Custom autocomplete providers.
-- Before-execution hooks.
-- After-execution hooks.
-- Middleware.
+- ✅ Before-execution hooks.
+- ✅ After-execution hooks.
+- ✅ Middleware.
 - Command grouping.
-- Command metadata.
+- ✅ Command metadata.
 - Command-specific permissions.
 - Developer-defined command categories.
-- Extensible command lifecycle.
+- ✅ Extensible command lifecycle.
 - Error handling and debugging support.
 Important: Custom command creation should be extremely easy. A developer should be able to add a ModuleScript, define its metadata and execution function, and have Sentinel discover it automatically.
 2. Permissions & Rank Management

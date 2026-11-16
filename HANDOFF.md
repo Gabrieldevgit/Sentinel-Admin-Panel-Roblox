@@ -4,8 +4,9 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-16 (W06 session) — W06 palette II built,
-verified in Play, committed and pushed. Start with §6 "Next session"._
+_Last updated: 2026-11-16 (W07 session) — W07 command framework built and
+verified in Play; **not committed yet** (user commits on request). Start
+with §6 "Next session"._
 
 ---
 
@@ -112,7 +113,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete, 50 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework, 57 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -157,6 +158,54 @@ Control" UI, all driven by one command grammar
   The palette input draws a highlighted RichText copy under a transparent
   TextBox plus its own caret (`InputHolder.Caret`); it falls back to the
   plain TextBox once the text overflows the box.
+- **W07 command framework:**
+  - `CommandRegistry.AddHook("Before"|"After", fn, name)` and
+    `CommandRegistry.Use(middleware, name)` (both return a remover). Before
+    hooks returning a string cancel the command (`result.Cancelled`).
+    Middleware is `fn(def, ctx, nextFn)`, first registered = outermost.
+    Every result gets `Command` + `DurationMs`.
+  - Cancellation: a long-running command calls `ctx.Track(label, cancelFn)`
+    (handle `.Finish()` when done) and sets `Cancellable = true`; `;cancel`
+    runs `CommandRegistry.CancelRunning` and drops a pending `;confirm`.
+    Only `countdown` uses it so far.
+  - Undo/redo: `Core/CommandHistory` (per player, in memory, 200 entries;
+    undo/redo stacks of 30). A command is undoable via `def.Undo(ctx,
+    result)` (custom; `ban` restores the previous ban record), or
+    `def.Inverse = "<cmd>"`, or the `INVERSES` default table in
+    CommandHistory (freeze/unfreeze, mute, jail, effects; currency, xp and
+    items keep their args; speed -> resetspeed, ...).
+    `CommandProcessor.Undo/Redo` re-enter `Dispatch` (permissions, logging
+    and hooks apply). `NoHistory = true` keeps undo/redo/history out of
+    history.
+  - `Process(executor, text, { Source = "chat"|"panel"|"preset"|... })`.
+  - `Systems/ConfigService`: in-game server settings, DataStore
+    `Sentinel_Config_v1` key `Global`, MessagingService topic
+    `SentinelConfig`. Holds `Prefixes` (allowed `; : ! . / - ? >`); a
+    prefix only triggers when a letter follows. **W08 should extend this
+    service** for the rest of the admin config.
+  - `Systems/CommandLibraryService`: per-staff Favorites / Presets /
+    Templates / Recent, DataStore `Sentinel_CommandLibrary_v1` (key UserId,
+    debounced save after 6 s and on leave). Built-in templates live there.
+    Templates use `{name}`, `{name:type}`, `{name?}`; values can't inject
+    `&&`. A chat `;preset save` can't contain `&&` (chat splits it); the
+    panel can save chains.
+  - Commands (`Commands/Server/Framework.lua`): `;undo` (z), `;redo` (y),
+    `;history [search]`, `;cancel` (stop), `;prefix list|add|remove|set|
+    reset` (node `config.prefix`, Owner via `*`), `;preset` (pre),
+    `;template` (tpl), `;favorite` (fav). The rest need `panel.open`.
+  - New def metadata: `Subcategory`, `Tags`, `Hidden`, `Cancellable`,
+    `Inverse`, `Undo`, `NoHistory` (see Types.lua).
+  - Remotes: `GetCommandHistoryRemote`, `GetCommandLibraryRemote`,
+    `UpdateCommandLibraryRemote`; `GetCommandListRemote` also sends
+    `Subcategory`, `CanUndo`, `Cancellable` and skips `Hidden` commands.
+  - UI: `LibraryPage.lua` (sidebar "Library": History / Presets /
+    Templates / Favorites tabs plus an Undo / Redo / Cancel / Build
+    toolbar), `CommandBuilder.lua` (modal form from Args or template
+    placeholders: chips, validation, live line, dry-run preview, Run /
+    Open in palette / Save preset). Commands page cards have a star and
+    Build. Palette empty state: recent (seeded from the persisted Recent
+    list), presets, starred favorites first. The sidebar is now a
+    ScrollingFrame (12 pages).
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -258,6 +307,20 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **Test account warnings:** the Studio test account (`gabrielethangame`)
+  has 4 stored warnings (`Sentinel_Warnings_v1`). One more `;warn` on
+  yourself triggers the 5-warning auto-ban (happened once in W07 through
+  the "Spam warning" template; that ban and that warning were removed).
+  Don't test `warn` on yourself, or clear the warnings first.
+- W07 leftovers: history lives in server memory (only the palette's
+  "Recent" lines persist); only `countdown` is cancellable; undo needs the
+  targets still in the server (except `ban`); a ban's `ExpiresAt =
+  math.huge` may not serialize to the DataStore (pre-existing, check in
+  W13). Unicode arrows and the multiplication-sign X don't render in
+  Gotham: use plain text on buttons.
+- `UIListLayout` defaults to **Name** sort order: set `SortOrder =
+  LayoutOrder` (the `make` helper in LibraryPage/CommandBuilder does it).
+
 - `reference/PHASE7-KNOWN-ISSUES.md` is the detailed Phase 7 bug list.
   Still open there: ServerPage preset rows don't wrap (#1). #5 (palette
   shortcut + ghost text) was rebuilt in W05 and Ctrl+Shift+P works with
@@ -317,55 +380,56 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests 36/36.
-- **W01–W06 are done** (pulled forward, built 2026-11-15/16), except the
-  unverified items in §5. Everything is committed and pushed to `main`
-  (latest commit: "W06: palette II…").
-- **Schedule position:** the next item is **W07 — Command framework**
-  (configurable prefixes, before/after hooks, middleware, cancellation,
-  undo/redo, duration measurement, result history, templates, presets,
-  command builder). W07 was scheduled for Jan 2–3, so the project is about
-  **6 weekends ahead**. Rows in
-  [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
-  keep their dates; just continue with the next undone row.
-- Testing-place state: rank data is back to the 6 default ranks (history
-  kept). Studio-only change (not in repo): `ServerScriptService.Datastore.
-  DataHandler` reuses an existing `leaderstats` folder (place version 82).
-- Feature blueprint: **145 bullets ✅** — W06 6 (inline syntax
-  highlighting, live parser, execution preview, affected-player preview,
-  docs viewer, usage examples), W05 21 (graphical palette,
-  fuzzy/name/alias suggestions, live players with avatars + display names,
-  team/rank/argument/duration/numeric suggestions, custom types + custom
-  validation + custom autocomplete providers, context-aware suggestions,
-  ghost text, inline validation, arg descriptions, required/optional
-  markers, permission shown before execution, keyboard navigation), W01 73 (command aliases/chaining/
-  cooldowns, player actions, effects, moderation basics, lock/maintenance,
-  announcement, currency/XP/level), W02 30 (rank CRUD/templates/hierarchy/
-  inheritance/expiry, nodes/wildcards/history, UserId/username/group/
-  group-role/creator/temporary assignment, owner protection, no
-  self-demotion), W03 5 (explicit deny, permission search/presets/editor/
-  preview), W04 10 (command visibility, risk indicators, bulk confirmation,
-  server-authoritative execution, permission checks, validation, rate
-  limiting, cooldowns, destructive-action confirmation, no client-trusted
-  permissions).
+- Sentinel server and client boot cleanly in Play. Unit tests **57/57**
+  (new `Framework.spec`: hooks, middleware, cancel, undo/redo, templates,
+  prefixes).
+- **W01-W07 are done** (pulled forward, built 2026-11-15/16), except the
+  unverified items in §5. W01-W06 are committed and pushed; **W07 is
+  uncommitted** in the working tree (ask the user before committing).
+- **Schedule position:** next is **W08 - Settings integration** (themes,
+  keybinds, admin config through `ConfigService`, per-admin prefs
+  `Sentinel_Prefs_v1`, load `InGameSettingsPage.lua`). About 7 weekends
+  ahead of the dates in
+  [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
+  keep the dates, just continue with the next undone row.
+- Testing-place state: 6 default ranks; prefixes reset to `;`; the test
+  account's library only holds recent lines (test preset and favorites
+  removed). Studio-only change (not in repo): `ServerScriptService.
+  Datastore.DataHandler` reuses an existing `leaderstats` folder.
+- Feature blueprint: **162 bullets ✅**: W07 17 (configurable prefixes,
+  categories + subcategories, cancellation, undo/redo, result history,
+  duration measurement, interactive command builder, templates, saved
+  presets, favorites, recently used, searchable history, before/after
+  hooks, middleware, command metadata, extensible lifecycle), W06 6, W05
+  21, W04 10, W03 5, W02 30, W01 73.
 
-### Next session — open items to raise with the user
+### Next session - open items to raise with the user
 
-1. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
-   is redundant and logs `unknown role 'Owner'` at boot. The user can
-   delete it in Studio (it isn't in the repo); ask before touching it.
-2. **Two-player test session** (Studio *Test > Clients and Servers*, 2
-   clients, give one a lower rank such as Moderator). Covers: rank
-   protection in real commands (can't target equal/higher), hidden pages
-   (`!page.<id>`), the view-only Ranks page, the Owner-only refusal,
-   bulk confirmation with real targets, permission-denied feedback,
-   multi-player targeting and the Staff Online count. Tick the matching
-   blueprint bullets once verified.
-3. **Live-server check**: text censoring (Studio doesn't filter text).
-4. Scaffold `src/client`, `src/server`, `src/shared` — ask whether to delete.
-5. Then start **W07**.
+1. **Commit W07** if the user agrees.
+2. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
+   is redundant and logs `unknown role 'Owner'` at boot. Ask before
+   touching it.
+3. **Two-player test session** (Studio *Test > Clients and Servers*, 2
+   clients, one with a lower rank): rank protection, hidden pages,
+   view-only Ranks page, Owner-only refusal, bulk confirmation, permission-
+   denied feedback, multi-player targeting, Staff Online count.
+4. **Live-server check**: text censoring (Studio doesn't filter text).
+5. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
+6. Then start **W08**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-16 (W07)** - Command framework: hooks, middleware,
+  cancellation and timing in `CommandRegistry`; `Core/CommandHistory`
+  with undo/redo (`;undo`, `;redo`, inverse table, custom `ban` undo);
+  `Systems/ConfigService` (chat prefixes, `;prefix`);
+  `Systems/CommandLibraryService` (favorites, presets, templates,
+  persisted recent); `Commands/Server/Framework.lua`; UIBridge remotes;
+  Library page; command builder; palette presets / favorites / recent;
+  Commands page star + Build; scrollable sidebar. Fixed while testing:
+  alias `run` collided with `execute` (aborted part of command loading),
+  so the preset alias is `pre`. Tests 57/57; verified in Play by remote,
+  real chat (`!heal me`), mouse and keyboard. ✅ 17 bullets. Not committed.
 
 - **2026-11-16 (W06)** — Palette II: syntax-highlighted input (own caret),
   live parse line, server dry-run preview (players with avatars, rank

@@ -58,9 +58,13 @@ function BanCommand.GetActiveBan(userId: number): BanRecord?
 	return record :: BanRecord
 end
 
-local function setBan(userId: number, record: BanRecord)
+local function setBan(userId: number, record: BanRecord?)
 	local ok, err = pcall(function()
-		BanStore:SetAsync(tostring(userId), record)
+		if record then
+			BanStore:SetAsync(tostring(userId), record)
+		else
+			BanStore:RemoveAsync(tostring(userId))
+		end
 	end)
 	if not ok then
 		warn(("[Sentinel.Ban] failed to persist ban for %d: %s"):format(userId, tostring(err)))
@@ -98,9 +102,11 @@ CommandRegistry.Register({
 		local expiresAt = if duration.IsPermanent then math.huge else issuedAt + duration.Seconds
 
 		local previousRecords: { [number]: BanCommand.BanRecord? } = {}
+		local bannedIds: { number } = {}
 
 		for _, target in ipairs(ctx.Targets) do
 			previousRecords[target.UserId] = BanCommand.GetActiveBan(target.UserId)
+			table.insert(bannedIds, target.UserId)
 
 			local record: BanCommand.BanRecord = {
 				BannedBy = ctx.Executor.UserId,
@@ -121,9 +127,19 @@ CommandRegistry.Register({
 				if duration.IsPermanent then "permanently" else "for " .. duration.Raw
 			),
 			Undoable = true,
-			UndoData = previousRecords,
+			UndoData = { UserIds = bannedIds, Previous = previousRecords },
 		}
 	end,
-})
+	-- ;undo restores each player's previous ban record (or lifts the ban).
+	-- The banned players were kicked, so this works without them in game.
+	Undo = function(_ctx: Types.CommandContext, result: Types.CommandResult): Types.CommandResult
+		local data = result.UndoData or {}
+		for _, userId in ipairs(data.UserIds or {}) do
+			setBan(userId, (data.Previous or {})[userId])
+			EventBus.Publish("Player.Unbanned", userId)
+		end
+		return { Success = true, Message = ("Lifted the ban on %d player(s)."):format(#(data.UserIds or {})) }
+	end,
+} :: any)
 
 return BanCommand

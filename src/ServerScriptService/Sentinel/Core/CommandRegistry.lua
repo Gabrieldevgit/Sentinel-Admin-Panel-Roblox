@@ -26,7 +26,26 @@
 		CommandRegistry.Resolve(nameOrAlias: string): CommandDefinition?
 		CommandRegistry.ListByCategory(category: string): {CommandDefinition}
 		CommandRegistry.All(): {CommandDefinition}
-		CommandRegistry.Dispatch(executor: Player, ctx: CommandContext): CommandResult
+		CommandRegistry.Dispatch(def, executor, ctx): CommandResult
+
+	Lifecycle (W07), in Dispatch order:
+		1. permission + owner-only + cooldown checks
+		2. Before hooks   fn(def, ctx) -> string?   a string cancels the
+		   command (result.Cancelled = true, Message = that string)
+		3. middleware     fn(def, ctx, nextFn) -> CommandResult, outermost
+		   first; call nextFn() to continue, or return your own result
+		4. def.Execute(ctx)
+		5. After hooks    fn(def, ctx, result) (errors are caught)
+		Every result gets Command and DurationMs (Execute + middleware time).
+
+		CommandRegistry.AddHook("Before" | "After", fn, name?) -> remove()
+		CommandRegistry.Use(middleware, name?) -> remove()
+		CommandRegistry.ListHooks() -> { Before = {names}, After, Middleware }
+
+	Cancellation: long-running commands call ctx.Track(label, cancelFn)
+	and get back a handle with :Finish(); ;cancel calls
+	CommandRegistry.CancelRunning(player), which runs every cancelFn the
+	player still has open. ctx.IsCancelled() reports it inside loops.
 
 	Example usage:
 		CommandRegistry.Register({
@@ -64,6 +83,95 @@ local byName: { [string]: CommandDefinition } = {}
 local byAlias: { [string]: string } = {} -- alias -> canonical name
 local byCategory: { [string]: { CommandDefinition } } = {}
 local cooldowns: { [string]: number } = {} -- "userId:command" -> expiry time
+
+type Hook = { Name: string, Fn: any }
+local beforeHooks: { Hook } = {}
+local afterHooks: { Hook } = {}
+local middlewares: { Hook } = {}
+
+local function addTo(list: { Hook }, fn: any, name: string?): () -> ()
+	assert(type(fn) == "function", "hook must be a function")
+	local hook = { Name = name or ("hook" .. tostring(#list + 1)), Fn = fn }
+	table.insert(list, hook)
+	return function()
+		local i = table.find(list, hook)
+		if i then
+			table.remove(list, i)
+		end
+	end
+end
+
+function CommandRegistry.AddHook(kind: string, fn: any, name: string?): () -> ()
+	if kind == "Before" then
+		return addTo(beforeHooks, fn, name)
+	elseif kind == "After" then
+		return addTo(afterHooks, fn, name)
+	end
+	error("hook kind must be 'Before' or 'After'")
+end
+
+function CommandRegistry.Use(middleware: any, name: string?): () -> ()
+	return addTo(middlewares, middleware, name)
+end
+
+function CommandRegistry.ListHooks(): { [string]: { string } }
+	local function names(list: { Hook })
+		local out = {}
+		for _, h in ipairs(list) do
+			table.insert(out, h.Name)
+		end
+		return out
+	end
+	return { Before = names(beforeHooks), After = names(afterHooks), Middleware = names(middlewares) }
+end
+
+-- Running (cancellable) operations, per player.
+type Operation = { Id: number, Command: string, Label: string, Started: number, Cancel: () -> (), Cancelled: boolean }
+local running: { [number]: { Operation } } = {}
+local nextOpId = 0
+
+local function trackOperation(userId: number, command: string, label: string, cancel: () -> ())
+	nextOpId += 1
+	local op: Operation = { Id = nextOpId, Command = command, Label = label, Started = os.clock(), Cancel = cancel, Cancelled = false }
+	running[userId] = running[userId] or {}
+	table.insert(running[userId], op)
+	local handle = {}
+	function handle.Finish()
+		local list = running[userId]
+		local i = list and table.find(list, op)
+		if i then
+			table.remove(list :: any, i)
+		end
+	end
+	function handle.IsCancelled(): boolean
+		return op.Cancelled
+	end
+	return handle, op
+end
+
+function CommandRegistry.ListRunning(player: Player): { { Command: string, Label: string, Seconds: number } }
+	local out = {}
+	for _, op in ipairs(running[player.UserId] or {}) do
+		table.insert(out, { Command = op.Command, Label = op.Label, Seconds = math.floor(os.clock() - op.Started) })
+	end
+	return out
+end
+
+-- Cancels every running operation the player started; returns how many.
+function CommandRegistry.CancelRunning(player: Player): number
+	local list = running[player.UserId]
+	running[player.UserId] = nil
+	local n = 0
+	for _, op in ipairs(list or {}) do
+		op.Cancelled = true
+		local ok, err = pcall(op.Cancel)
+		if not ok then
+			warn(("[Sentinel.CommandRegistry] cancel of '%s' failed: %s"):format(op.Command, tostring(err)))
+		end
+		n += 1
+	end
+	return n
+end
 
 local function validate(def: CommandDefinition)
 	assert(type(def.Name) == "string" and #def.Name > 0, "CommandDefinition.Name is required")
@@ -202,17 +310,59 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 		return { Success = false, Message = "That command is on cooldown." }
 	end
 
+	-- Cancellation support for long-running commands.
+	local ctxAny = ctx :: any
+	local cancelledFlag = false
+	ctxAny.Track = function(label: string, cancelFn: () -> ())
+		local handle, op = trackOperation(executor.UserId, def.Name, label, function()
+			cancelledFlag = true
+			cancelFn()
+		end)
+		return handle, op
+	end
+	ctxAny.IsCancelled = function(): boolean
+		return cancelledFlag
+	end
+
+	-- Before hooks may cancel.
+	for _, hook in ipairs(beforeHooks) do
+		local ok, why = pcall(hook.Fn, def, ctx)
+		if not ok then
+			warn(("[Sentinel.CommandRegistry] before-hook '%s' errored: %s"):format(hook.Name, tostring(why)))
+		elseif type(why) == "string" then
+			local cancelled = { Success = false, Cancelled = true, Message = why, Command = def.Name, DurationMs = 0 }
+			EventBus.Publish("Command.Cancelled", def, executor, ctx, why)
+			return cancelled :: any
+		end
+	end
+
+	-- Middleware chain around Execute (outermost = first registered).
+	local function runAt(i: number): CommandResult
+		local mw = middlewares[i]
+		if not mw then
+			return def.Execute(ctx)
+		end
+		return mw.Fn(def, ctx, function()
+			return runAt(i + 1)
+		end)
+	end
+
 	local startClock = os.clock()
-	local ok, resultOrErr = pcall(def.Execute, ctx)
+	local ok, resultOrErr = pcall(runAt, 1)
 	local elapsedMs = (os.clock() - startClock) * 1000
 
 	local result: CommandResult
-	if ok then
+	if ok and type(resultOrErr) == "table" then
 		result = resultOrErr :: CommandResult
+	elseif ok then
+		result = { Success = false, Message = "Command returned no result." }
 	else
 		result = { Success = false, Message = "Internal error executing command." }
 		warn(("[Sentinel.CommandRegistry] '%s' errored: %s"):format(def.Name, tostring(resultOrErr)))
 	end
+	local resultAny = result :: any
+	resultAny.Command = def.Name
+	resultAny.DurationMs = math.floor(elapsedMs * 100 + 0.5) / 100
 
 	if def.Log then
 		local targetNames = {}
@@ -230,6 +380,13 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 			ExecutionTimeMs = elapsedMs,
 			Message = result.Message,
 		})
+	end
+
+	for _, hook in ipairs(afterHooks) do
+		local hookOk, err = pcall(hook.Fn, def, ctx, result)
+		if not hookOk then
+			warn(("[Sentinel.CommandRegistry] after-hook '%s' errored: %s"):format(hook.Name, tostring(err)))
+		end
 	end
 
 	EventBus.Publish("Command.AfterExecute", def, executor, ctx, result)

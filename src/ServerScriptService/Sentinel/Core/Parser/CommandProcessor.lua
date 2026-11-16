@@ -32,6 +32,9 @@
 		CommandProcessor.ConfirmPending(executor, id?): {CommandResult}
 		CommandProcessor.SetTargetFilter(fn)
 		CommandProcessor.Preview(executor, rawInput): {preview} (dry run)
+		CommandProcessor.Undo(executor) / Redo(executor): CommandResult (W07)
+		CommandProcessor.CancelPending(executor): boolean (W07)
+		options.Source = "chat" | "panel" | "preset" | ... (shown in history)
 
 	Risky commands (see Core/CommandPolicy) don't run straight away: the
 	result has NeedsConfirmation = true and a ConfirmId, and the rest of
@@ -51,6 +54,7 @@ local TargetResolver = require(script.Parent:WaitForChild("TargetResolver"))
 local CommandRegistry = require(script.Parent.Parent:WaitForChild("CommandRegistry"))
 local CommandPolicy = require(script.Parent.Parent:WaitForChild("CommandPolicy"))
 local PermissionSystem = require(script.Parent.Parent:WaitForChild("PermissionSystem"))
+local CommandHistory = require(script.Parent.Parent:WaitForChild("CommandHistory"))
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
@@ -87,9 +91,10 @@ local function remainingChain(link: ParsedCommand?): string
 	return table.concat(parts, " && ")
 end
 
-function CommandProcessor.Process(executor: Player, rawInput: string, options: { Confirmed: boolean? }?): { CommandResult }
+function CommandProcessor.Process(executor: Player, rawInput: string, options: { Confirmed: boolean?, Source: string? }?): { CommandResult }
 	local results: { CommandResult } = {}
 	local confirmed = options ~= nil and options.Confirmed == true
+	local source = (options and options.Source) or "panel"
 
 	local chain = CommandParser.ParseLine(rawInput)
 	if not chain then
@@ -175,12 +180,14 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 			Arguments = ctxArguments,
 			RawInput = current.RawInput,
 			CommandName = current.CommandName, -- the name or alias as typed (lowercased), e.g. "superfling"
+			Source = source,
 		}
 
 		local result = CommandRegistry.Dispatch(def, executor, ctx)
 		if blocked > 0 and result.Message then
 			result.Message ..= (" (skipped %d player(s) ranked equal to or above you)"):format(blocked)
 		end
+		CommandHistory.Record(executor, def, ctx, result, source)
 		table.insert(results, result)
 
 		if not result.Success then
@@ -267,7 +274,124 @@ function CommandProcessor.ConfirmPending(executor: Player, id: string?): { Comma
 		return { { Success = false, Message = "That confirmation is no longer pending." } }
 	end
 	pendingConfirmations[executor.UserId] = nil
-	return CommandProcessor.Process(executor, pending.RawInput, { Confirmed = true })
+	return CommandProcessor.Process(executor, pending.RawInput, { Confirmed = true, Source = "confirm" })
+end
+
+-- Drops the player's pending confirmation (;cancel). Returns true if there was one.
+function CommandProcessor.CancelPending(executor: Player): boolean
+	local had = pendingConfirmations[executor.UserId] ~= nil
+	pendingConfirmations[executor.UserId] = nil
+	return had
+end
+
+-- ---------------------------------------------------------------------------
+-- Undo / redo (W07). Both re-enter CommandRegistry.Dispatch, so the inverse
+-- command is permission-checked, logged and hooked like any other.
+-- ---------------------------------------------------------------------------
+local function stillHere(targets: { Player }): { Player }
+	local out = {}
+	for _, p in ipairs(targets) do
+		if p.Parent == Players then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
+local function runResolved(executor: Player, def: any, targets: { Player }, modifier: string?, args: { string }, raw: string, source: string): CommandResult
+	if def.RequiresTarget and targetFilter and def.TargetProtection ~= false then
+		targets = targetFilter(executor, def, targets)
+	end
+	if def.RequiresTarget and #targets == 0 then
+		return { Success = false, Message = ("%s: none of those players are here any more."):format(def.Name) }
+	end
+	local ctx: any = {
+		Executor = executor,
+		Targets = targets,
+		Modifier = modifier,
+		Arguments = args,
+		RawInput = raw,
+		CommandName = def.Name,
+		Source = source,
+	}
+	local result = CommandRegistry.Dispatch(def, executor, ctx)
+	CommandHistory.Record(executor, def, ctx, result, source)
+	return result
+end
+
+local function targetText(targets: { Player }): string
+	local names = {}
+	for _, p in ipairs(targets) do
+		table.insert(names, p.Name)
+	end
+	return table.concat(names, ",")
+end
+
+function CommandProcessor.Undo(executor: Player): CommandResult
+	local record = CommandHistory.PeekUndo(executor)
+	if not record then
+		return { Success = false, Message = "Nothing to undo." }
+	end
+	local def = record.Def
+	local targets = stillHere(record.Targets)
+	local result: CommandResult
+	if type(def.Undo) == "function" then
+		-- Custom undo: wrapped in a one-off definition so Dispatch still
+		-- checks the original command's permission and logs it.
+		local undoDef: any = {
+			Name = def.Name .. ".undo",
+			Aliases = {},
+			Permission = def.Permission,
+			Category = def.Category,
+			Log = true,
+			Undoable = false,
+			TargetProtection = false,
+			Execute = function(ctx)
+				return def.Undo(ctx, record.Result)
+			end,
+		}
+		result = runResolved(executor, undoDef, targets, record.Modifier, record.Arguments, "undo " .. record.Input, "undo")
+	else
+		local inverseName, keepArgs = CommandHistory.InverseFor(def)
+		local inverse = inverseName and CommandRegistry.Resolve(inverseName)
+		if not inverse then
+			CommandHistory.DropUndo(executor, record)
+			return { Success = false, Message = ("%s can't be undone."):format(def.Name) }
+		end
+		local raw = ("%s %s"):format(inverse.Name, targetText(targets))
+		result = runResolved(
+			executor,
+			inverse,
+			targets,
+			if keepArgs then record.Modifier else nil,
+			if keepArgs then record.Arguments else {},
+			raw,
+			"undo"
+		)
+	end
+	if result.Success then
+		CommandHistory.MarkUndone(executor, record)
+		result.Message = ("Undid '%s'. %s"):format(record.Input, result.Message or "")
+	elseif result.Message and result.Message:find("none of those players", 1, true) then
+		CommandHistory.DropUndo(executor, record)
+	end
+	return result
+end
+
+function CommandProcessor.Redo(executor: Player): CommandResult
+	local record = CommandHistory.PeekRedo(executor)
+	if not record then
+		return { Success = false, Message = "Nothing to redo." }
+	end
+	local targets = stillHere(record.Targets)
+	local result = runResolved(executor, record.Def, targets, record.Modifier, record.Arguments, record.Input, "redo")
+	if result.Success then
+		CommandHistory.MarkRedone(executor, record)
+		result.Message = ("Redid '%s'. %s"):format(record.Input, result.Message or "")
+	else
+		CommandHistory.DropRedo(executor, record)
+	end
+	return result
 end
 
 return CommandProcessor

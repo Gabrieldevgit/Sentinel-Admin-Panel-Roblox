@@ -45,6 +45,7 @@ local NAV_ITEMS = {
 	{ Id = "Players", Label = "Players", Icon = "👥" },
 	{ Id = "Moderation", Label = "Moderation", Icon = "🛡" },
 	{ Id = "Commands", Label = "Commands", Icon = "📜" },
+	{ Id = "Library", Label = "Library", Icon = "📚" },
 	{ Id = "Economy", Label = "Economy", Icon = "💰" },
 	{ Id = "Server", Label = "Server", Icon = "🌎" },
 	{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
@@ -229,8 +230,14 @@ function Shell.Init(): ScreenGui
 	-- ------------------------------------------------------------------
 	-- Sidebar
 	-- ------------------------------------------------------------------
-	local sidebar = Instance.new("Frame")
+	-- Scrolls once there are more pages than fit (W07 added Library).
+	local sidebar = Instance.new("ScrollingFrame")
 	sidebar.Name = "Sidebar"
+	sidebar.ScrollBarThickness = 3
+	sidebar.ScrollBarImageColor3 = Theme.Colors.Border
+	sidebar.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	sidebar.CanvasSize = UDim2.new()
+	sidebar.ScrollingDirection = Enum.ScrollingDirection.Y
 	sidebar.Position = UDim2.new(0, 0, 0, 48)
 	sidebar.Size = UDim2.new(0, 190, 1, -48 - 28)
 	sidebar.BackgroundColor3 = Theme.Colors.Surface

@@ -83,6 +83,7 @@ CommandRegistry.Register({
 	Log = true,
 	Undoable = false,
 	RequiresTarget = false,
+	Cancellable = true, -- ;cancel stops it (W07)
 	Execute = function(ctx: Types.CommandContext): Types.CommandResult
 		local seconds = tonumber(ctx.Arguments[1])
 		if not seconds or seconds <= 0 or seconds > 300 then
@@ -97,10 +98,26 @@ CommandRegistry.Register({
 			label = filtered
 		end
 
+		local stopped = false
+		local handle = if ctx.Track
+			then ctx.Track(("countdown %ds"):format(seconds), function()
+				stopped = true
+				countdownRemote:FireAllClients("done", label, 0, seconds)
+			end)
+			else nil
 		task.spawn(function()
 			for remaining = seconds, 1, -1 do
+				if stopped then
+					return
+				end
 				countdownRemote:FireAllClients("tick", label, remaining, seconds)
 				task.wait(1)
+			end
+			if stopped then
+				return
+			end
+			if handle then
+				handle.Finish()
 			end
 			countdownRemote:FireAllClients("done", label, 0, seconds)
 		end)

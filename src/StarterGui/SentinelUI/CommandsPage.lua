@@ -12,7 +12,7 @@
 		Theme.lua
 
 	Public API:
-		CommandsPage.Build(container: Frame, commandPalette: any): ()
+		CommandsPage.Build(container: Frame, commandPalette: any, commandBuilder: any?): ()
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,10 +44,26 @@ local CATEGORIES = {
 	"Utility",
 }
 
-function CommandsPage.Build(container: Frame, commandPalette: any)
+function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilder: any?)
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 	local getCommandListRemote = SentinelShared:WaitForChild("GetCommandListRemote", 15) :: RemoteFunction?
 	local executeCommandRemote = SentinelShared:WaitForChild("ExecuteCommandRemote", 15) :: RemoteEvent?
+
+	-- W07: favorites, so cards can show a filled star.
+	local favorites: { [string]: boolean } = {}
+	task.spawn(function()
+		local libRemote = SentinelShared:WaitForChild("GetCommandLibraryRemote", 15) :: RemoteFunction?
+		if libRemote then
+			local ok, lib = pcall(function()
+				return (libRemote :: RemoteFunction):InvokeServer()
+			end)
+			if ok and type(lib) == "table" then
+				for _, name in ipairs(lib.Favorites or {}) do
+					favorites[name] = true
+				end
+			end
+		end
+	end)
 
 	local header = Instance.new("TextLabel")
 	header.BackgroundTransparency = 1
@@ -211,7 +227,8 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				catBadge.TextColor3 = Theme.Colors.TextSecondary
 				catBadge.AutomaticSize = Enum.AutomaticSize.X
 				catBadge.Size = UDim2.new(0, 0, 0, 16)
-				catBadge.Text = " " .. cmd.Category .. " "
+				local sub = (cmd :: any).Subcategory
+				catBadge.Text = " " .. cmd.Category .. (if sub then " › " .. sub else "") .. " "
 				catBadge.Parent = titleLine
 				Theme.corner(catBadge, UDim.new(0, 4))
 
@@ -219,7 +236,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				local descLbl = Instance.new("TextLabel")
 				descLbl.BackgroundTransparency = 1
 				descLbl.Position = UDim2.new(0, 0, 0, 22)
-				descLbl.Size = UDim2.new(1, -200, 0, 16)
+				descLbl.Size = UDim2.new(1, -340, 0, 16)
 				descLbl.Font = Theme.Font.Regular
 				descLbl.TextSize = 12
 				descLbl.TextColor3 = Theme.Colors.Text
@@ -232,7 +249,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				local usageLbl = Instance.new("TextLabel")
 				usageLbl.BackgroundTransparency = 1
 				usageLbl.Position = UDim2.new(0, 0, 0, 38)
-				usageLbl.Size = UDim2.new(1, -200, 0, 16)
+				usageLbl.Size = UDim2.new(1, -340, 0, 16)
 				usageLbl.Font = Theme.Font.Mono
 				usageLbl.TextSize = 11
 				usageLbl.TextColor3 = Theme.Colors.TextSecondary
@@ -256,7 +273,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				btnGroup.BackgroundTransparency = 1
 				btnGroup.AnchorPoint = Vector2.new(1, 0.5)
 				btnGroup.Position = UDim2.new(1, 0, 0.5, 0)
-				btnGroup.Size = UDim2.new(0, 190, 0, 30)
+				btnGroup.Size = UDim2.new(0, 330, 0, 30)
 				btnGroup.Parent = card
 
 				local btnLayout = Instance.new("UIListLayout")
@@ -265,6 +282,44 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 				btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 				btnLayout.Parent = btnGroup
+
+				-- Favorite toggle + interactive builder (W07)
+				local favBtn = Instance.new("TextButton")
+				favBtn.Name = "FavoriteButton"
+				favBtn.Size = UDim2.new(0, 28, 0, 26)
+				favBtn.BackgroundColor3 = Theme.Colors.Surface
+				favBtn.Font = Theme.Font.Medium
+				favBtn.TextSize = 14
+				favBtn.TextColor3 = Theme.Colors.Warning
+				favBtn.Text = if favorites[cmd.Name] then "★" else "☆"
+				favBtn.Parent = btnGroup
+				Theme.corner(favBtn, Theme.Radius.S)
+				favBtn.MouseButton1Click:Connect(function()
+					favorites[cmd.Name] = not favorites[cmd.Name] or nil
+					favBtn.Text = if favorites[cmd.Name] then "★" else "☆"
+					if executeCommandRemote then
+						executeCommandRemote:FireServer("favorite " .. cmd.Name)
+					end
+					if commandPalette and commandPalette.InvalidateLibrary then
+						commandPalette.InvalidateLibrary()
+					end
+				end)
+
+				local buildBtn = Instance.new("TextButton")
+				buildBtn.Name = "BuildButton"
+				buildBtn.Size = UDim2.new(0, 56, 0, 26)
+				buildBtn.BackgroundColor3 = Theme.Colors.Surface
+				buildBtn.Font = Theme.Font.Medium
+				buildBtn.TextSize = 11
+				buildBtn.TextColor3 = Theme.Colors.Text
+				buildBtn.Text = "Build"
+				buildBtn.Parent = btnGroup
+				Theme.corner(buildBtn, Theme.Radius.S)
+				buildBtn.MouseButton1Click:Connect(function()
+					if commandBuilder then
+						commandBuilder.Open({ Command = cmd.Name })
+					end
+				end)
 
 				-- Docs (W06): opens the palette's docs viewer for this command
 				local docsBtn = Instance.new("TextButton")

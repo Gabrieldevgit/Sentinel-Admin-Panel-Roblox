@@ -105,7 +105,10 @@ end)
 -- reserves several "/"-prefixed commands for itself (notably "/w" for
 -- whisper).
 -- ---------------------------------------------------------------------------
-local COMMAND_PREFIX = ";"
+-- Prefixes are configurable in game (;prefix, W07) via Systems/ConfigService.
+local ConfigService = require(Systems:WaitForChild("ConfigService"))
+local CommandLibraryService = require(Systems:WaitForChild("CommandLibraryService"))
+local PermissionSystem = require(Core:WaitForChild("PermissionSystem"))
 
 -- Both chat-issued and UI-issued commands now surface through the exact
 -- same remote, so Phase 7D's Notification Center (toasts + persistent
@@ -118,7 +121,7 @@ local RateLimiter = require(Core:WaitForChild("RateLimiter"))
 local chatCommandLimiter = RateLimiter.new("ChatCommands", 6, 2)
 
 local function handleCommandText(player: Player, text: string)
-	if text:sub(1, 1) ~= COMMAND_PREFIX or #text > 500 then
+	if #text > 500 or not ConfigService.MatchPrefix(text) then
 		return
 	end
 	local allowed, firstDrop = chatCommandLimiter:Allow(player)
@@ -128,7 +131,10 @@ local function handleCommandText(player: Player, text: string)
 		end
 		return
 	end
-	local results = CommandProcessor.Process(player, text:sub(2))
+	local results = CommandProcessor.Process(player, text:sub(2), { Source = "chat" })
+	if PermissionSystem.Has(player, "panel.open") and results[1] and not (results[1].Message or ""):find("^Unknown command") then
+		CommandLibraryService.NoteRecent(player, text:sub(2))
+	end
 	commandResultRemote:FireClient(player, results)
 	for _, result in ipairs(results) do
 		if result.Message then

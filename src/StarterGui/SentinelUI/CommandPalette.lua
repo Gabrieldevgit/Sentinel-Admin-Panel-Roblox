@@ -138,6 +138,31 @@ local function fetchCommandList(): { any }
 	return result
 end
 
+-- W07: the player's command library (favorites, presets, persisted recent).
+local libraryCache: any = nil
+local libraryFetchedAt = 0
+local function fetchLibrary(force: boolean?): any
+	if libraryCache and not force and os.clock() - libraryFetchedAt < 20 then
+		return libraryCache
+	end
+	local remote = SentinelShared:FindFirstChild("GetCommandLibraryRemote") :: RemoteFunction?
+	if not remote then
+		return libraryCache
+	end
+	local ok, result = pcall(function()
+		return remote:InvokeServer()
+	end)
+	if ok and type(result) == "table" then
+		libraryCache = result
+		libraryFetchedAt = os.clock()
+	end
+	return libraryCache
+end
+
+local function isFavorite(name: string): boolean
+	return libraryCache ~= nil and table.find(libraryCache.Favorites or {}, name) ~= nil
+end
+
 local function fetchAutocompleteData()
 	if autocompleteData and os.clock() - autocompleteFetchedAt < 30 then
 		return
@@ -692,14 +717,30 @@ function CommandPalette.Init()
 					table.insert(out, { Text = line, Label = line, Detail = "Recent", Whole = true } :: any)
 				end
 			end
+			-- W07: saved presets, then favorites, then everything else.
+			for _, preset in ipairs((libraryCache and libraryCache.Presets) or {}) do
+				local name = if preset.Name:find("%s") then ('"%s"'):format(preset.Name) else preset.Name
+				table.insert(out, {
+					Text = "preset " .. name,
+					Label = "▶ " .. preset.Name,
+					LabelColor = Theme.Colors.Accent,
+					Detail = "Preset: " .. preset.Text,
+					Whole = true,
+				} :: any)
+			end
+			local rest = {}
 			for _, meta in ipairs(cmds) do
 				local tag, tagColor = riskTag(meta)
-				table.insert(out, {
+				local fav = isFavorite(meta.Name)
+				table.insert(if fav then out else rest, {
 					Text = meta.Name,
-					Label = meta.Name .. tag,
+					Label = (if fav then "★ " else "") .. meta.Name .. tag,
 					LabelColor = tagColor,
 					Detail = meta.Description,
 				} :: any)
+			end
+			for _, entry in ipairs(rest) do
+				table.insert(out, entry)
 			end
 			return out
 		end
@@ -728,6 +769,9 @@ function CommandPalette.Init()
 			local meta = entry.Meta
 			local tag, tagColor = riskTag(meta)
 			local aliasNote = if entry.Via then ("  (alias %s)"):format(entry.Via) else ""
+			if isFavorite(meta.Name) then
+				aliasNote = "  ★" .. aliasNote
+			end
 			table.insert(out, {
 				-- Keep what the user typed if they're typing an alias.
 				Text = entry.Via or meta.Name,
@@ -1071,7 +1115,15 @@ function CommandPalette.Open(initialText: string?)
 		local hadCache = commandCache ~= nil
 		fetchCommandList()
 		fetchAutocompleteData()
-		if not hadCache and gui.Enabled then
+		local hadLibrary = libraryCache ~= nil
+		local lib = fetchLibrary()
+		-- Seed the session history from the persisted "Recent" list once.
+		if lib and #history == 0 and type(lib.Recent) == "table" then
+			for i = math.min(#lib.Recent, MAX_HISTORY), 1, -1 do
+				table.insert(history, lib.Recent[i])
+			end
+		end
+		if (not hadCache or not hadLibrary) and gui.Enabled then
 			CommandPalette._refresh()
 		end
 	end)
@@ -1086,6 +1138,11 @@ end
 
 function CommandPalette.IsOpen(): boolean
 	return CommandPalette.screenGui ~= nil and CommandPalette.screenGui.Enabled
+end
+
+-- Called after the Library page changes favorites / presets.
+function CommandPalette.InvalidateLibrary()
+	libraryCache = nil
 end
 
 function CommandPalette.ClearHistory()

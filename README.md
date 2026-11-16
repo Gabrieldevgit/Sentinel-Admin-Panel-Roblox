@@ -24,7 +24,9 @@ what's built versus still coming.
 | QuantityParser | `.../Core/Parser/QuantityParser.lua` | Numeric modifiers for economy/inventory commands |
 | TargetResolver | `.../Core/Parser/TargetResolver.lua` | `me all others random nearest last`, `@team @role @group @rank @vip @staff`, `#tag`, `@level >25`, `where Health<50` |
 | CommandParser | `.../Core/Parser/CommandParser.lua` | Full grammar: `/command target[:modifier] [subcommand] [arguments...]` |
-| CommandProcessor | `.../Core/Parser/CommandProcessor.lua` | The one function chat/UI calls; walks `&&` chains, stops on first failure |
+| CommandProcessor | `.../Core/Parser/CommandProcessor.lua` | The one function chat/UI calls; walks `&&` chains, stops on first failure; undo/redo |
+| CommandHistory | `.../Core/CommandHistory.lua` | Per-player result history + undo/redo stacks (W07) |
+| ConfigService / CommandLibraryService | `Systems/ConfigService.lua`, `Systems/CommandLibraryService.lua` | In-game server config (chat prefixes) and per-staff favorites/presets/templates/recent (W07) |
 | Example commands | `Commands/Moderation/Kick.lua`, `Ban.lua` | Show self-registration + DataStore persistence + Undoable contract |
 | PunishmentService | `Systems/PunishmentService.lua` | Warning ledger + configurable auto-escalation (data-driven, not hardcoded) |
 | ChatModerationService | `Systems/ChatModerationService.lua` | Mute enforcement via `TextChannel.ShouldDeliverCallback` |
@@ -100,7 +102,7 @@ No switch statement, no registry edits, no core changes required.
 ## Roadmap status
 
 - [x] **1. Core Engine** — parser, tokenizer, command registry, event bus, permission system, logging foundation
-- [x] **2. Command Framework** — aliases, selectors, duration parser, quantity parser, execution pipeline (autocomplete UI still pending — needs Phase 7)
+- [x] **2. Command Framework** — aliases, selectors, duration parser, quantity parser, execution pipeline, typed-argument autocomplete (W05–W06), and the W07 framework: configurable chat prefixes, before/after hooks + middleware, cancellation, undo/redo, execution timing, result history, presets, templates, favorites and an interactive command builder (Library page)
 - [x] **3. Moderator Toolkit** — kick, ban, mute/unmute, warn (with auto-escalation), jail/unjail, freeze/unfreeze, staff notes, blacklist/whitelist + whitelist-mode
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
