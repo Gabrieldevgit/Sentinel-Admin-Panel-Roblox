@@ -4,8 +4,8 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-15 by the session that fixed the boot crash, Gems
-grants, fly, mute and panel dragging._
+_Last updated: 2026-11-15 by the planning session that wrote the weekend
+implementation schedule._
 
 ---
 
@@ -190,8 +190,16 @@ Rules that keep it sound:
 - Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
   reuses an existing `leaderstats` folder. Saved as place version 82.
 - Feature blueprint: no items checked yet.
+- **Schedule:** [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
+  maps the whole blueprint onto 42 weekends (Sat+Sun ~4–6 h each; Fridays
+  are buffer only), W01 = 2026-11-21 → W42 = 2027-09-05. Start each
+  session by finding the current week's row.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (planning)** — Planned the full blueprint into a weekend
+  schedule (`Docs/Planned/Implementation Schedule.md`). No code changed.
+  Next: W01 verification sweep on 2026-11-21.
 
 - **2026-11-15 (later)** — Pushed the fix/handoff commits to GitHub;
   committed and pushed the user's remaining in-progress work as `dad045a`.
