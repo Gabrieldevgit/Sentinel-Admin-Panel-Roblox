@@ -130,8 +130,9 @@ local getAuditLogRemote = getOrCreate("GetAuditLogRemote", "RemoteFunction") :: 
 getOrCreate("UtilityRemote", "RemoteEvent")
 getOrCreate("MovementRemote", "RemoteEvent")
 
+-- Staff = may open the panel. A rank can exist without this (e.g. VIP perks).
 local function isStaff(player: Player): boolean
-	return #PermissionSystem.GetRoles(player) > 0
+	return PermissionSystem.Has(player, "panel.open")
 end
 
 -- The client calls this BEFORE building any UI at all (Shell, Command
@@ -259,13 +260,20 @@ function getAuditLogRemote.OnServerInvoke(player: Player, filter: any)
 
 	local successRate = if total > 0 then math.floor((successes / total) * 100) else 100
 
+	local staffOnline = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		if isStaff(p) then
+			staffOnline += 1
+		end
+	end
+
 	return {
 		Entries = recentEntries,
 		Stats = {
 			Total = total,
 			SuccessRate = successRate,
 			TopCommands = topCommands,
-			ActiveStaffCount = #Players:GetPlayers(),
+			ActiveStaffCount = staffOnline,
 		},
 	}
 end

@@ -158,7 +158,13 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 	elseif kind == "Role" then
 		local list = {}
 		for _, p in ipairs(allPlayers()) do
-			for _, roleName in ipairs(PermissionSystem.GetRoles(p)) do
+			local roles = PermissionSystem.GetRoles(p)
+			-- @staff means "anyone who can open the panel"
+			if selector.Value == "Staff" and PermissionSystem.Has(p, "panel.open") then
+				table.insert(list, p)
+				continue
+			end
+			for _, roleName in ipairs(roles) do
 				if roleName == selector.Value then
 					table.insert(list, p)
 					break

@@ -26,8 +26,21 @@ local function applyFreezeState(character: Model, frozen: boolean)
 	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 
 	if humanoid then
-		humanoid.WalkSpeed = if frozen then 0 else 16
-		humanoid.JumpPower = if frozen then 0 else 50
+		-- Remember the speeds set before freezing (e.g. by ;speed) so
+		-- unfreeze restores them instead of forcing the 16/50 defaults.
+		if frozen then
+			if humanoid:GetAttribute("SentinelPreFreezeWalkSpeed") == nil then
+				humanoid:SetAttribute("SentinelPreFreezeWalkSpeed", humanoid.WalkSpeed)
+				humanoid:SetAttribute("SentinelPreFreezeJumpPower", humanoid.JumpPower)
+			end
+			humanoid.WalkSpeed = 0
+			humanoid.JumpPower = 0
+		else
+			humanoid.WalkSpeed = humanoid:GetAttribute("SentinelPreFreezeWalkSpeed") or 16
+			humanoid.JumpPower = humanoid:GetAttribute("SentinelPreFreezeJumpPower") or 50
+			humanoid:SetAttribute("SentinelPreFreezeWalkSpeed", nil)
+			humanoid:SetAttribute("SentinelPreFreezeJumpPower", nil)
+		end
 	end
 	if rootPart then
 		rootPart.Anchored = frozen

@@ -43,12 +43,12 @@ Command execution
 - Chat commands with configurable prefixes (;, /, !, .).
 - Graphical command palette.
 - Command bar.
-- Command aliases and shortcuts.
-- Command chaining and sequential execution.
+- ✅ Command aliases and shortcuts.
+- ✅ Command chaining and sequential execution.
 - Multiple target selection.
 - Command categories and subcategories.
 - Permission-aware command visibility.
-- Command cooldowns.
+- ✅ Command cooldowns.
 - Command cancellation where supported.
 - Undo and redo for reversible commands.
 - Command execution preview.
@@ -120,27 +120,27 @@ projectsymphony.space
 
 
 Rank management
-- Create custom ranks.
-- Edit ranks.
-- Delete ranks.
-- Duplicate ranks.
-- Rename ranks.
-- Rank descriptions.
-- Rank icons and colors.
-- Rank hierarchy.
-- Rank priority levels.
-- Default rank templates.
-- Rank inheritance.
-- Rank expiration.
-- Temporary promotions.
+- ✅ Create custom ranks.
+- ✅ Edit ranks.
+- ✅ Delete ranks.
+- ✅ Duplicate ranks.
+- ✅ Rename ranks.
+- ✅ Rank descriptions.
+- ✅ Rank icons and colors.
+- ✅ Rank hierarchy.
+- ✅ Rank priority levels.
+- ✅ Default rank templates.
+- ✅ Rank inheritance.
+- ✅ Rank expiration.
+- ✅ Temporary promotions.
 - Automatic promotions.
 - Private server owner permissions.
 Permission management
-- Granular permission nodes.
-- Wildcard permissions.
+- ✅ Granular permission nodes.
+- ✅ Wildcard permissions.
 - Explicit permission denial.
-- Permission inheritance.
-- Individual command permissions.
+- ✅ Permission inheritance.
+- ✅ Individual command permissions.
 - Page visibility permissions.
 - Action-level permissions.
 - Target-level restrictions.
@@ -148,28 +148,28 @@ Permission management
 - Permission presets.
 - Permission editor.
 - Permission preview.
-- Permission change history.
+- ✅ Permission change history.
 Rank assignment methods
-- Roblox UserId.
-- Roblox username lookup.
-- Roblox group membership.
-- Roblox group role.
+- ✅ Roblox UserId.
+- ✅ Roblox username lookup.
+- ✅ Roblox group membership.
+- ✅ Roblox group role.
 - GamePass ownership.
 - Asset ownership.
-- Game creator ownership.
-- Temporary manual assignment.
+- ✅ Game creator ownership.
+- ✅ Temporary manual assignment.
 - Private server ownership.
 Security and hierarchy
 - Rank immunity.
 - Cannot punish equal-ranked staff.
 - Cannot punish higher-ranked staff.
-- Cannot modify higher-ranked permissions.
-- Owner-only operations.
-- Protected owner account.
-- Protection against self-demotion.
+- ✅ Cannot modify higher-ranked permissions.
+- ✅ Owner-only operations.
+- ✅ Protected owner account.
+- ✅ Protection against self-demotion.
 - Protected administrative commands.
-- Permission changes logged.
-- Automatic expiration of temporary privileges.
+- ✅ Permission changes logged.
+- ✅ Automatic expiration of temporary privileges.
 3. Player Explorer & Player Management
 Essential
 This should be one of Sentinel's strongest pages.
@@ -233,46 +233,46 @@ Player actions
 - Kick.
 - Ban.
 - Unban.
-- Warn.
-- Mute.
-- Unmute.
-- Freeze.
-- Unfreeze.
-- Jail.
-- Unjail.
+- ✅ Warn.
+- ✅ Mute.
+- ✅ Unmute.
+- ✅ Freeze.
+- ✅ Unfreeze.
+- ✅ Jail.
+- ✅ Unjail.
 - Teleport to player.
 - Bring player.
-- Teleport to coordinates.
+- ✅ Teleport to coordinates.
 - Spectate.
 - Stop spectating.
 - Respawn.
 - Refresh.
-- Heal.
-- Damage.
+- ✅ Heal.
+- ✅ Damage.
 - Kill.
 - Set health.
-- Set maximum health.
-- Give God Mode.
-- Remove God Mode.
-- Fly.
-- Unfly.
-- Noclip.
-- Clip.
-- Invisible.
-- Visible.
-- Set WalkSpeed.
-- Reset WalkSpeed.
-- Set JumpPower.
-- Reset JumpPower.
+- ✅ Set maximum health.
+- ✅ Give God Mode.
+- ✅ Remove God Mode.
+- ✅ Fly.
+- ✅ Unfly.
+- ✅ Noclip.
+- ✅ Clip.
+- ✅ Invisible.
+- ✅ Visible.
+- ✅ Set WalkSpeed.
+- ✅ Reset WalkSpeed.
+- ✅ Set JumpPower.
+- ✅ Reset JumpPower.
 - Ragdoll.
 - Unragdoll.
-- Stun.
-- Unstun.
+- ✅ Stun.
+- ✅ Unstun.
 - Sit.
 - Jump.
 - Trip.
-- Spin.
-- Unspin.
+- ✅ Spin.
+- ✅ Unspin.
 - Fling.
 Advanced management
 - Offline player lookup.
@@ -310,14 +310,14 @@ Punishment management
 - Unban.
 - Offline ban.
 - Offline unban.
-- Warning.
+- ✅ Warning.
 - Warning removal.
-- Mute.
-- Temporary mute.
+- ✅ Mute.
+- ✅ Temporary mute.
 - Permanent mute.
-- Unmute.
-- Jail.
-- Freeze.
+- ✅ Unmute.
+- ✅ Jail.
+- ✅ Freeze.
 - Blacklist.
 - Whitelist.
 - Server-specific restrictions.
@@ -392,10 +392,10 @@ Server information
 - Active server events.
 - Active polls.
 Server controls
-- Lock server.
-- Unlock server.
-- Maintenance mode.
-- Disable maintenance mode.
+- ✅ Lock server.
+- ✅ Unlock server.
+- ✅ Maintenance mode.
+- ✅ Disable maintenance mode.
 - Shutdown server.
 - Restart/migrate server.
 - Kick all players.
@@ -406,7 +406,7 @@ Server controls
 - Change server capacity where supported.
 - Manage private-server restrictions.
 Announcements
-- Server announcement.
+- ✅ Server announcement.
 - Global announcement.
 - Staff-only announcement.
 - Targeted announcement.
@@ -483,16 +483,16 @@ takaro.io
 
 
 Economy
-- Give currency.
-- Remove currency.
-- Set currency.
+- ✅ Give currency.
+- ✅ Remove currency.
+- ✅ Set currency.
 - Reset currency.
 - View balances.
-- Manage multiple currencies.
-- Give XP.
-- Remove XP.
+- ✅ Manage multiple currencies.
+- ✅ Give XP.
+- ✅ Remove XP.
 - Set XP.
-- Set level.
+- ✅ Set level.
 - Reset level.
 - Grant badges.
 - Bulk currency management.
@@ -752,47 +752,47 @@ Security note: Keep arbitrary script execution strictly owner-controlled, with e
 11. Player Controls & Character Customization
 Advanced
 Movement
-- Fly.
-- Unfly.
-- Noclip.
-- Clip.
-- Speed.
-- Reset speed.
-- JumpPower.
-- Reset JumpPower.
-- Teleport.
+- ✅ Fly.
+- ✅ Unfly.
+- ✅ Noclip.
+- ✅ Clip.
+- ✅ Speed.
+- ✅ Reset speed.
+- ✅ JumpPower.
+- ✅ Reset JumpPower.
+- ✅ Teleport.
 - Bring.
 - Goto.
 - Spectate.
 Character state
-- God mode.
-- Ungod.
-- Heal.
-- Damage.
+- ✅ God mode.
+- ✅ Ungod.
+- ✅ Heal.
+- ✅ Damage.
 - Kill.
 - Respawn.
 - Refresh.
-- Freeze.
-- Unfreeze.
-- Jail.
-- Unjail.
+- ✅ Freeze.
+- ✅ Unfreeze.
+- ✅ Jail.
+- ✅ Unjail.
 - Ragdoll.
 - Unragdoll.
-- Stun.
-- Unstun.
+- ✅ Stun.
+- ✅ Unstun.
 Visual effects
-- Fire.
-- Smoke.
-- Sparkles.
-- ForceField.
+- ✅ Fire.
+- ✅ Smoke.
+- ✅ Sparkles.
+- ✅ ForceField.
 - PointLight.
 - Neon.
 - Glass.
 - Gold.
 - Silver.
 - Diamond.
-- Invisible.
-- Visible.
+- ✅ Invisible.
+- ✅ Visible.
 - Reset appearance.
 Additional tools
 - Custom character scale, where supported.

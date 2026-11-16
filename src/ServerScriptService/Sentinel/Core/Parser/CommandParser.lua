@@ -61,6 +61,14 @@ local AT_SELECTOR_KIND: { [string]: Types.TargetSelectorKind } = {
 	staff = "Role",
 }
 
+local VALUE_SELECTORS: { [string]: boolean } = {
+	Team = true,
+	Role = true,
+	Group = true,
+	Rank = true,
+	Attribute = true,
+}
+
 --[[
 	Parses ONE target token (which may itself be a comma list) into one or
 	more TargetSelector entries. Property selectors like "@level" arrive as
@@ -103,7 +111,12 @@ local function parseSelectors(targetToken: string, lookaheadToken: string?): ({ 
 	local selectors: { TargetSelector } = {}
 	local consumedLookahead = false
 
+	local pieces = {}
 	for piece in targetToken:gmatch("[^,]+") do
+		table.insert(pieces, piece)
+	end
+
+	for index, piece in ipairs(pieces) do
 		local trimmed = piece:gsub("^%s+", ""):gsub("%s+$", "")
 
 		if trimmed:sub(1, 1) == "@" and lookaheadToken and lookaheadToken:match("^[<>=]") then
@@ -123,6 +136,21 @@ local function parseSelectors(targetToken: string, lookaheadToken: string?): ({ 
 		end
 
 		local selector = parseSingleSelectorToken(trimmed)
+		-- "@team Red" arrives as two tokens: the value-taking @selectors
+		-- (team/role/group/rank/attribute) pull the next token in as their
+		-- value when they have none inline. Only the last comma piece can
+		-- do this, since the lookahead follows the whole target token.
+		if
+			selector
+			and selector.Value == nil
+			and VALUE_SELECTORS[selector.Kind]
+			and index == #pieces
+			and lookaheadToken
+			and not consumedLookahead
+		then
+			selector.Value = lookaheadToken
+			consumedLookahead = true
+		end
 		if selector then
 			table.insert(selectors, selector)
 		end

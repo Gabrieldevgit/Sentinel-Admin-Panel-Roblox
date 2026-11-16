@@ -158,13 +158,16 @@ function Logger.Query(filter: LogQueryFilter?): { LogEntry }
 	return results
 end
 
--- Periodic flush loop. Uses task.spawn once; never polls per-frame.
-task.spawn(function()
-	while true do
-		task.wait(FLUSH_INTERVAL_SECONDS)
-		Logger.Flush()
-	end
-end)
+-- Periodic flush loop. Uses task.spawn once; never polls per-frame. Not
+-- started outside a running game (Edit-mode tests), where it would leak.
+if RunService:IsRunning() then
+	task.spawn(function()
+		while true do
+			task.wait(FLUSH_INTERVAL_SECONDS)
+			Logger.Flush()
+		end
+	end)
+end
 
 if RunService:IsStudio() then
 	Logger.RegisterSink(function(entries)

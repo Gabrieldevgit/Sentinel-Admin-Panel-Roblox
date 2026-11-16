@@ -435,6 +435,35 @@ CommandRegistry.Register({
 	end,
 })
 
+-- Scales a character's head by `factor` relative to normal (1 = normal).
+-- R15: the Humanoid's HeadScale value (rescales the MeshPart + accessories).
+-- R6: the head's SpecialMesh (default scale 1.25).
+-- Otherwise: Head.Size, remembering the original in an attribute.
+local function setHeadScale(char: Model, factor: number): boolean
+	local head = char:FindFirstChild("Head") :: BasePart?
+	if not head then
+		return false
+	end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local headScale = humanoid and humanoid:FindFirstChild("HeadScale")
+	if headScale and headScale:IsA("NumberValue") then
+		headScale.Value = factor
+		return true
+	end
+	local mesh = head:FindFirstChildOfClass("SpecialMesh")
+	if mesh then
+		mesh.Scale = Vector3.new(1.25, 1.25, 1.25) * factor
+		return true
+	end
+	local original = head:GetAttribute("SentinelHeadOriginalSize")
+	if typeof(original) ~= "Vector3" then
+		original = head.Size
+		head:SetAttribute("SentinelHeadOriginalSize", original)
+	end
+	head.Size = (original :: Vector3) * factor
+	return true
+end
+
 -- /bighead [target]
 CommandRegistry.Register({
 	Name = "bighead",
@@ -451,14 +480,7 @@ CommandRegistry.Register({
 		local count = 0
 		for _, target in ipairs(ctx.Targets) do
 			local char = target.Character
-			local head = char and char:FindFirstChild("Head") :: BasePart?
-			if head then
-				local mesh = head:FindFirstChildOfClass("SpecialMesh")
-				if mesh then
-					mesh.Scale = Vector3.new(3, 3, 3)
-				else
-					head.Size = Vector3.new(4, 3, 3)
-				end
+			if char and setHeadScale(char, 3) then
 				count += 1
 			end
 		end
@@ -482,12 +504,7 @@ CommandRegistry.Register({
 		local count = 0
 		for _, target in ipairs(ctx.Targets) do
 			local char = target.Character
-			local head = char and char:FindFirstChild("Head") :: BasePart?
-			if head then
-				local mesh = head:FindFirstChildOfClass("SpecialMesh")
-				if mesh then
-					mesh.Scale = Vector3.new(0.5, 0.5, 0.5)
-				end
+			if char and setHeadScale(char, 0.5) then
 				count += 1
 			end
 		end
@@ -511,12 +528,7 @@ CommandRegistry.Register({
 		local count = 0
 		for _, target in ipairs(ctx.Targets) do
 			local char = target.Character
-			local head = char and char:FindFirstChild("Head") :: BasePart?
-			if head then
-				local mesh = head:FindFirstChildOfClass("SpecialMesh")
-				if mesh then
-					mesh.Scale = Vector3.new(1.25, 1.25, 1.25)
-				end
+			if char and setHeadScale(char, 1) then
 				count += 1
 			end
 		end

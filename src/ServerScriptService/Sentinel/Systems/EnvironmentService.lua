@@ -102,8 +102,23 @@ function EnvironmentService.RegisterLightingPreset(name: string, properties: { [
 	lightingPresets[name] = properties
 end
 
+-- Case-insensitive lookup so ";preset night" finds "Night".
+local function findByName<T>(map: { [string]: T }, name: string): (T?, string?)
+	if map[name] ~= nil then
+		return map[name], name
+	end
+	local lowered = name:lower()
+	for key, value in pairs(map) do
+		if key:lower() == lowered then
+			return value, key
+		end
+	end
+	return nil, nil
+end
+
 function EnvironmentService.ApplyLightingPreset(name: string): boolean
-	local preset = lightingPresets[name]
+	local preset, canonical = findByName(lightingPresets, name)
+	name = canonical or name
 	if not preset then
 		return false
 	end
@@ -125,7 +140,8 @@ function EnvironmentService.RegisterWeather(name: string, applyFn: () -> ())
 end
 
 function EnvironmentService.SetWeather(name: string): boolean
-	local handler = weatherHandlers[name]
+	local handler, canonical = findByName(weatherHandlers, name)
+	name = canonical or name
 	if not handler then
 		return false
 	end

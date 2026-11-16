@@ -13,7 +13,7 @@
 
 	Responsibilities:
 		- Require Core modules in dependency order
-		- Define default roles (Owner / Admin / Moderator)
+		- Load RankService (roles + assignments) before everything else
 		- Require every Commands/** module so they register themselves
 		- Enforce bans on PlayerAdded
 		- Route chat messages starting with ";" into CommandProcessor
@@ -33,52 +33,15 @@ local Core = Sentinel:WaitForChild("Core")
 local Commands = Sentinel:WaitForChild("Commands")
 local Systems = Sentinel:WaitForChild("Systems")
 
-local PermissionSystem = require(Core:WaitForChild("PermissionSystem"))
 local CommandProcessor = require(Core:WaitForChild("Parser"):WaitForChild("CommandProcessor"))
 
 -- ---------------------------------------------------------------------------
--- Starter role hierarchy. Replace/extend via your own onboarding tooling;
--- this is intentionally minimal so the framework is usable out of the box.
+-- Ranks and permissions are owned by Systems/RankService (persisted in the
+-- Sentinel_Ranks_v1 DataStore, default templates Owner/Developer/SuperAdmin/
+-- Admin/Moderator/VIP). It is required first so roles exist before anything
+-- else loads; the game creator always gets Owner.
 -- ---------------------------------------------------------------------------
-PermissionSystem.DefineRole("Moderator", {
-	"moderation.kick",
-	"moderation.mute",
-	"moderation.warn",
-	"moderation.notes",
-	"player.freeze",
-	"player.jail",
-	"player.goto",
-	"player.bring",
-	"player.teleport",
-	"player.heal",
-	"player.sit",
-	"utility.view",
-	"utility.pm",
-	"server.hint",
-})
-
-PermissionSystem.DefineRole("Admin", {
-	"moderation.*",
-	"player.*",
-	"movement.*",
-	"utility.*",
-	"economy.*",
-	"inventory.*",
-	"server.*",
-	"environment.*",
-	-- Developer Suite: only the READ-ONLY diagnostic nodes are granted to
-	-- Admin by default. "developer.datastore.write" and "developer.execute"
-	-- are deliberately excluded — they can corrupt persisted data or run
-	-- arbitrary server code, so only Owner ("*") has them out of the box.
-	"developer.stats",
-	"developer.console",
-	"developer.remotemonitor",
-	"developer.datastore.read",
-}, { "Moderator" })
-
-PermissionSystem.DefineRole("Owner", {
-	"*",
-}, { "Admin" })
+require(Systems:WaitForChild("RankService"))
 
 -- ---------------------------------------------------------------------------
 -- Load every Systems/** module first (PunishmentService, ChatModerationService,

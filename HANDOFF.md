@@ -4,8 +4,8 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-15 by the planning session that wrote the weekend
-implementation schedule._
+_Last updated: 2026-11-15 by the session that wrote the weekend schedule
+and ran W01 + W02 (tests, verification sweep, RankService)._
 
 ---
 
@@ -96,10 +96,17 @@ Control" UI, all driven by one command grammar
 - **Roblox Studio MCP** is available (execute Luau in Edit/Server/Client,
   start/stop Play, console output, mouse/keyboard input, `save_place`).
   - Keep `execute_luau` calls small — a heavy call once froze/crashed Studio.
-  - `require()` from `execute_luau` gets a *fresh* module copy (e.g. an
-    empty CommandRegistry). To test commands, fire
+  - `require()` from `execute_luau` does **not** reach the running game's
+    modules (e.g. you get an empty CommandRegistry). To test commands, fire
     `ReplicatedStorage.Shared.Sentinel.ExecuteCommandRemote` from the
-    **Client** DataModel instead.
+    **Client** DataModel instead. In **Edit** mode, `require` results are
+    cached between calls, so after an edit you get the old code: require a
+    `:Clone()`.
+  - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
+    character already exists — it blocks forever and drops the MCP link.
+  - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
+    permissions + ranks, 29 cases). Run in Edit mode:
+    `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
 - Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
   chat prefix `;`.
@@ -116,7 +123,10 @@ Control" UI, all driven by one command grammar
     `Parser/` (Tokenizer, CommandParser, TargetResolver, Duration/Quantity
     parsers, CommandProcessor).
   - `Systems/` — services (Economy, Inventory, ChatModeration, Punishment,
-    ServerState, Environment, Developer, **UIBridge**).
+    ServerState, Environment, Developer, **UIBridge**, **RankService**).
+  - `Commands/Ranks/Ranks.lua` — `;ranks`, `;rankinfo`, `;createrank`,
+    `;editrank`, `;rankperm`, `;assignrank`, `;bindrank`, `;rankbindings`,
+    `;rankhistory`, `;resetranks confirm`, … (see the file header).
   - `Commands/<Category>/*.lua` — each file self-registers commands.
 - `src/StarterGui/SentinelUI/` — `Theme`, `Shell` (window), pages
   (`DashboardPage`, `PlayersPage`, …), `CommandPalette`,
@@ -130,7 +140,14 @@ Rules that keep it sound:
 - **All execution goes through `CommandProcessor` → `CommandRegistry.Dispatch`**
   (permissions, cooldowns, logging). Never call `def.Execute` directly.
 - **The UI only talks to the server through `UIBridge`**; staff-only remotes
-  are gated by `isStaff()`.
+  are gated by `isStaff()` = `PermissionSystem.Has(player, "panel.open")`.
+- **Ranks live in `Systems/RankService`** (DataStore `Sentinel_Ranks_v1`,
+  key `Config`): rank definitions + bindings (UserId/Group/GroupRole/
+  GamePass/Asset/Creator/PrivateServerOwner, optional expiry). Never call
+  `PermissionSystem.DefineRole/AssignRole` elsewhere. Hierarchy: actors only
+  touch ranks below their priority; Owner rank and creator binding are
+  protected. If the store fails to load it runs read-only on defaults.
+  Outside a running game it never touches the DataStore (tests).
 - New command = new `CommandRegistry.Register({...})` in `Commands/<Cat>/`.
   **Names and aliases must be unique across all commands** — a duplicate
   asserts and aborts server boot (happened with `m`).
@@ -174,6 +191,25 @@ Rules that keep it sound:
   `Config.lua` (see `REFERENCE_PANEL_ADAPTATION.md`).
 - Harmless console noise from the game's assets: sound
   `118939739460633` (no permission), asset `203785492` (wrong type).
+- `;give` needs tools in `ServerStorage.SentinelTools` (none exist yet).
+  `;weather` only has `clear`/`foggy` (more come with W25 events).
+- Not yet verified, so not ✅: permission-denied feedback and multi-player
+  targeting (need a second, non-staff test player), kick/ban/unban,
+  bring/goto, spectate, ragdoll/sit/jump/trip/fling state, kill/respawn,
+  countdown, the Staff Online fix with a non-staff player present.
+- Scaffold files `src/client`, `src/server`, `src/shared` (Rojo template
+  "Hello world") aren't mapped by `default.project.json`; candidates for
+  deletion — ask the user.
+- Studio-only `Workspace.SentinelWorkspace.GrantScript` (assigns Owner to
+  the first player) is now redundant — the creator binding does it — and
+  errors with `unknown role 'Owner'` because it runs before RankService.
+  Ask the user to delete it.
+- W02 not yet verified: GamePass/Asset ownership bindings (need an owned
+  pass/asset), private-server-owner binding (needs a live private server),
+  automatic promotions (not built). Hierarchy rules were verified with
+  fake players in `Rank.spec`, not with a second real staff member.
+- The place has several `SentinelJailSpawnPart` objects in Workspace (place
+  content, not created by Sentinel); `Jail.lua` looks for `SentinelJailSpawn`.
 
 ## 6. Current state
 
@@ -182,20 +218,44 @@ Rules that keep it sound:
   `;hint`, alias variants (`superfling`, `bigexplosion`), fly + bottom-right
   fly menu (Deactivate / Noclip toggle / Close), mute/unmute/timed mute,
   panel drag from the whole top bar (clamped on-screen).
-- On `main` and pushed to GitHub: `527f146` (boot crash, Gems, utility
-  commands), `b73b056` (fly, fly menu, mute, drag), `0ea0146` (this
-  handoff + CLAUDE.md), `dad045a` (the user's Phase 7 in-progress work:
-  new pages, `Commands/Player/*`, `Teleport.lua`, `Config.lua`, feature
-  blueprint, README/known-issues updates). Working tree clean.
+- W01 and W02 (both pulled forward to 2026-11-15) are done except the
+  unverified items in §5. Uncommitted: all W01 + W02 work, blueprint ✅s
+  and this handoff. Rank data in the testing place was reset to defaults
+  after testing. Next: W03 (rank UI + permission editor, explicit deny,
+  punish-hierarchy).
+- Latest commit on `main`: `47f0bd7` (schedule). `dad045a` and earlier are
+  pushed; `47f0bd7` is local only.
 - Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
   reuses an existing `leaderstats` folder. Saved as place version 82.
-- Feature blueprint: no items checked yet.
+- Feature blueprint: 103 bullets ✅ (W01: command aliases/chaining/
+  cooldowns, player actions, effects, moderation basics, lock/maintenance,
+  announcement, currency/XP/level; W02: rank CRUD/templates/hierarchy/
+  inheritance/expiry, nodes/wildcards/history, UserId/username/group/
+  group-role/creator/temporary assignment, owner protection, no
+  self-demotion).
 - **Schedule:** [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
   maps the whole blueprint onto 42 weekends (Sat+Sun ~4–6 h each; Fridays
   are buffer only), W01 = 2026-11-21 → W42 = 2027-09-05. Start each
   session by finding the current week's row.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (W02)** — Added `Systems/RankService` (persistent ranks +
+  bindings, hierarchy, history, expiry loop, cross-server reload) and
+  `Commands/Ranks/Ranks.lua`; bootstrap no longer hard-codes roles; panel
+  access is now the `panel.open` node (VIP can't open it). Logger's flush
+  loop no longer starts outside a running game. Tests 29/29; Play-tested
+  CRUD, validation, persistence across restart, group/group-role grants,
+  temporary rank auto-expiry, `;resetranks confirm`. ✅ 30 bullets.
+
+- **2026-11-15 (W01)** — Ran W01 early. Added `Tests/` (TestRunner + parser
+  and permission specs, 19/19 pass). Fixed: Analytics Staff Online counted
+  every player; `;kick @team Red` dropped the team name (value-taking
+  `@selectors` now take the next token); `@staff` matched nobody;
+  `normalhead`/`smallhead` did nothing on R15 (now `HeadScale`); unfreeze
+  reset custom WalkSpeed/JumpPower to defaults; lighting/weather presets
+  were case-sensitive. Play-tested ~70 commands with server-side state
+  checks and ✅ 73 blueprint bullets. Next: W02 rank backend.
 
 - **2026-11-15 (planning)** — Planned the full blueprint into a weekend
   schedule (`Docs/Planned/Implementation Schedule.md`). No code changed.

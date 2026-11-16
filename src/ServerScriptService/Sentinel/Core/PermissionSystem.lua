@@ -24,6 +24,10 @@
 		PermissionSystem.RevokeRole(player, roleName)
 		PermissionSystem.Has(player, node): boolean
 		PermissionSystem.GrantTemporary(player, node, seconds)
+		PermissionSystem.UndefineRole(roleName)
+		PermissionSystem.IsRoleDefined(roleName): boolean
+
+		Role definitions and assignments are owned by Systems/RankService.
 
 	Example usage:
 		PermissionSystem.DefineRole("Moderator", {"moderation.kick", "moderation.mute"})
@@ -52,6 +56,18 @@ function PermissionSystem.DefineRole(roleName: string, nodes: { string }, inheri
 		Nodes = nodes,
 		Inherits = inherits or {},
 	}
+end
+
+-- Removes a role definition and strips it from every player holding it.
+function PermissionSystem.UndefineRole(roleName: string)
+	roles[roleName] = nil
+	for _, set in pairs(playerRoles) do
+		set[roleName] = nil
+	end
+end
+
+function PermissionSystem.IsRoleDefined(roleName: string): boolean
+	return roles[roleName] ~= nil
 end
 
 function PermissionSystem.AssignRole(player: Player, roleName: string)
