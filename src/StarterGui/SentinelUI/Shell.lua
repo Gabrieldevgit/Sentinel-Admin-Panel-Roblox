@@ -28,6 +28,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
@@ -368,46 +369,143 @@ function Shell.Init(): ScreenGui
 		end
 	end)
 
-	-- Drag reposition via the title area
+	-- ------------------------------------------------------------------
+	-- Drag reposition via the whole top bar
+	-- ------------------------------------------------------------------
+	-- The handle spans the full top bar but sits at ZIndex 0, so the search,
+	-- minimize and close buttons (ZIndex 1, sibling ZIndex behaviour) stay on
+	-- top and keep their clicks; every other spot on the bar starts a drag.
+	-- It used to cover only the 200px title area, which at smaller window
+	-- sizes sat underneath Roblox's own top-bar buttons (this ScreenGui
+	-- ignores the GUI inset) and so could never be grabbed.
 	local dragHandle = Instance.new("TextButton")
 	dragHandle.Name = "DragHandle"
-	dragHandle.Size = UDim2.new(0, 200, 1, 0)
+	dragHandle.Size = UDim2.new(1, 0, 1, 0)
 	dragHandle.BackgroundTransparency = 1
 	dragHandle.Text = ""
+	dragHandle.AutoButtonColor = false
+	dragHandle.ZIndex = 0
 	dragHandle.Parent = topBar
 
-	dragHandle.MouseButton1Down:Connect(function()
-		isDragging = true
-	end)
-	UserInputService.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			isDragging = false
-			isResizing = false
+	-- Keep the window's top bar on-screen and below Roblox's top bar.
+	-- Coordinate spaces: AbsolutePosition and InputObject.Position are both
+	-- measured from just below Roblox's top bar, while this ScreenGui ignores
+	-- the inset, so its Position offsets start at the very top of the screen
+	-- (screenGui.AbsolutePosition is (0, -inset)). All maths below happens in
+	-- absolute space; placeAt converts back to a Position offset. root's
+	-- AnchorPoint is 0.5, 0.5, so Position is the window's centre.
+	local TOP_BAR_HEIGHT = 48
+	local MIN_VISIBLE_X = 120
+	local function clampCentre(centre: Vector2): Vector2
+		local guiOrigin = screenGui.AbsolutePosition
+		local viewport = screenGui.AbsoluteSize
+		local size = root.AbsoluteSize
+		local visibleTop = guiOrigin.Y + GuiService:GetGuiInset().Y
+		local halfW, halfH = size.X / 2, size.Y / 2
+		local minX = guiOrigin.X + MIN_VISIBLE_X - halfW
+		local maxX = guiOrigin.X + viewport.X - MIN_VISIBLE_X + halfW
+		local minY = visibleTop + halfH
+		local maxY = math.max(minY, guiOrigin.Y + viewport.Y - TOP_BAR_HEIGHT + halfH)
+		return Vector2.new(math.clamp(centre.X, minX, maxX), math.clamp(centre.Y, minY, maxY))
+	end
+	local function currentCentre(): Vector2
+		return root.AbsolutePosition + root.AbsoluteSize / 2
+	end
+	local function toOffset(absolute: Vector2): UDim2
+		local local_ = absolute - screenGui.AbsolutePosition
+		return UDim2.fromOffset(math.round(local_.X), math.round(local_.Y))
+	end
+	local function placeAt(centre: Vector2)
+		root.Position = toOffset(clampCentre(centre))
+	end
+	Shell.clampIntoView = function()
+		placeAt(currentCentre())
+	end
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(Shell.clampIntoView)
+	screenGui:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if screenGui.Enabled then
+			task.defer(Shell.clampIntoView)
 		end
 	end)
 
-	-- Resize via handle
-	resizeHandle.MouseButton1Down:Connect(function()
-		isResizing = true
-		local abs = root.AbsoluteSize
-		root.Size = UDim2.new(0, abs.X, 0, abs.Y)
+	-- Known issue #2 (PHASE7-KNOWN-ISSUES.md): GetMouseDelta() was erratic
+	-- for UI drag/resize. Deltas are computed from the absolute pointer
+	-- position captured at drag/resize start. Both the start and the moves
+	-- come from InputObject.Position, so they share one coordinate space
+	-- (MouseButton1Down's x/y include the GUI inset, which made the window
+	-- jump by the inset height on the first move).
+	local dragStartPointer: Vector2? = nil
+	local dragStartCentre: Vector2? = nil
+	local resizeStartPointer: Vector2? = nil
+	local resizeStartSize: Vector2? = nil
+	local activeInput: InputObject? = nil
+
+	local function isPress(input: InputObject): boolean
+		return input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch
+	end
+	local function pointerOf(input: InputObject): Vector2
+		return Vector2.new(input.Position.X, input.Position.Y)
+	end
+
+	dragHandle.InputBegan:Connect(function(input: InputObject)
+		if not isPress(input) then
+			return
+		end
+		isDragging = true
+		activeInput = input
+		dragStartPointer = pointerOf(input)
+		dragStartCentre = currentCentre()
 	end)
 
-	UserInputService.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement then
-			local delta = UserInputService:GetMouseDelta()
-			if isDragging then
-				root.Position = UDim2.new(
-					0.5, root.Position.X.Offset + delta.X,
-					0.5, root.Position.Y.Offset + delta.Y
-				)
-			elseif isResizing then
-				local cur = root.Size
-				root.Size = UDim2.new(
-					0, math.max(640, cur.X.Offset + delta.X),
-					0, math.max(400, cur.Y.Offset + delta.Y)
-				)
-			end
+	resizeHandle.InputBegan:Connect(function(input: InputObject)
+		if not isPress(input) then
+			return
+		end
+		isResizing = true
+		activeInput = input
+		resizeStartPointer = pointerOf(input)
+		resizeStartSize = root.AbsoluteSize
+		-- Pin the top-left corner while resizing so only the bottom-right
+		-- edge follows the pointer (root is centre-anchored).
+		local topLeft = root.AbsolutePosition
+		root.AnchorPoint = Vector2.new(0, 0)
+		root.Position = toOffset(topLeft)
+		root.Size = UDim2.fromOffset(resizeStartSize.X, resizeStartSize.Y)
+	end)
+
+	UserInputService.InputEnded:Connect(function(input: InputObject)
+		if not isPress(input) then
+			return
+		end
+		if isResizing then
+			-- Restore centre anchoring so dragging/clamping keep working.
+			local centre = currentCentre()
+			root.AnchorPoint = Vector2.new(0.5, 0.5)
+			placeAt(centre)
+		end
+		isDragging = false
+		isResizing = false
+		activeInput = nil
+		dragStartPointer = nil
+		resizeStartPointer = nil
+	end)
+
+	UserInputService.InputChanged:Connect(function(input: InputObject)
+		local isMouseMove = input.UserInputType == Enum.UserInputType.MouseMovement
+		local isTouchMove = input.UserInputType == Enum.UserInputType.Touch and input == activeInput
+		if not (isMouseMove or isTouchMove) then
+			return
+		end
+		local pointer = pointerOf(input)
+		if isDragging and dragStartPointer and dragStartCentre then
+			placeAt(dragStartCentre + (pointer - dragStartPointer))
+		elseif isResizing and resizeStartPointer and resizeStartSize then
+			local delta = pointer - resizeStartPointer
+			root.Size = UDim2.fromOffset(
+				math.max(640, resizeStartSize.X + delta.X),
+				math.max(400, resizeStartSize.Y + delta.Y)
+			)
 		end
 	end)
 

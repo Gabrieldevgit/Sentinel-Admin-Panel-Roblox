@@ -27,6 +27,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -190,12 +191,343 @@ if countdownRemote and countdownRemote:IsA("RemoteEvent") then
 end
 
 -- ---------------------------------------------------------------------------
+-- Movement & Physics handling (Fly, Noclip) + fly control menu
+-- ---------------------------------------------------------------------------
+local RunService = game:GetService("RunService")
+local isFlying = false
+local flySpeed = 50
+local flyGyro: BodyGyro? = nil
+local flyVelocity: BodyVelocity? = nil
+local flyConn: RBXScriptConnection? = nil
+local noclipEnabled = false
+local noclipConn: RBXScriptConnection? = nil
+
+local movementRemote = SentinelShared:WaitForChild("MovementRemote", 15) :: RemoteEvent?
+
+-- Tell the server about changes the player made from the fly menu, so the
+-- SentinelFlying / SentinelNoclip attributes (shown in the Players page)
+-- stay accurate. The server only ever updates the sender's own attributes.
+local function reportState(kind: string, value: boolean)
+	if movementRemote then
+		movementRemote:FireServer(kind, value)
+	end
+end
+
+-- Fly menu (bottom-right): Deactivate fly, Noclip toggle, Close.
+local FLY_COLORS = {
+	Surface = Color3.fromRGB(26, 26, 32),
+	Raised = Color3.fromRGB(34, 34, 42),
+	Accent = Color3.fromRGB(64, 156, 255),
+	Error = Color3.fromRGB(235, 87, 87),
+	Text = Color3.fromRGB(240, 240, 245),
+	TextSecondary = Color3.fromRGB(150, 150, 160),
+}
+
+local flyMenu = Instance.new("Frame")
+flyMenu.Name = "FlyMenu"
+flyMenu.AnchorPoint = Vector2.new(1, 1)
+flyMenu.Position = UDim2.new(1, -16, 1, -16)
+flyMenu.Size = UDim2.new(0, 230, 0, 146)
+flyMenu.BackgroundColor3 = FLY_COLORS.Surface
+flyMenu.BorderSizePixel = 0
+flyMenu.Visible = false
+flyMenu.Parent = screenGui
+do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 12)
+	corner.Parent = flyMenu
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = FLY_COLORS.Accent
+	stroke.Thickness = 1.5
+	stroke.Parent = flyMenu
+end
+
+local flyTitle = Instance.new("TextLabel")
+flyTitle.Name = "Title"
+flyTitle.BackgroundTransparency = 1
+flyTitle.Position = UDim2.new(0, 14, 0, 8)
+flyTitle.Size = UDim2.new(1, -56, 0, 26)
+flyTitle.Font = Enum.Font.GothamBold
+flyTitle.TextSize = 16
+flyTitle.TextColor3 = FLY_COLORS.Text
+flyTitle.TextXAlignment = Enum.TextXAlignment.Left
+flyTitle.Text = "✈  Fly Controls"
+flyTitle.Parent = flyMenu
+
+local flyHint = Instance.new("TextLabel")
+flyHint.Name = "Hint"
+flyHint.BackgroundTransparency = 1
+flyHint.Position = UDim2.new(0, 14, 0, 32)
+flyHint.Size = UDim2.new(1, -28, 0, 16)
+flyHint.Font = Enum.Font.Gotham
+flyHint.TextSize = 12
+flyHint.TextColor3 = FLY_COLORS.TextSecondary
+flyHint.TextXAlignment = Enum.TextXAlignment.Left
+flyHint.Text = "WASD to move · Space up · Shift down"
+flyHint.Parent = flyMenu
+
+local function makeFlyButton(name: string, text: string, color: Color3, position: UDim2, size: UDim2): TextButton
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.Position = position
+	button.Size = size
+	button.BackgroundColor3 = color
+	button.AutoButtonColor = true
+	button.BorderSizePixel = 0
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 14
+	button.TextColor3 = FLY_COLORS.Text
+	button.Text = text
+	button.Parent = flyMenu
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = button
+	return button
+end
+
+local flyCloseButton = makeFlyButton("CloseButton", "X", FLY_COLORS.Raised, UDim2.new(1, -38, 0, 10), UDim2.new(0, 26, 0, 26))
+flyCloseButton.TextSize = 13
+local noclipButton = makeFlyButton("NoclipButton", "Noclip: OFF", FLY_COLORS.Raised, UDim2.new(0, 14, 0, 56), UDim2.new(1, -28, 0, 34))
+local unflyButton = makeFlyButton("DeactivateButton", "Deactivate Fly", FLY_COLORS.Error, UDim2.new(0, 14, 0, 98), UDim2.new(1, -28, 0, 34))
+
+local function refreshNoclipButton()
+	noclipButton.Text = if noclipEnabled then "Noclip: ON" else "Noclip: OFF"
+	noclipButton.BackgroundColor3 = if noclipEnabled then FLY_COLORS.Accent else FLY_COLORS.Raised
+end
+
+local function setNoclip(enabled: boolean)
+	noclipEnabled = enabled
+	if noclipConn then
+		noclipConn:Disconnect()
+		noclipConn = nil
+	end
+	if noclipEnabled then
+		noclipConn = RunService.Stepped:Connect(function()
+			local char = localPlayer.Character
+			if char then
+				for _, part in ipairs(char:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.CanCollide = false
+					end
+				end
+			end
+		end)
+	end
+	refreshNoclipButton()
+end
+
+local function stopFlying()
+	isFlying = false
+	flyMenu.Visible = false
+	if flyConn then
+		flyConn:Disconnect()
+		flyConn = nil
+	end
+	if flyGyro then
+		flyGyro:Destroy()
+		flyGyro = nil
+	end
+	if flyVelocity then
+		flyVelocity:Destroy()
+		flyVelocity = nil
+	end
+	local char = localPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.PlatformStand = false
+	end
+end
+
+local function startFlying(speed: number?)
+	stopFlying()
+
+	local char = localPlayer.Character
+	if not char then return end
+	local root = (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")) :: BasePart?
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not root or not hum then return end
+
+	isFlying = true
+	flySpeed = speed or 50
+	hum.PlatformStand = true
+
+	local gyro = Instance.new("BodyGyro")
+	gyro.P = 9e4
+	gyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+	gyro.CFrame = root.CFrame
+	gyro.Parent = root
+	flyGyro = gyro
+
+	local velocity = Instance.new("BodyVelocity")
+	velocity.Velocity = Vector3.zero
+	velocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+	velocity.Parent = root
+	flyVelocity = velocity
+
+	refreshNoclipButton()
+	flyMenu.Visible = true
+
+	flyConn = RunService.RenderStepped:Connect(function()
+		if not isFlying or not root.Parent or not hum.Parent then
+			stopFlying()
+			return
+		end
+
+		local camera = workspace.CurrentCamera
+		if not camera then return end
+		gyro.CFrame = camera.CFrame
+
+		-- W/S fly where the camera looks (including up/down), A/D strafe,
+		-- Space/Shift move straight up/down.
+		local moveDir = hum.MoveDirection
+		local look = camera.CFrame.LookVector
+		local flatLook = Vector3.new(look.X, 0, look.Z)
+		local flatRight = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
+		local direction = Vector3.zero
+		if moveDir.Magnitude > 0 and flatLook.Magnitude > 0 and flatRight.Magnitude > 0 then
+			flatLook = flatLook.Unit
+			flatRight = flatRight.Unit
+			direction = look * moveDir:Dot(flatLook) + flatRight * moveDir:Dot(flatRight)
+		end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+			direction += Vector3.yAxis
+		elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+			direction -= Vector3.yAxis
+		end
+
+		velocity.Velocity = if direction.Magnitude > 0 then direction.Unit * flySpeed else Vector3.zero
+	end)
+end
+
+unflyButton.MouseButton1Click:Connect(function()
+	stopFlying()
+	reportState("FlyState", false)
+end)
+
+noclipButton.MouseButton1Click:Connect(function()
+	setNoclip(not noclipEnabled)
+	reportState("NoclipState", noclipEnabled)
+end)
+
+flyCloseButton.MouseButton1Click:Connect(function()
+	-- Close only hides the menu; flight keeps going (use /unfly to stop).
+	flyMenu.Visible = false
+end)
+
+-- A respawn destroys the old character's BodyGyro/BodyVelocity; drop the
+-- fly state with it so the menu and server attributes stay accurate.
+localPlayer.CharacterAdded:Connect(function()
+	if isFlying then
+		stopFlying()
+		reportState("FlyState", false)
+	end
+end)
+
+if movementRemote then
+	movementRemote.OnClientEvent:Connect(function(action: string, arg: any)
+		if action == "Fly" then
+			startFlying(tonumber(arg))
+		elseif action == "Unfly" then
+			stopFlying()
+		elseif action == "Noclip" then
+			setNoclip(arg == true)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------------
+-- Utility & Broadcast listener (Hint, PM, View/Watch)
+-- ---------------------------------------------------------------------------
+local utilityRemote = SentinelShared:WaitForChild("UtilityRemote", 15)
+if utilityRemote and utilityRemote:IsA("RemoteEvent") then
+	utilityRemote.OnClientEvent:Connect(function(action: string, ...)
+		local args = { ... }
+		if action == "Hint" then
+			local text = args[1] or ""
+			playBanner(text, Color3.fromRGB(0, 170, 255))
+		elseif action == "View" then
+			local subject = args[1]
+			if subject and workspace.CurrentCamera then
+				workspace.CurrentCamera.CameraSubject = subject
+			end
+		elseif action == "Unview" then
+			if workspace.CurrentCamera and localPlayer.Character then
+				workspace.CurrentCamera.CameraSubject = localPlayer.Character:FindFirstChildOfClass("Humanoid")
+			end
+		elseif action == "PM" then
+			local senderName = args[1] or "Staff"
+			local messageText = args[2] or ""
+
+			local pmGui = Instance.new("Frame")
+			pmGui.Name = "SentinelPM"
+			pmGui.AnchorPoint = Vector2.new(0.5, 0.5)
+			pmGui.Position = UDim2.new(0.5, 0, 0.5, 0)
+			pmGui.Size = UDim2.new(0, 360, 0, 150)
+			pmGui.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
+			pmGui.BorderSizePixel = 0
+			pmGui.Parent = screenGui
+
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 10)
+			corner.Parent = pmGui
+
+			local stroke = Instance.new("UIStroke")
+			stroke.Color = Color3.fromRGB(64, 156, 255)
+			stroke.Thickness = 2
+			stroke.Parent = pmGui
+
+			local titleLbl = Instance.new("TextLabel")
+			titleLbl.BackgroundTransparency = 1
+			titleLbl.Position = UDim2.new(0, 14, 0, 10)
+			titleLbl.Size = UDim2.new(1, -28, 0, 24)
+			titleLbl.Font = Enum.Font.GothamBold
+			titleLbl.TextSize = 16
+			titleLbl.TextColor3 = Color3.fromRGB(64, 156, 255)
+			titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+			titleLbl.Text = "✉ Private Message from " .. senderName
+			titleLbl.Parent = pmGui
+
+			local bodyLbl = Instance.new("TextLabel")
+			bodyLbl.BackgroundTransparency = 1
+			bodyLbl.Position = UDim2.new(0, 14, 0, 38)
+			bodyLbl.Size = UDim2.new(1, -28, 0, 64)
+			bodyLbl.Font = Enum.Font.Gotham
+			bodyLbl.TextSize = 13
+			bodyLbl.TextColor3 = Color3.fromRGB(240, 240, 245)
+			bodyLbl.TextXAlignment = Enum.TextXAlignment.Left
+			bodyLbl.TextYAlignment = Enum.TextYAlignment.Top
+			bodyLbl.TextWrapped = true
+			bodyLbl.Text = messageText
+			bodyLbl.Parent = pmGui
+
+			local closeBtn = Instance.new("TextButton")
+			closeBtn.AnchorPoint = Vector2.new(0.5, 1)
+			closeBtn.Position = UDim2.new(0.5, 0, 1, -10)
+			closeBtn.Size = UDim2.new(0, 100, 0, 28)
+			closeBtn.BackgroundColor3 = Color3.fromRGB(64, 156, 255)
+			closeBtn.Font = Enum.Font.GothamMedium
+			closeBtn.TextSize = 12
+			closeBtn.TextColor3 = Color3.new(1, 1, 1)
+			closeBtn.Text = "Dismiss"
+			closeBtn.Parent = pmGui
+
+			local btnCorner = Instance.new("UICorner")
+			btnCorner.CornerRadius = UDim.new(0, 6)
+			btnCorner.Parent = closeBtn
+
+			closeBtn.MouseButton1Click:Connect(function()
+				pmGui:Destroy()
+			end)
+		end
+	end)
+end
+
+-- ---------------------------------------------------------------------------
 -- Main Sentinel UI shell (Phase 7): sidebar, top bar, status bar, command
 -- palette, and per-section pages. Placed in StarterGui.SentinelUI, which
 -- Roblox clones into this player's PlayerGui automatically — same as any
 -- other StarterGui content.
 -- ---------------------------------------------------------------------------
-local UserInputService = game:GetService("UserInputService")
 
 local sentinelUIFolder = playerGui:WaitForChild("SentinelUI", 15)
 if sentinelUIFolder then
@@ -206,8 +538,10 @@ if sentinelUIFolder then
 		{ Name = "DashboardPage" },
 		{ Name = "PlayersPage" },
 		{ Name = "ModerationPage" },
-		{ Name = "ServerPage" },
+		{ Name = "CommandsPage" },
 		{ Name = "EconomyPage" },
+		{ Name = "ServerPage" },
+		{ Name = "AnalyticsPage" },
 		{ Name = "DeveloperPage" },
 		{ Name = "NotificationCenter" },
 		{ Name = "SettingsPage" },
@@ -239,8 +573,10 @@ if sentinelUIFolder then
 	local dashboardPageModule = loadedModules.DashboardPage
 	local playersPageModule = loadedModules.PlayersPage
 	local moderationPageModule = loadedModules.ModerationPage
+	local commandsPageModule = loadedModules.CommandsPage
 	local serverPageModule = loadedModules.ServerPage
 	local economyPageModule = loadedModules.EconomyPage
+	local analyticsPageModule = loadedModules.AnalyticsPage
 	local developerPageModule = loadedModules.DeveloperPage
 	local notificationCenterModule = loadedModules.NotificationCenter
 	local settingsPageModule = loadedModules.SettingsPage
@@ -263,8 +599,10 @@ if sentinelUIFolder then
 		local DashboardPage = require(dashboardPageModule)
 		local PlayersPage = require(playersPageModule)
 		local ModerationPage = require(moderationPageModule)
+		local CommandsPage = require(commandsPageModule)
 		local ServerPage = require(serverPageModule)
 		local EconomyPage = require(economyPageModule)
+		local AnalyticsPage = require(analyticsPageModule)
 		local DeveloperPage = require(developerPageModule)
 		local NotificationCenter = require(notificationCenterModule)
 		local SettingsPage = require(settingsPageModule)
@@ -275,27 +613,14 @@ if sentinelUIFolder then
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
-		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
+		CommandsPage.Build(Shell.RegisterPage("Commands", "Commands", "📜"), CommandPalette)
 		EconomyPage.Build(Shell.RegisterPage("Economy", "Economy", "🪙"))
+		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
+		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
-
-		-- Placeholder pages for sections not built yet — keeps the sidebar
-		-- fully navigable while each section gets its real content later.
-		for _, id in ipairs({ "Commands", "Analytics" }) do
-			local page = Shell.RegisterPage(id, id, "")
-			local label = Instance.new("TextLabel")
-			label.BackgroundTransparency = 1
-			label.Size = UDim2.new(1, 0, 0, 30)
-			label.Font = Theme.Font.Bold
-			label.TextSize = 20
-			label.TextColor3 = Theme.Colors.Text
-			label.TextXAlignment = Enum.TextXAlignment.Left
-			label.Text = id .. " — coming soon"
-			label.Parent = page
-		end
 
 		Shell.searchButton.MouseButton1Click:Connect(function()
 			CommandPalette.Open()

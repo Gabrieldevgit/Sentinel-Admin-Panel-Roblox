@@ -57,9 +57,53 @@ function ChatModerationService.IsMuted(userId: number): boolean
 	return true
 end
 
+-- Primary enforcement: TextSource.CanSend. ShouldDeliverCallback alone only
+-- stops delivery to OTHER players; the muted sender's own chat window still
+-- showed their message as sent, which read as "mute doesn't work". With
+-- CanSend = false the send is rejected (InvalidTextChannelPermissions) and
+-- the message never appears anywhere.
+local function textChannelsFolder(): Instance?
+	if TextChatService.ChatVersion ~= Enum.ChatVersion.TextChatService then
+		return nil
+	end
+	return TextChatService:FindFirstChild("TextChannels")
+end
+
+local function applyCanSend(userId: number, canSend: boolean)
+	local folder = textChannelsFolder()
+	if not folder then
+		return
+	end
+	for _, channel in ipairs(folder:GetChildren()) do
+		if channel:IsA("TextChannel") then
+			for _, source in ipairs(channel:GetChildren()) do
+				if source:IsA("TextSource") and source.UserId == userId then
+					source.CanSend = canSend
+				end
+			end
+		end
+	end
+end
+
+local scheduledUnmuteToken: { [number]: number } = {}
+
 function ChatModerationService.Mute(target: Player, seconds: number, permanent: boolean?)
 	local expiry = if permanent then math.huge else os.time() + seconds
 	activeMutes[target.UserId] = expiry
+	applyCanSend(target.UserId, false)
+
+	-- Timed mutes: re-enable sending when the mute runs out. The token makes
+	-- an older timer a no-op if the player is re-muted or unmuted meanwhile.
+	local token = (scheduledUnmuteToken[target.UserId] or 0) + 1
+	scheduledUnmuteToken[target.UserId] = token
+	if not permanent then
+		-- +1s: IsMuted treats expiry == now as still muted.
+		task.delay(math.max(0, seconds) + 1, function()
+			if scheduledUnmuteToken[target.UserId] == token and not ChatModerationService.IsMuted(target.UserId) then
+				applyCanSend(target.UserId, true)
+			end
+		end)
+	end
 
 	if permanent then
 		local ok, err = pcall(function()
@@ -75,6 +119,8 @@ end
 
 function ChatModerationService.Unmute(target: Player)
 	activeMutes[target.UserId] = nil
+	scheduledUnmuteToken[target.UserId] = (scheduledUnmuteToken[target.UserId] or 0) + 1
+	applyCanSend(target.UserId, true)
 	local ok, err = pcall(function()
 		MuteStore:RemoveAsync(tostring(target.UserId))
 	end)
@@ -106,14 +152,25 @@ end
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 	local textChannelsFolder = TextChatService:WaitForChild("TextChannels", 10)
 	if textChannelsFolder then
+		-- A muted player's TextSource can be created after the mute (on
+		-- join, respawn of channels, new whisper channels): apply CanSend
+		-- as each source appears.
+		local function watchChannel(channel: TextChannel)
+			attachDeliveryGate(channel)
+			channel.ChildAdded:Connect(function(source: Instance)
+				if source:IsA("TextSource") and ChatModerationService.IsMuted(source.UserId) then
+					source.CanSend = false
+				end
+			end)
+		end
 		for _, channel in ipairs(textChannelsFolder:GetChildren()) do
 			if channel:IsA("TextChannel") then
-				attachDeliveryGate(channel)
+				watchChannel(channel)
 			end
 		end
 		textChannelsFolder.ChildAdded:Connect(function(child: Instance)
 			if child:IsA("TextChannel") then
-				attachDeliveryGate(child)
+				watchChannel(child)
 			end
 		end)
 	end
@@ -131,6 +188,8 @@ Players.PlayerAdded:Connect(function(player: Player)
 	end)
 	if ok and expiry and (expiry == math.huge or expiry > os.time()) then
 		activeMutes[player.UserId] = expiry
+		-- The TextSource may already exist by the time GetAsync returns.
+		applyCanSend(player.UserId, false)
 	end
 end)
 
