@@ -47,11 +47,21 @@ PermissionSystem.DefineRole("Moderator", {
 	"moderation.notes",
 	"player.freeze",
 	"player.jail",
+	"player.goto",
+	"player.bring",
+	"player.teleport",
+	"player.heal",
+	"player.sit",
+	"utility.view",
+	"utility.pm",
+	"server.hint",
 })
 
 PermissionSystem.DefineRole("Admin", {
 	"moderation.*",
 	"player.*",
+	"movement.*",
+	"utility.*",
 	"economy.*",
 	"inventory.*",
 	"server.*",

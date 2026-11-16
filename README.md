@@ -105,7 +105,7 @@ No switch statement, no registry edits, no core changes required.
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
-- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette, Dashboard, Player Explorer (now with all seven tabs), Moderation Queue, Server page, Economy page, Developer Tools page, Notification Center, and Settings (7A–7F). Still to come: Command History/Favorites (7G), plus an end-of-phase resize/reflow fix pass and the remaining batch of bugs found during 7A–7D testing — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
+- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette (now with Favorites + a default History view), Dashboard, Player Explorer (all seven tabs), Moderation Queue, Server page, Economy page, Developer Tools page, Notification Center, and Settings (7A–7G). Still to come: an end-of-phase resize/reflow fix pass and the remaining batch of bugs found during 7A–7D testing — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
 - [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading was dropped from this phase's original scope.
 - [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
 - [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.
@@ -408,6 +408,31 @@ Statistics, Moderation History, Permissions, Session, and Notes.
   so it was fixed directly instead of left for the end-of-phase pass.
   See `/reference/PHASE7-KNOWN-ISSUES.md` for details.
 
+### 7G — Command History + Favorites (new in this drop)
+
+Extended `CommandPalette.lua`: a star toggle (☆/⭐) on every suggestion
+row pins/unpins a command as a Favorite, and the palette now shows a
+default view — Favorites first, then recent History — instead of a
+blank list whenever the query is empty.
+
+- This is also the fix for known issue #5's two real bugs: the palette
+  going blank right after a command runs (`executeCurrent()` clears the
+  input, which now renders the default view instead of nothing) and
+  showing nothing useful on `Open()` (which now explicitly re-renders
+  instead of relying on a Text-changed signal that won't fire if the box
+  was already empty from before it closed). See
+  `/reference/PHASE7-KNOWN-ISSUES.md` #5 for what's still open — the
+  Ctrl+Shift+P unresponsiveness report and the full inline ghost-text
+  syntax suggestion ask are both bigger/separate and not resolved here.
+- Favorites and History are both session-only (no persistence, same as
+  every other client-side pref in Sentinel so far) — a `favorites`
+  table and the existing `history` table, both in memory.
+- Reused the exact same row-building code (`makeRow`) for search
+  results, Favorites, and History instead of three separate rendering
+  paths — the only difference is whether a row gets a star toggle
+  (favorites need one; History rows are raw typed text, not a single
+  command name, so they don't).
+
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).
 - **Command Palette:** **Ctrl+Shift+P** anywhere, or click the search bar
@@ -429,11 +454,24 @@ Statistics, Moderation History, Permissions, Session, and Notes.
 
 ## Next recommended step
 
-Continue Phase 7: **7G, Command History + Favorites** in the Command
-Palette (including the AI-assisted inline syntax suggestion ask logged
-in `/reference/PHASE7-KNOWN-ISSUES.md` issue #5). After that: the
-end-of-phase fix pass covering the resize/reflow issue and the remaining
-batch of bugs found during 7A–7D testing (drag/resize erratic, Gems
-economy grant failing silently, Command Palette losing suggestions after
-running a command) —
-all logged in `/reference/PHASE7-KNOWN-ISSUES.md`.
+Phase 7's own roadmap (7A–7G) is complete, and the end-of-phase fix pass
+is underway:
+
+- **Fixed in this drop:** drag/resize erratic (was `GetMouseDelta()` in
+  `Shell.lua`, now absolute-position delta-tracking); the resize/reflow
+  issue for the three clearest cases (Dashboard summary cards, Quick
+  Actions cards, Developer Performance stat cards — all now
+  `UIGridLayout`-based and wrap instead of clipping).
+- **Still open, needs a live repro from you:** Gems economy grant
+  failing silently, and the Ctrl+Shift+P unresponsiveness report (worth
+  re-testing now that 7G changed what the Command Palette shows on
+  open — the original complaint may already be resolved).
+- **Still open, smaller/lower-priority:** `ServerPage.lua`'s preset
+  button rows have the same non-wrapping pattern already fixed
+  elsewhere; the full inline ghost-text syntax suggestion ask is a
+  bigger feature, not a bug.
+
+All tracked in `/reference/PHASE7-KNOWN-ISSUES.md`. Once the two
+live-repro items are sorted, Phase 6 (Analytics & Audit, deferred until
+after Phase 7) or Phase 8 (Cross-Server Management) are next on the
+overall roadmap.

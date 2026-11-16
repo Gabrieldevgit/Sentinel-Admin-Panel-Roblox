@@ -71,16 +71,42 @@ function DashboardPage.Build(container: Frame, commandPalette: any)
 	header.Text = "Dashboard"
 	header.Parent = container
 
+	-- Known issue #1 (PHASE7-KNOWN-ISSUES.md): everything below used to
+	-- be positioned with fixed absolute Y offsets that assumed the card
+	-- row was always exactly 80px tall. Narrowing the window didn't
+	-- reflow the cards (UIListLayout doesn't wrap) — it just clipped
+	-- them. Fixed by stacking every block in a scrolling body via
+	-- UIListLayout (so later blocks always sit below whatever height the
+	-- card row actually ends up being) and switching the card row itself
+	-- to UIGridLayout, which wraps onto additional rows automatically
+	-- when there isn't room for 4 cards side by side.
+	local body = Instance.new("ScrollingFrame")
+	body.Name = "Body"
+	body.Position = UDim2.new(0, 0, 0, 38)
+	body.Size = UDim2.new(1, 0, 1, -38)
+	body.BackgroundTransparency = 1
+	body.BorderSizePixel = 0
+	body.ScrollBarThickness = 4
+	body.CanvasSize = UDim2.new(0, 0, 0, 0)
+	body.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	body.Parent = container
+
+	local bodyLayout = Instance.new("UIListLayout")
+	bodyLayout.Padding = UDim.new(0, 16)
+	bodyLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	bodyLayout.Parent = body
+
 	local cardRow = Instance.new("Frame")
 	cardRow.Name = "CardRow"
-	cardRow.Position = UDim2.new(0, 0, 0, 40)
-	cardRow.Size = UDim2.new(1, 0, 0, 80)
+	cardRow.LayoutOrder = 1
+	cardRow.Size = UDim2.new(1, 0, 0, 0)
+	cardRow.AutomaticSize = Enum.AutomaticSize.Y
 	cardRow.BackgroundTransparency = 1
-	cardRow.Parent = container
+	cardRow.Parent = body
 
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.Padding = UDim.new(0, 12)
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.new(0, 150, 0, 80)
+	layout.CellPadding = UDim2.new(0, 12, 0, 12)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = cardRow
 
@@ -91,22 +117,23 @@ function DashboardPage.Build(container: Frame, commandPalette: any)
 
 	local quickActionsContainer = Instance.new("Frame")
 	quickActionsContainer.Name = "QuickActions"
-	quickActionsContainer.Position = UDim2.new(0, 0, 0, 136)
-	quickActionsContainer.Size = UDim2.new(1, 0, 0, 140)
+	quickActionsContainer.LayoutOrder = 2
+	quickActionsContainer.Size = UDim2.new(1, 0, 0, 0)
+	quickActionsContainer.AutomaticSize = Enum.AutomaticSize.Y
 	quickActionsContainer.BackgroundTransparency = 1
-	quickActionsContainer.Parent = container
+	quickActionsContainer.Parent = body
 	QuickActionsPanel.Build(quickActionsContainer, commandPalette)
 
 	local placeholder = Instance.new("TextLabel")
+	placeholder.LayoutOrder = 3
 	placeholder.BackgroundTransparency = 1
-	placeholder.Position = UDim2.new(0, 0, 0, 284)
 	placeholder.Size = UDim2.new(1, 0, 0, 24)
 	placeholder.Font = Theme.Font.Regular
 	placeholder.TextSize = 13
 	placeholder.TextColor3 = Theme.Colors.TextSecondary
 	placeholder.TextXAlignment = Enum.TextXAlignment.Left
 	placeholder.Text = "Live health charts, activity feed, and today's overview are coming in a follow-up pass."
-	placeholder.Parent = container
+	placeholder.Parent = body
 
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 	local getServerStatsRemote = SentinelShared:WaitForChild("GetServerStatsRemote", 15) :: RemoteFunction?

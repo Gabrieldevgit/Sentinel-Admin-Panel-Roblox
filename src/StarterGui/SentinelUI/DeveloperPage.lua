@@ -70,13 +70,19 @@ function DeveloperPage.Build(container: Frame)
 
 		local statsGrid = Instance.new("Frame")
 		statsGrid.Name = "StatsGrid"
-		statsGrid.Size = UDim2.new(1, 0, 0, 80)
+		statsGrid.Size = UDim2.new(1, 0, 0, 0)
+		statsGrid.AutomaticSize = Enum.AutomaticSize.Y
 		statsGrid.BackgroundTransparency = 1
 		statsGrid.Parent = frame
 
-		local gridLayout = Instance.new("UIListLayout")
-		gridLayout.FillDirection = Enum.FillDirection.Horizontal
-		gridLayout.Padding = UDim.new(0, 8)
+		-- Known issue #1 (PHASE7-KNOWN-ISSUES.md): was a non-wrapping
+		-- horizontal UIListLayout with fixed-width cards, which clipped
+		-- instead of reflowing when the window narrowed. UIGridLayout
+		-- wraps onto more rows automatically; statsGrid.AutomaticSize
+		-- means it grows to fit however many rows that ends up being.
+		local gridLayout = Instance.new("UIGridLayout")
+		gridLayout.CellSize = UDim2.new(0, 120, 0, 80)
+		gridLayout.CellPadding = UDim2.new(0, 8, 0, 8)
 		gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		gridLayout.Parent = statsGrid
 
@@ -112,7 +118,7 @@ function DeveloperPage.Build(container: Frame)
 			valueLabel.Text = "--"
 			valueLabel.Parent = card
 
-			card.Size = UDim2.new(0, 120, 1, 0)
+			card.Size = UDim2.new(0, 120, 0, 80)
 			return valueLabel
 		end
 
@@ -124,7 +130,6 @@ function DeveloperPage.Build(container: Frame)
 		-- Per-player ping list
 		local pingSection = Instance.new("TextLabel")
 		pingSection.BackgroundTransparency = 1
-		pingSection.Position = UDim2.new(0, 0, 0, 88)
 		pingSection.Size = UDim2.new(1, 0, 0, 20)
 		pingSection.Font = Theme.Font.Bold
 		pingSection.TextSize = 13
@@ -135,8 +140,6 @@ function DeveloperPage.Build(container: Frame)
 
 		local pingList = Instance.new("ScrollingFrame")
 		pingList.Name = "PingList"
-		pingList.Position = UDim2.new(0, 0, 0, 112)
-		pingList.Size = UDim2.new(1, 0, 1, -112)
 		pingList.BackgroundColor3 = Theme.Colors.Surface
 		pingList.BorderSizePixel = 0
 		pingList.ScrollBarThickness = 4
@@ -145,6 +148,19 @@ function DeveloperPage.Build(container: Frame)
 		pingList.Parent = frame
 		Theme.corner(pingList, Theme.Radius.M)
 		Theme.padding(pingList, Theme.Spacing.S)
+
+		-- statsGrid can now be one row or several depending on window
+		-- width (see the UIGridLayout above), so pingSection/pingList are
+		-- positioned relative to its actual AbsoluteSize instead of a
+		-- fixed offset that assumed exactly one row.
+		local function repositionBelowStatsGrid()
+			local gridBottom = statsGrid.AbsoluteSize.Y
+			pingSection.Position = UDim2.new(0, 0, 0, gridBottom + 8)
+			pingList.Position = UDim2.new(0, 0, 0, gridBottom + 32)
+			pingList.Size = UDim2.new(1, 0, 1, -(gridBottom + 32))
+		end
+		statsGrid:GetPropertyChangedSignal("AbsoluteSize"):Connect(repositionBelowStatsGrid)
+		repositionBelowStatsGrid()
 
 		local pingLayout = Instance.new("UIListLayout")
 		pingLayout.Padding = UDim.new(0, 3)

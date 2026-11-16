@@ -55,6 +55,9 @@ type PlayerRow = {
 	IsFrozen: boolean,
 	IsJailed: boolean,
 	IsMuted: boolean,
+	IsGod: boolean?,
+	IsFlying: boolean?,
+	IsInvisible: boolean?,
 }
 
 local TABS = { "Overview", "Inventory", "Statistics", "Moderation", "Permissions", "Session", "Notes" }
@@ -283,11 +286,11 @@ function PlayersPage.Build(container: Frame)
 	local function makeActionButton(parent: Instance, layoutOrder: number, label: string, onClick: () -> ())
 		local button = Instance.new("TextButton")
 		button.LayoutOrder = layoutOrder
-		button.Size = UDim2.new(1, 0, 0, 34)
+		button.Size = UDim2.new(0, 72, 0, 28)
 		button.BackgroundColor3 = Theme.Colors.SurfaceRaised
 		button.AutoButtonColor = true
 		button.Font = Theme.Font.Medium
-		button.TextSize = 13
+		button.TextSize = 12
 		button.TextColor3 = Theme.Colors.Text
 		button.Text = label
 		button.Parent = parent
@@ -376,7 +379,34 @@ function PlayersPage.Build(container: Frame)
 			end
 		end
 
-		makeActionButton(actionsRow, 1, "Kick", function()
+		makeActionButton(actionsRow, 1, "Goto", function()
+			runQuickAction("goto " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 2, "Bring", function()
+			runQuickAction("bring " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 3, "Heal", function()
+			runQuickAction("heal " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 4, "Respawn", function()
+			runQuickAction("respawn " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 5, "Refresh", function()
+			runQuickAction("refresh " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 6, "Fling", function()
+			runQuickAction("fling " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 7, "Kill", function()
+			runQuickAction("kill " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 8, "View", function()
+			runQuickAction("view " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 9, "Btools", function()
+			runQuickAction("btools " .. row.Name)
+		end)
+		makeActionButton(actionsRow, 10, "Kick", function()
 			runQuickAction("kick " .. row.Name)
 		end)
 
@@ -388,6 +418,15 @@ function PlayersPage.Build(container: Frame)
 		end)
 		makeToggleRow(togglesFrame, 3, "🔇 Mute", row.IsMuted, function(newValue: boolean)
 			runQuickAction((if newValue then "mute " else "unmute ") .. row.Name)
+		end)
+		makeToggleRow(togglesFrame, 4, "✨ God Mode", row.IsGod == true, function(newValue: boolean)
+			runQuickAction((if newValue then "god " else "ungod ") .. row.Name)
+		end)
+		makeToggleRow(togglesFrame, 5, "🕊 Fly", row.IsFlying == true, function(newValue: boolean)
+			runQuickAction((if newValue then "fly " else "unfly ") .. row.Name)
+		end)
+		makeToggleRow(togglesFrame, 6, "👻 Invisible", row.IsInvisible == true, function(newValue: boolean)
+			runQuickAction((if newValue then "invisible " else "visible ") .. row.Name)
 		end)
 	end
 

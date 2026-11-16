@@ -126,6 +126,9 @@ local getPlayerInventoryRemote = getOrCreate("GetPlayerInventoryRemote", "Remote
 local getPlayerModerationHistoryRemote = getOrCreate("GetPlayerModerationHistoryRemote", "RemoteFunction") :: RemoteFunction
 local getPlayerSessionRemote = getOrCreate("GetPlayerSessionRemote", "RemoteFunction") :: RemoteFunction
 local getPlayerNotesRemote = getOrCreate("GetPlayerNotesRemote", "RemoteFunction") :: RemoteFunction
+local getAuditLogRemote = getOrCreate("GetAuditLogRemote", "RemoteFunction") :: RemoteFunction
+getOrCreate("UtilityRemote", "RemoteEvent")
+getOrCreate("MovementRemote", "RemoteEvent")
 
 local function isStaff(player: Player): boolean
 	return #PermissionSystem.GetRoles(player) > 0
@@ -200,6 +203,9 @@ function getPlayerListRemote.OnServerInvoke(player: Player)
 			IsFrozen = p:GetAttribute("SentinelFrozen") == true,
 			IsJailed = p:GetAttribute("SentinelJailed") == true,
 			IsMuted = ChatModerationService.IsMuted(p.UserId),
+			IsGod = p:GetAttribute("SentinelGod") == true,
+			IsFlying = p:GetAttribute("SentinelFlying") == true,
+			IsInvisible = p:GetAttribute("SentinelInvisible") == true,
 		})
 	end
 	return list
@@ -217,6 +223,51 @@ function getModerationLogRemote.OnServerInvoke(player: Player, count: number?)
 		table.insert(result, all[i])
 	end
 	return result
+end
+
+function getAuditLogRemote.OnServerInvoke(player: Player, filter: any)
+	if not isStaff(player) then
+		return { Entries = {}, Stats = { Total = 0, SuccessRate = 100, TopCommands = {} } }
+	end
+
+	local entries = Logger.Query(filter)
+	local total = #entries
+	local successes = 0
+	local commandCounts: { [string]: number } = {}
+
+	for _, entry in ipairs(entries) do
+		if entry.Result == "Success" then
+			successes += 1
+		end
+		if entry.Command then
+			commandCounts[entry.Command] = (commandCounts[entry.Command] or 0) + 1
+		end
+	end
+
+	local topCommands = {}
+	for cmd, count in pairs(commandCounts) do
+		table.insert(topCommands, { Command = cmd, Count = count })
+	end
+	table.sort(topCommands, function(a, b) return a.Count > b.Count end)
+
+	-- Most recent first, up to 150 entries
+	local recentEntries = {}
+	local limit = math.min(150, #entries)
+	for i = #entries, math.max(1, #entries - limit + 1), -1 do
+		table.insert(recentEntries, entries[i])
+	end
+
+	local successRate = if total > 0 then math.floor((successes / total) * 100) else 100
+
+	return {
+		Entries = recentEntries,
+		Stats = {
+			Total = total,
+			SuccessRate = successRate,
+			TopCommands = topCommands,
+			ActiveStaffCount = #Players:GetPlayers(),
+		},
+	}
 end
 
 local EconomyService = require(Sentinel:WaitForChild("Systems"):WaitForChild("EconomyService"))

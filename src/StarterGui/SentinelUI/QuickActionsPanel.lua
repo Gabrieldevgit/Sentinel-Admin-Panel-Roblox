@@ -53,6 +53,12 @@ local CATEGORY_COLOR_KEY = {
 }
 
 function QuickActionsPanel.Build(container: Frame, commandPalette: any)
+	-- Known issue #1 (PHASE7-KNOWN-ISSUES.md): container used to be a
+	-- fixed height, sized to fit exactly one row of cards. Self-contained
+	-- fix — AutomaticSize means this module reflows correctly regardless
+	-- of whether the caller remembers to size the container generously.
+	container.AutomaticSize = Enum.AutomaticSize.Y
+
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 	local executeCommandRemote = SentinelShared:WaitForChild("ExecuteCommandRemote", 15) :: RemoteEvent?
 	local getServerStateRemote = SentinelShared:WaitForChild("GetServerStateRemote", 15) :: RemoteFunction?
@@ -76,13 +82,14 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 	local cardRow = Instance.new("Frame")
 	cardRow.Name = "QuickActionCards"
 	cardRow.Position = UDim2.new(0, 0, 0, 30)
-	cardRow.Size = UDim2.new(1, 0, 0, 110)
+	cardRow.Size = UDim2.new(1, 0, 0, 0)
+	cardRow.AutomaticSize = Enum.AutomaticSize.Y
 	cardRow.BackgroundTransparency = 1
 	cardRow.Parent = container
 
-	local layout = Instance.new("UIListLayout")
-	layout.FillDirection = Enum.FillDirection.Horizontal
-	layout.Padding = UDim.new(0, 10)
+	local layout = Instance.new("UIGridLayout")
+	layout.CellSize = UDim2.new(0, 170, 0, 110)
+	layout.CellPadding = UDim2.new(0, 10, 0, 10)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = cardRow
 
@@ -96,7 +103,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		local card = Instance.new("Frame")
 		card.Name = title .. "Card"
 		card.LayoutOrder = layoutOrder
-		card.Size = UDim2.new(0, 170, 1, 0)
+		card.Size = UDim2.new(0, 170, 0, 110)
 		card.BackgroundColor3 = Theme.Colors.Surface
 		card.BorderSizePixel = 0
 		card.Parent = cardRow
@@ -272,6 +279,18 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 				runCommand("shutdown")
 			end,
 		})
+	end)
+
+	makeActionCard(6, "💖", "Heal All", "Restore all players' health", "Safe", function()
+		runCommand("heal all")
+	end)
+
+	makeActionCard(7, "🧹", "Cleanup Map", "Clear loose debris & tools", "Safe", function()
+		runCommand("clear")
+	end)
+
+	makeActionCard(8, "📍", "Spawn All", "Teleport all players to spawn", "Safe", function()
+		runCommand("spawn all")
 	end)
 
 	-- Poll live server state so the two toggle cards reflect reality
