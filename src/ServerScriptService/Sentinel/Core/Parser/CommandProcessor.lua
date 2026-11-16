@@ -31,6 +31,7 @@
 			;confirm and by UI dialogs that already asked the user)
 		CommandProcessor.ConfirmPending(executor, id?): {CommandResult}
 		CommandProcessor.SetTargetFilter(fn)
+		CommandProcessor.Preview(executor, rawInput): {preview} (dry run)
 
 	Risky commands (see Core/CommandPolicy) don't run straight away: the
 	result has NeedsConfirmation = true and a ConfirmId, and the rest of
@@ -190,6 +191,67 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 	end
 
 	return results
+end
+
+--[[
+	Preview (W06): a dry run of the chain for the command palette. Nothing
+	executes and no state changes ("last" targets, cooldowns, pending
+	confirmations are untouched). One entry per link:
+		{ Command, Allowed, Problem?, RequiresTarget, Targets = {{Name,
+		  DisplayName, UserId}}, Blocked, Risk, NeedsConfirmation, Reason? }
+	"random" targets are re-rolled on every preview.
+--]]
+function CommandProcessor.Preview(executor: Player, rawInput: string): { any }
+	local previews = {}
+	local chain = CommandParser.ParseLine(rawInput)
+	local current: ParsedCommand? = chain
+	local isOwner = table.find(PermissionSystem.GetRoles(executor), "Owner") ~= nil
+	while current and #previews < 10 do
+		local def = CommandRegistry.Resolve(current.CommandName)
+		if not def then
+			table.insert(previews, { Command = current.CommandName, Allowed = false, Problem = "Unknown command" })
+			break
+		end
+		local entry: any = {
+			Command = def.Name,
+			RequiresTarget = def.RequiresTarget == true,
+			Risk = CommandPolicy.GetRisk(def),
+			Targets = {},
+			Blocked = 0,
+		}
+		entry.Allowed = ((def :: any).Public == true or PermissionSystem.Has(executor, def.Permission))
+			and (not CommandPolicy.IsOwnerOnly(def) or isOwner)
+		if not entry.Allowed then
+			entry.Problem = "You don't have " .. def.Permission
+		end
+
+		local targets: { Player } = {}
+		if def.RequiresTarget then
+			targets = TargetResolver.Resolve(executor, current.TargetSelectors, nil, true)
+			if #targets == 0 then
+				entry.Problem = entry.Problem or "No matching players"
+			elseif targetFilter and def.TargetProtection ~= false then
+				local kept, blocked = targetFilter(executor, def, targets)
+				targets, entry.Blocked = kept, blocked
+				if #kept == 0 then
+					entry.Problem = entry.Problem or "Every target is ranked equal to or above you"
+				end
+			end
+		end
+		for _, p in ipairs(targets) do
+			if #entry.Targets >= 50 then
+				break
+			end
+			table.insert(entry.Targets, { Name = p.Name, DisplayName = p.DisplayName, UserId = p.UserId })
+		end
+		entry.TargetCount = #targets
+		local needs, why = CommandPolicy.NeedsConfirmation(def, #targets)
+		entry.NeedsConfirmation = needs
+		entry.Reason = why
+		table.insert(previews, entry)
+		current = current.NextCommand
+	end
+	return previews
 end
 
 -- Runs the player's pending risky command. `id` is optional (chat users

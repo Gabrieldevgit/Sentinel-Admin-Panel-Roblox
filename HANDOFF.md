@@ -4,7 +4,7 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-15 (W05 session) — W05 palette autocomplete built,
+_Last updated: 2026-11-16 (W06 session) — W06 palette II built,
 verified in Play, committed and pushed. Start with §6 "Next session"._
 
 ---
@@ -112,11 +112,15 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete, 46 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete, 50 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
     require from `Shared.Sentinel:Clone()` (see `Autocomplete.spec`).
+  - **Without Studio:** Lune (Aftman) can run pure-Luau specs with a small
+    harness that fakes `game`/`script`/`WaitForChild` (used for
+    `Autocomplete.spec` in W06; the harness lived in the session scratchpad,
+    rewrite it if needed — ~80 lines).
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
 - Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
   chat prefix `;`.
@@ -139,6 +143,20 @@ Control" UI, all driven by one command grammar
   `GetAutocompleteDataRemote` sends rank names/colours.
 - `TargetResolver` name lookup = exact name, then case-insensitive
   Name/DisplayName, then a unique prefix (`ArgumentTypes.FindPlayer`).
+- **W06 palette II:** `UsageSpec.Walk` (highlight spans + per-segment
+  values/errors for every `&&` link), `Breakdown` (live parse),
+  `Examples` (explicit `Examples` first, then generated from Args),
+  `PrettyDuration`. `CommandProcessor.Preview` = dry run (targets after
+  rank protection, confirmation needed; no state change —
+  `TargetResolver.Resolve(..., dryRun)` skips "last" targets), exposed as
+  `PreviewCommandRemote` (palette calls it 0.3 s after typing stops).
+  `StarterGui/SentinelUI/CommandDocs.lua` renders a command's docs; the
+  palette shows it on F1 or for `help <command>`, and Commands page cards
+  have a **Docs** button (opens the palette on `help <cmd>`).
+  `Commands/Server/Help.lua` adds `;help [command]` (aliases `docs`, `?`).
+  The palette input draws a highlighted RichText copy under a transparent
+  TextBox plus its own caret (`InputHolder.Caret`); it falls back to the
+  plain TextBox once the text overflows the box.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -245,6 +263,16 @@ Rules that keep it sound:
   shortcut + ghost text) was rebuilt in W05 and Ctrl+Shift+P works with
   Studio MCP input; **not yet tried on a real keyboard** (Studio itself may
   grab the chord — if so, add a fallback key in W08 keybinds).
+- **Panel closes on its own (intermittent, predates W06):** during palette
+  tests `SentinelShell.Enabled` sometimes flips to false with no Sentinel
+  code on the stack. Also, opening the palette was seen enabling the old
+  V4.3 GUIs (`AdminPanelV43`, `NotificationGui`, `Interface`) — the old
+  panel binds **P** without checking modifiers, so Ctrl+Shift+P can reach
+  it. Not reproduced reliably; investigate with the old panel's key
+  handling, or move the palette shortcut in W08 keybinds.
+- W06 leftovers: the dry-run preview can't show what "random" will pick
+  (re-rolled each preview); the highlighted copy is hidden when the input
+  overflows horizontally.
 - W05 palette leftovers: ghost text is hidden for quoted completions
   (team names with spaces) and once the input scrolls horizontally; the
   value being typed isn't validated until you move past it; the
@@ -290,19 +318,22 @@ Rules that keep it sound:
 ## 6. Current state
 
 - Sentinel server and client boot cleanly in Play. Unit tests 36/36.
-- **W01–W05 are done** (all pulled forward, built on 2026-11-15), except
-  the unverified items in §5. Everything is committed and pushed to
-  `main` (latest commit: "W05: typed palette autocomplete…").
-- **Schedule position:** the next item is **W06 — Palette II** (syntax
-  highlighting, live parser, execution + affected-player preview, docs
-  viewer, usage examples). W06 was scheduled for Dec 26–27, so the
-  project is about **5 weekends ahead**. Rows in
+- **W01–W06 are done** (pulled forward, built 2026-11-15/16), except the
+  unverified items in §5. Everything is committed and pushed to `main`
+  (latest commit: "W06: palette II…").
+- **Schedule position:** the next item is **W07 — Command framework**
+  (configurable prefixes, before/after hooks, middleware, cancellation,
+  undo/redo, duration measurement, result history, templates, presets,
+  command builder). W07 was scheduled for Jan 2–3, so the project is about
+  **6 weekends ahead**. Rows in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
   keep their dates; just continue with the next undone row.
 - Testing-place state: rank data is back to the 6 default ranks (history
   kept). Studio-only change (not in repo): `ServerScriptService.Datastore.
   DataHandler` reuses an existing `leaderstats` folder (place version 82).
-- Feature blueprint: **139 bullets ✅** — W05 21 (graphical palette,
+- Feature blueprint: **145 bullets ✅** — W06 6 (inline syntax
+  highlighting, live parser, execution preview, affected-player preview,
+  docs viewer, usage examples), W05 21 (graphical palette,
   fuzzy/name/alias suggestions, live players with avatars + display names,
   team/rank/argument/duration/numeric suggestions, custom types + custom
   validation + custom autocomplete providers, context-aware suggestions,
@@ -332,9 +363,18 @@ Rules that keep it sound:
    blueprint bullets once verified.
 3. **Live-server check**: text censoring (Studio doesn't filter text).
 4. Scaffold `src/client`, `src/server`, `src/shared` — ask whether to delete.
-5. Then start **W06**.
+5. Then start **W07**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-16 (W06)** — Palette II: syntax-highlighted input (own caret),
+  live parse line, server dry-run preview (players with avatars, rank
+  skips, confirmation) for every `&&` link, errors in earlier links,
+  docs viewer (F1 / `help <cmd>` / Commands page Docs button), generated
+  usage examples, `;help`. Fixed: F1 docs mode stuck on (now resets on
+  open; `help <cmd>` wins). Tests 50/50 (also run under Lune before
+  Studio was open); verified in Play by keyboard + mouse. ✅ 6 bullets.
+  Committed and pushed.
 
 - **2026-11-15 (W05)** — Built typed palette autocomplete: shared
   `ArgumentTypes` + `UsageSpec`; registry derives `Args` from every

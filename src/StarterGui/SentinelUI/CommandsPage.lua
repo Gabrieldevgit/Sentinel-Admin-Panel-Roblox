@@ -173,7 +173,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				-- Header line: Name + Aliases + Category
 				local titleLine = Instance.new("Frame")
 				titleLine.BackgroundTransparency = 1
-				titleLine.Size = UDim2.new(1, -140, 0, 20)
+				titleLine.Size = UDim2.new(1, -200, 0, 20)
 				titleLine.Parent = card
 
 				local titleLayout = Instance.new("UIListLayout")
@@ -219,7 +219,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				local descLbl = Instance.new("TextLabel")
 				descLbl.BackgroundTransparency = 1
 				descLbl.Position = UDim2.new(0, 0, 0, 22)
-				descLbl.Size = UDim2.new(1, -140, 0, 16)
+				descLbl.Size = UDim2.new(1, -200, 0, 16)
 				descLbl.Font = Theme.Font.Regular
 				descLbl.TextSize = 12
 				descLbl.TextColor3 = Theme.Colors.Text
@@ -232,7 +232,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				local usageLbl = Instance.new("TextLabel")
 				usageLbl.BackgroundTransparency = 1
 				usageLbl.Position = UDim2.new(0, 0, 0, 38)
-				usageLbl.Size = UDim2.new(1, -140, 0, 16)
+				usageLbl.Size = UDim2.new(1, -200, 0, 16)
 				usageLbl.Font = Theme.Font.Mono
 				usageLbl.TextSize = 11
 				usageLbl.TextColor3 = Theme.Colors.TextSecondary
@@ -252,10 +252,11 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 
 				-- Action Buttons Container
 				local btnGroup = Instance.new("Frame")
+				btnGroup.Name = "Actions"
 				btnGroup.BackgroundTransparency = 1
 				btnGroup.AnchorPoint = Vector2.new(1, 0.5)
 				btnGroup.Position = UDim2.new(1, 0, 0.5, 0)
-				btnGroup.Size = UDim2.new(0, 130, 0, 30)
+				btnGroup.Size = UDim2.new(0, 190, 0, 30)
 				btnGroup.Parent = card
 
 				local btnLayout = Instance.new("UIListLayout")
@@ -264,6 +265,23 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 				btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 				btnLayout.Parent = btnGroup
+
+				-- Docs (W06): opens the palette's docs viewer for this command
+				local docsBtn = Instance.new("TextButton")
+				docsBtn.Name = "DocsButton"
+				docsBtn.Size = UDim2.new(0, 56, 0, 26)
+				docsBtn.BackgroundColor3 = Theme.Colors.Surface
+				docsBtn.Font = Theme.Font.Medium
+				docsBtn.TextSize = 11
+				docsBtn.TextColor3 = Theme.Colors.Text
+				docsBtn.Text = "Docs"
+				docsBtn.Parent = btnGroup
+				Theme.corner(docsBtn, Theme.Radius.S)
+				docsBtn.MouseButton1Click:Connect(function()
+					if commandPalette and commandPalette.Open then
+						commandPalette.Open("help " .. cmd.Name)
+					end
+				end)
 
 				-- Fill into Palette button
 				local fillBtn = Instance.new("TextButton")

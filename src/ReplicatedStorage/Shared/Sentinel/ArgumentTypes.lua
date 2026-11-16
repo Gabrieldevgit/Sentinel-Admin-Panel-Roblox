@@ -459,6 +459,33 @@ ArgumentTypes.Register("team", {
 	end,
 })
 
+-- env.Commands: the palette's command metas ({ Name, Aliases, Description }).
+ArgumentTypes.Register("command", {
+	Description = "A command name or alias",
+	Validate = function(value, env)
+		local commands = env and env.Commands
+		if not commands or #commands == 0 then
+			return true
+		end
+		local lowered = value:lower()
+		for _, meta in ipairs(commands) do
+			if meta.Name:lower() == lowered or table.find(meta.Aliases or {}, lowered) then
+				return true
+			end
+		end
+		return false, ("No command named '%s'"):format(value)
+	end,
+	Suggest = function(partial, env)
+		local out: { Suggestion } = {}
+		for _, meta in ipairs((env and env.Commands) or {}) do
+			if startsWith(meta.Name, partial) then
+				table.insert(out, { Text = meta.Name, Detail = meta.Description })
+			end
+		end
+		return out
+	end,
+})
+
 ArgumentTypes.Register("string", { Description = "A word" })
 ArgumentTypes.Register("text", { Description = "Free text" })
 

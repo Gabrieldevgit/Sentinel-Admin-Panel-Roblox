@@ -136,6 +136,45 @@ return function(t)
 		t.eq(ok, false)
 	end)
 
+	-- W06 -------------------------------------------------------------------
+	local function kinds(text)
+		local spans, segments = UsageSpec.Walk(text, resolve, env)
+		local out = {}
+		for _, sp in ipairs(spans) do
+			table.insert(out, text:sub(sp.Start, sp.Stop) .. "=" .. sp.Kind)
+		end
+		return table.concat(out, " "), segments
+	end
+
+	t.test("walk: highlight kinds for a full ban line", function()
+		local k = kinds(';ban Player1:3d "fly hacking"')
+		t.eq(k, ';=prefix ban=command Player1=target :=punct 3d=modifier "fly hacking"=text')
+	end)
+
+	t.test("walk: selectors, chains, errors and the typed token", function()
+		t.eq((kinds("kick all && speed me 4")), "kick=command all=selector &&=chain speed=command me=selector 4=number")
+		t.eq((kinds("speed Nobody 50 ")), "speed=command Nobody=error 50=number")
+		t.eq((kinds("speed Nob")), "speed=command Nob=target") -- still typing: no error
+		local k, segs = kinds("zzz me")
+		t.eq(k, "zzz=error")
+		t.eq(#segs[1].Errors, 1)
+	end)
+
+	t.test("breakdown: live parse with pretty durations", function()
+		local _, segs = UsageSpec.Walk("ban Player1:3d Spamming chat", resolve, env)
+		t.eq(UsageSpec.Breakdown(segs[1]), 'target = Player1 · duration = 3d (3 days) · reason = "Spamming chat"')
+		t.eq(UsageSpec.PrettyDuration("perm"), "permanent")
+		t.eq(UsageSpec.PrettyDuration("90m"), "1.5 hours")
+	end)
+
+	t.test("examples: explicit first, then generated minimal and full", function()
+		local ex = UsageSpec.Examples({ Name = "ban", Args = commands.ban.Args, Examples = { "ban Player1:7d Exploiting" } }, env)
+		t.eq(ex[1], "ban Player1:7d Exploiting")
+		t.eq(ex[2], "ban me:30m")
+		t.eq(ex[3], 'ban me:30m "Breaking the rules"')
+		t.eq(UsageSpec.Examples({ Name = "ranks", Args = {} }, env)[1], "ranks")
+	end)
+
 	t.test("types: custom type registration", function()
 		ArgumentTypes.Register("testcolor", {
 			Description = "test",

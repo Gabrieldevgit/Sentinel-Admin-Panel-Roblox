@@ -36,12 +36,14 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
+local TextService = game:GetService("TextService")
 
 local Theme = require(script.Parent:WaitForChild("Theme", 15))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared", 15):WaitForChild("Sentinel", 15)
 local ArgumentTypes = require(SentinelShared:WaitForChild("ArgumentTypes", 15))
 local UsageSpec = require(SentinelShared:WaitForChild("UsageSpec", 15))
+local CommandDocs = require(script.Parent:WaitForChild("CommandDocs", 15))
 
 local CommandPalette = {}
 
@@ -158,6 +160,7 @@ local function buildEnv(): any
 		Players = Players:GetPlayers(),
 		Teams = Teams:GetTeams(),
 		Ranks = (autocompleteData and autocompleteData.Ranks) or {},
+		Commands = commandCache or {},
 		LocalPlayer = localPlayer,
 	}
 end
@@ -222,21 +225,22 @@ function CommandPalette.Init()
 	Theme.corner(panel, Theme.Radius.L)
 	Theme.stroke(panel, Theme.Colors.Border, 1)
 	local sizeLimit = Instance.new("UISizeConstraint")
-	sizeLimit.MaxSize = Vector2.new(680, 470)
+	sizeLimit.MaxSize = Vector2.new(680, 520)
 	sizeLimit.Parent = panel
 	-- Narrow screens: shrink with the viewport.
 	local function fit()
 		local camera = workspace.CurrentCamera
 		local width = if camera then camera.ViewportSize.X else 1000
-		panel.Size = UDim2.new(0, math.min(680, width - 24), 0, 470)
+		panel.Size = UDim2.new(0, math.min(680, width - 24), 0, 520)
 	end
 	fit()
 	if workspace.CurrentCamera then
 		workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(fit)
 	end
 
-	-- Input with ghost text underneath (same font/size/padding so the typed
-	-- characters line up exactly with the ghost's).
+	-- Input with a syntax-highlighted copy underneath (same font/size/
+	-- padding so the characters line up). While the copy is shown, the
+	-- TextBox's own text is transparent; it still owns the caret/editing.
 	local inputHolder = Instance.new("Frame")
 	inputHolder.Name = "InputHolder"
 	inputHolder.Position = UDim2.new(0, 16, 0, 12)
@@ -246,13 +250,13 @@ function CommandPalette.Init()
 	inputHolder.Parent = panel
 	Theme.corner(inputHolder, Theme.Radius.S)
 
-	local ghost = label(inputHolder, "Ghost", {
+	local ghost = label(inputHolder, "Highlight", {
 		Size = UDim2.new(1, 0, 1, 0),
 		Font = Theme.Font.Mono,
 		TextSize = 18,
-		TextColor3 = Theme.Colors.TextSecondary,
-		TextTransparency = 0.35,
+		TextColor3 = Theme.Colors.Text,
 		TextTruncate = Enum.TextTruncate.None,
+		RichText = true,
 	})
 	Theme.padding(ghost, 10)
 
@@ -273,6 +277,38 @@ function CommandPalette.Init()
 	Theme.padding(inputBox, 10)
 	CommandPalette.inputBox = inputBox
 
+	-- Our own caret: while the highlighted copy is shown the TextBox text is
+	-- transparent, so draw a caret that doesn't depend on it. "Code" is
+	-- monospaced, so the caret's x = characters before it * glyph width.
+	local caret = Instance.new("Frame")
+	caret.Name = "Caret"
+	caret.AnchorPoint = Vector2.new(0, 0.5)
+	caret.Size = UDim2.new(0, 2, 0, 20)
+	caret.BackgroundColor3 = Theme.Colors.Accent
+	caret.BorderSizePixel = 0
+	caret.Visible = false
+	caret.ZIndex = 3
+	caret.Parent = inputHolder
+	local glyphWidth = TextService:GetTextSize("MMMMMMMMMM", inputBox.TextSize, inputBox.Font, Vector2.new(10000, 100)).X / 10
+	local function placeCaret()
+		local show = inputBox:IsFocused() and inputBox.TextTransparency >= 1 and inputBox.CursorPosition > 0
+		caret.Visible = show
+		if show then
+			local before = inputBox.Text:sub(1, inputBox.CursorPosition - 1)
+			caret.Position = UDim2.new(0, 10 + (utf8.len(before) or #before) * glyphWidth, 0.5, 0)
+		end
+	end
+	inputBox.Focused:Connect(placeCaret)
+	inputBox.FocusLost:Connect(placeCaret)
+	task.spawn(function()
+		local on = true
+		while caret.Parent do
+			task.wait(0.5)
+			on = not on
+			caret.BackgroundTransparency = if on then 0 else 1
+		end
+	end)
+
 	local signature = label(panel, "Signature", {
 		Position = UDim2.new(0, 16, 0, 58),
 		Size = UDim2.new(1, -32, 0, 20),
@@ -291,14 +327,36 @@ function CommandPalette.Init()
 		Size = UDim2.new(1, -32, 0, 18),
 		Font = Theme.Font.Medium,
 	})
+	local parse = label(panel, "Parse", {
+		Position = UDim2.new(0, 16, 0, 120),
+		Size = UDim2.new(1, -32, 0, 18),
+		Font = Theme.Font.Mono,
+		TextSize = 12,
+		RichText = true,
+	})
+	-- Dry-run preview from the server: affected players (avatars), rank-
+	-- protected skips, confirmation needed.
+	local preview = Instance.new("Frame")
+	preview.Name = "Preview"
+	preview.Position = UDim2.new(0, 16, 0, 140)
+	preview.Size = UDim2.new(1, -32, 0, 28)
+	preview.BackgroundTransparency = 1
+	preview.ClipsDescendants = true
+	preview.Parent = panel
+	local previewLayout = Instance.new("UIListLayout")
+	previewLayout.FillDirection = Enum.FillDirection.Horizontal
+	previewLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	previewLayout.Padding = UDim.new(0, 4)
+	previewLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	previewLayout.Parent = preview
 	CommandPalette.signature = signature
 	CommandPalette.hint = hint
 	CommandPalette.validation = validation
 
 	local list = Instance.new("ScrollingFrame")
 	list.Name = "Suggestions"
-	list.Position = UDim2.new(0, 16, 0, 124)
-	list.Size = UDim2.new(1, -32, 1, -164)
+	list.Position = UDim2.new(0, 16, 0, 174)
+	list.Size = UDim2.new(1, -32, 1, -214)
 	list.BackgroundTransparency = 1
 	list.BorderSizePixel = 0
 	list.ScrollBarThickness = 4
@@ -311,12 +369,21 @@ function CommandPalette.Init()
 	listLayout.Parent = list
 	CommandPalette.suggestionsFrame = list
 
+	-- Docs viewer (F1, or "help <command>"): replaces the suggestion list.
+	local docsHolder = Instance.new("Frame")
+	docsHolder.Name = "DocsHolder"
+	docsHolder.Position = list.Position
+	docsHolder.Size = list.Size
+	docsHolder.BackgroundTransparency = 1
+	docsHolder.Visible = false
+	docsHolder.Parent = panel
+
 	local footer = label(panel, "Footer", {
 		Position = UDim2.new(0, 16, 1, -32),
 		Size = UDim2.new(1, -32, 0, 20),
 		TextSize = 11,
 	})
-	local DEFAULT_FOOTER = "Tab complete · ↑↓ select · Enter run · Esc close · && chains commands"
+	local DEFAULT_FOOTER = "Tab complete · ↑↓ select · Enter run · F1 docs · Esc close · && chains"
 	footer.Text = DEFAULT_FOOTER
 	CommandPalette.footer = footer
 
@@ -351,20 +418,167 @@ function CommandPalette.Init()
 		suppress = false
 	end
 
+	local spans: { any } = {}
+	local KIND_COLORS: { [string]: Color3 } = {
+		command = Theme.Colors.Accent,
+		unknown = Theme.Colors.TextSecondary,
+		target = Color3.fromRGB(120, 220, 160),
+		selector = Color3.fromRGB(190, 140, 255),
+		modifier = Color3.fromRGB(255, 170, 90),
+		duration = Color3.fromRGB(255, 170, 90),
+		number = Color3.fromRGB(240, 200, 100),
+		keyword = Color3.fromRGB(90, 210, 230),
+		name = Color3.fromRGB(255, 130, 190),
+		string = Theme.Colors.Text,
+		text = Color3.fromRGB(215, 215, 185),
+		prefix = Theme.Colors.TextSecondary,
+		punct = Theme.Colors.TextSecondary,
+		chain = Theme.Colors.TextSecondary,
+		extra = Theme.Colors.TextSecondary,
+		error = Theme.Colors.Error,
+	}
+
+	-- Paints the highlighted copy of the input plus the ghost completion.
 	local function updateGhost()
-		ghost.Text = ""
+		local text = inputBox.Text
+		if text == "" or inputBox.TextBounds.X > inputHolder.AbsoluteSize.X - 60 then
+			-- Empty, or the box has scrolled and a copy would not line up.
+			ghost.Text = ""
+			inputBox.TextTransparency = 0
+			placeCaret()
+			return
+		end
+		local out, pos = {}, 1
+		for _, sp in ipairs(spans) do
+			if sp.Start >= pos and sp.Stop <= #text then
+				if sp.Start > pos then
+					table.insert(out, esc(text:sub(pos, sp.Start - 1)))
+				end
+				local chunk = ('<font color="%s">%s</font>'):format(
+					hex(KIND_COLORS[sp.Kind] or Theme.Colors.Text),
+					esc(text:sub(sp.Start, sp.Stop))
+				)
+				table.insert(out, if sp.Kind == "error" then "<u>" .. chunk .. "</u>" else chunk)
+				pos = sp.Stop + 1
+			end
+		end
+		if pos <= #text then
+			table.insert(out, esc(text:sub(pos)))
+		end
 		local s = suggestions[selected]
-		if not s or not analysis or inputBox.CursorPosition ~= #inputBox.Text + 1 then
+		if s and analysis and inputBox.CursorPosition == #text + 1 then
+			local partial = analysis.Partial or ""
+			if s.Text:lower():sub(1, #partial) == partial:lower() and #s.Text > #partial then
+				table.insert(out, ('<font color="%s" transparency="0.35">%s</font>'):format(
+					hex(Theme.Colors.TextSecondary),
+					esc(s.Text:sub(#partial + 1))
+				))
+			end
+		end
+		ghost.Text = table.concat(out)
+		inputBox.TextTransparency = 1
+		placeCaret()
+	end
+
+	-- -----------------------------------------------------------------------
+	-- Dry-run preview (server)
+	-- -----------------------------------------------------------------------
+	local previewSeq = 0
+	local function clearPreview()
+		for _, child in ipairs(preview:GetChildren()) do
+			if not child:IsA("UIListLayout") then
+				child:Destroy()
+			end
+		end
+	end
+
+	local function renderPreview(entries: { any })
+		clearPreview()
+		local phrases = {}
+		local color = Theme.Colors.TextSecondary
+		local shown: any = nil
+		for _, e in ipairs(entries) do
+			local phrase
+			if e.Problem then
+				phrase = ("✗ %s: %s"):format(tostring(e.Command), tostring(e.Problem))
+				color = Theme.Colors.Error
+			elseif e.RequiresTarget then
+				local n = e.TargetCount or #e.Targets
+				phrase = ("%s → %d player%s"):format(e.Command, n, if n == 1 then "" else "s")
+				if (e.Blocked or 0) > 0 then
+					phrase ..= (" · %d skipped (rank)"):format(e.Blocked)
+				end
+				shown = e
+			else
+				phrase = e.Command .. " (no targets)"
+			end
+			if e.NeedsConfirmation and not e.Problem then
+				phrase ..= " · will ask to confirm"
+				if color ~= Theme.Colors.Error then
+					color = Theme.Colors.Warning
+				end
+			end
+			table.insert(phrases, phrase)
+		end
+		local summary = label(preview, "Summary", {
+			LayoutOrder = 0,
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
+			TextColor3 = color,
+			Text = "Preview: " .. table.concat(phrases, "  ⟶  "),
+		})
+		summary.TextTruncate = Enum.TextTruncate.None
+		if shown then
+			for i, t in ipairs(shown.Targets) do
+				if i > 8 then
+					label(preview, "More", {
+						LayoutOrder = 100,
+						Size = UDim2.new(0, 0, 1, 0),
+						AutomaticSize = Enum.AutomaticSize.X,
+						Text = ("+%d"):format((shown.TargetCount or #shown.Targets) - 8),
+					})
+					break
+				end
+				local img = Instance.new("ImageLabel")
+				img.Name = "Target_" .. t.Name
+				img.LayoutOrder = i
+				img.Size = UDim2.new(0, 22, 0, 22)
+				img.BackgroundColor3 = Theme.Colors.Border
+				img.Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(t.UserId)
+				img.Parent = preview
+				Theme.corner(img, UDim.new(1, 0))
+			end
+		end
+	end
+
+	local function schedulePreview(text: string, segments: { any })
+		previewSeq += 1
+		local seq = previewSeq
+		clearPreview()
+		local hasCommand = false
+		for _, seg in ipairs(segments) do
+			if seg.Command then
+				hasCommand = true
+			end
+		end
+		if not hasCommand then
 			return
 		end
-		local partial = analysis.Partial or ""
-		if s.Text:lower():sub(1, #partial) ~= partial:lower() or #s.Text == #partial then
-			return
-		end
-		if inputBox.TextBounds.X > inputHolder.AbsoluteSize.X - 60 then
-			return -- the box has scrolled; the ghost would no longer line up
-		end
-		ghost.Text = inputBox.Text .. s.Text:sub(#partial + 1)
+		task.delay(0.3, function()
+			if seq ~= previewSeq or not screenGui.Enabled then
+				return
+			end
+			local remote = SentinelShared:FindFirstChild("PreviewCommandRemote") :: RemoteFunction?
+			if not remote then
+				return
+			end
+			local ok, result = pcall(function()
+				return remote:InvokeServer(text)
+			end)
+			if seq == previewSeq and ok and type(result) == "table" then
+				renderPreview(result)
+			end
+		end)
 	end
 
 	local function paintSelection()
@@ -562,15 +776,44 @@ function CommandPalette.Init()
 		return ("<b>%s</b>  <i>%s · %s%s</i>  —  %s"):format(esc(arg.Name), req, esc(arg.Type), range, esc(desc))
 	end
 
+	local docsMode = false -- F1
+	local docsShownFor: string? = nil
+
+	local function showDocs(meta: any?, env: any)
+		if not meta then
+			docsHolder.Visible = false
+			list.Visible = true
+			docsShownFor = nil
+			return
+		end
+		if docsShownFor ~= meta.Name then
+			docsShownFor = meta.Name
+			CommandDocs.Build(docsHolder, meta, {
+				Env = env,
+				OnExample = function(line: string)
+					docsMode = false
+					setText(line)
+					inputBox:CaptureFocus()
+					CommandPalette._refresh()
+				end,
+			})
+		end
+		docsHolder.Visible = true
+		list.Visible = false
+	end
+
 	local function refresh()
 		local text = inputBox.Text
 		local env = buildEnv()
 		analysis = UsageSpec.Analyze(text, resolve, env)
+		local walked
+		spans, walked = UsageSpec.Walk(text, resolve, env)
 		local a = analysis
 		suggestions = {}
 		signature.Text = ""
 		hint.Text = ""
 		validation.Text = ""
+		parse.Text = ""
 
 		if a.Part == "command" then
 			suggestions = commandSuggestions(a.Partial)
@@ -629,6 +872,48 @@ function CommandPalette.Init()
 					else Theme.Colors.Success
 			end
 		end
+
+		-- Errors in earlier "&&" links.
+		if validation.TextColor3 ~= Theme.Colors.Error or validation.Text == "" then
+			for i = 1, #walked - 1 do
+				if #walked[i].Errors > 0 then
+					validation.Text = ("✗ Command %d: %s"):format(i, walked[i].Errors[1])
+					validation.TextColor3 = Theme.Colors.Error
+					break
+				end
+			end
+		end
+
+		-- Live parse of the segment being typed.
+		local seg = walked[#walked]
+		if seg and seg.Command then
+			local parsed = UsageSpec.Breakdown(seg)
+			parse.Text = ('<font color="%s">parsed</font>  %s%s%s'):format(
+				hex(Theme.Colors.TextSecondary),
+				if #walked > 1 then ("[%d/%d] "):format(#walked, #walked) else "",
+				esc(seg.Command.Name),
+				if parsed ~= "" then "  →  " .. esc(parsed) else ""
+			)
+		end
+		schedulePreview(text, walked)
+
+		-- Docs: F1 toggles them for the current command; "help <cmd>"
+		-- shows them automatically.
+		local docsMeta: any = nil
+		if a.Command and a.Command.Name == "help" and a.Part ~= "command" then
+			local word = text:match("(%S+)%s*$")
+			local target = word and resolve(word)
+			if target and target.Name ~= "help" then
+				docsMeta = target
+			end
+		end
+		if not docsMeta and docsMode then
+			docsMeta = a.Command
+			if not docsMeta and a.Part == "command" and suggestions[1] and not (suggestions[1] :: any).Whole then
+				docsMeta = resolve(suggestions[1].Text)
+			end
+		end
+		showDocs(docsMeta, env)
 
 		selected = 1
 		renderRows()
@@ -715,6 +1000,9 @@ function CommandPalette.Init()
 			CommandPalette.Close()
 		elseif key == Enum.KeyCode.Tab then
 			accept(nil)
+		elseif key == Enum.KeyCode.F1 then
+			docsMode = not docsMode
+			refresh()
 		elseif key == Enum.KeyCode.Up or key == Enum.KeyCode.Down then
 			local down = key == Enum.KeyCode.Down
 			if inputBox.Text == "" then
@@ -754,6 +1042,9 @@ function CommandPalette.Init()
 	end)
 
 	CommandPalette._refresh = refresh
+	CommandPalette._resetDocs = function()
+		docsMode = false
+	end
 	CommandPalette._accept = accept
 	CommandPalette._setText = setText
 end
@@ -764,6 +1055,7 @@ function CommandPalette.Open(initialText: string?)
 		return
 	end
 	gui.Enabled = true
+	CommandPalette._resetDocs()
 	CommandPalette._setText(initialText or "")
 	CommandPalette.inputBox:CaptureFocus()
 	-- A Ctrl+Shift+P that opened us can leave a "P" in the box.

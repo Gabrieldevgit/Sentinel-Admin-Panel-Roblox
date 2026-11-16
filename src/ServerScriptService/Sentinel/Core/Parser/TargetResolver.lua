@@ -270,7 +270,14 @@ local function applyFilters(players: { Player }, filters: { CommandFilter }?): {
 	return filtered
 end
 
-function TargetResolver.Resolve(executor: Player, selectors: { TargetSelector }, filters: { CommandFilter }?): { Player }
+-- dryRun = true (palette previews): don't remember the result as the
+-- executor's "last" targets.
+function TargetResolver.Resolve(
+	executor: Player,
+	selectors: { TargetSelector },
+	filters: { CommandFilter }?,
+	dryRun: boolean?
+): { Player }
 	local seen: { [Player]: boolean } = {}
 	local result: { Player } = {}
 
@@ -284,7 +291,9 @@ function TargetResolver.Resolve(executor: Player, selectors: { TargetSelector },
 	end
 
 	result = applyFilters(result, filters)
-	TargetResolver.SetLast(executor, result)
+	if not dryRun then
+		TargetResolver.SetLast(executor, result)
+	end
 	return result
 end
 

@@ -51,7 +51,7 @@ Command execution
 - ✅ Command cooldowns.
 - Command cancellation where supported.
 - Undo and redo for reversible commands.
-- Command execution preview.
+- ✅ Command execution preview.
 - Command result history.
 - Success, failure and permission-denied feedback.
 - Execution duration measurement.
@@ -67,21 +67,21 @@ Intelligent autocomplete
 - ✅ Numeric argument suggestions.
 - ✅ Custom argument types.
 - ✅ Context-aware suggestions.
-- Inline syntax highlighting.
+- ✅ Inline syntax highlighting.
 - ✅ Ghost-text suggestions.
 - ✅ Inline validation errors.
 - ✅ Argument descriptions.
 - ✅ Required and optional argument indicators.
 Advanced command intelligence
-- Live command parser.
+- ✅ Live command parser.
 - Interactive command builder.
 - Natural-language-to-command assistant.
 - Suggested commands based on context.
-- Command documentation viewer.
-- Usage examples.
+- ✅ Command documentation viewer.
+- ✅ Usage examples.
 - ✅ Permission requirements displayed before execution.
 - ✅ Risk indicators for destructive actions.
-- Preview of affected players.
+- ✅ Preview of affected players.
 - ✅ Bulk-action confirmation.
 - Command templates.
 - Saved command presets.

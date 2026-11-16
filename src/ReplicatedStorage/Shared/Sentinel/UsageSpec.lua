@@ -466,4 +466,343 @@ function UsageSpec.Analyze(text: string, resolve: (string) -> any?, env: any): A
 	return analysis
 end
 
+-- ---------------------------------------------------------------------------
+-- W06: Walk — highlight spans + parsed values for every "&&" segment
+-- ---------------------------------------------------------------------------
+export type Span = { Start: number, Stop: number, Kind: string }
+export type Value = { Arg: ArgSpec, Text: string, Mod: string? }
+export type Segment = { CommandWord: string, Command: any?, Values: { Value }, Errors: { string } }
+
+local KIND_BY_TYPE: { [string]: string } = {
+	players = "target",
+	player = "target",
+	duration = "duration",
+	number = "number",
+	integer = "number",
+	boolean = "keyword",
+	choice = "keyword",
+	rank = "name",
+	team = "name",
+	command = "command",
+	string = "string",
+	text = "text",
+}
+
+local SELECTOR_WORDS = { me = true, self = true, all = true, others = true, random = true, nearest = true, last = true }
+
+local function kindFor(arg: ArgSpec, value: string): string
+	if arg.Type == "players" then
+		local first = value:match("^[^,]*") or value
+		if first:sub(1, 1) == "@" or first:sub(1, 1) == "#" or SELECTOR_WORDS[first:lower()] then
+			return "selector"
+		end
+	end
+	return KIND_BY_TYPE[arg.Type] or "string"
+end
+
+-- Returns segments as { Start, Stop } (text indices) and the "&&" spans.
+local function splitSegments(text: string): ({ { number } }, { Span })
+	local segments, chains = {}, {}
+	local start, inQuote, i = 1, false, 1
+	while i <= #text do
+		local c = text:sub(i, i)
+		if c == '"' then
+			inQuote = not inQuote
+		elseif not inQuote and text:sub(i, i + 1) == "&&" then
+			table.insert(segments, { start, i - 1 })
+			table.insert(chains, { Start = i, Stop = i + 1, Kind = "chain" })
+			start = i + 2
+			i += 1
+		end
+		i += 1
+	end
+	table.insert(segments, { start, #text })
+	return segments, chains
+end
+
+--[[
+	Walks the whole input. Returns:
+		spans    – { Start, Stop, Kind } for syntax highlighting. Kinds:
+		           prefix chain command unknown target selector modifier punct
+		           duration number keyword name string text error
+		segments – per "&&" segment: CommandWord, Command (meta), Values
+		           (one per argument typed: Arg, Text, Mod), Errors
+	The token still being typed (at the very end, no trailing space) is
+	never marked as an error.
+--]]
+function UsageSpec.Walk(text: string, resolve: (string) -> any?, env: any): ({ Span }, { Segment })
+	local segmentsPos, spans = splitSegments(text)
+	local segments: { Segment } = {}
+	local typingEnd = if text:match("%s$") then -1 else #text
+
+	local function add(startPos: number, stopPos: number, kind: string)
+		if stopPos >= startPos then
+			table.insert(spans, { Start = startPos, Stop = stopPos, Kind = kind })
+		end
+	end
+
+	for _, pos in ipairs(segmentsPos) do
+		local segStart, segStop = pos[1], pos[2]
+		local raw = text:sub(segStart, segStop)
+		local lead = #(raw:match("^%s*") or "")
+		local prefixLen = if raw:sub(lead + 1, lead + 1):match("[;/]") then 1 else 0
+		if prefixLen == 1 then
+			add(segStart + lead, segStart + lead, "prefix")
+		end
+		local off = segStart + lead + prefixLen - 1
+		local tokens = UsageSpec.Tokenize(raw:sub(lead + prefixLen + 1))
+		local segment: Segment = { CommandWord = "", Values = {}, Errors = {} }
+		table.insert(segments, segment)
+		if #tokens == 0 then
+			continue
+		end
+
+		local function absStart(tok: Token): number
+			return off + tok.Start
+		end
+		local function absStop(tok: Token): number
+			return off + tok.End
+		end
+		local function typing(tok: Token): boolean
+			return absStop(tok) == typingEnd
+		end
+
+		local cmdTok = tokens[1]
+		segment.CommandWord = cmdTok.Text:lower()
+		local meta = resolve(segment.CommandWord)
+		segment.Command = meta
+		if not meta then
+			add(absStart(cmdTok), absStop(cmdTok), if typing(cmdTok) then "unknown" else "error")
+			if not typing(cmdTok) then
+				table.insert(segment.Errors, ("Unknown command '%s'"):format(cmdTok.Text))
+			end
+			continue
+		end
+		add(absStart(cmdTok), absStop(cmdTok), "command")
+
+		local args: { ArgSpec } = meta.Args or {}
+		local ti, ai = 2, 1
+		while ti <= #tokens do
+			local tok = tokens[ti]
+			local arg = args[ai]
+			if not arg then
+				add(absStart(tok), absStop(tok), if typing(tok) then "extra" else "error")
+				if not typing(tok) and #segment.Errors == 0 then
+					table.insert(segment.Errors, ("Too many arguments for %s"):format(meta.Name))
+				end
+				ti += 1
+				continue
+			end
+
+			if arg.Rest then
+				local last = tokens[#tokens]
+				local parts = {}
+				for k = ti, #tokens do
+					table.insert(parts, tokens[k].Text)
+				end
+				add(absStart(tok), absStop(last), "text")
+				table.insert(segment.Values, { Arg = arg, Text = table.concat(parts, " ") })
+				break
+			end
+
+			local value, mod = tok.Text, nil
+			local colon = if arg.Modifier then tok.Text:find(":", 1, true) else nil
+			if colon then
+				value, mod = tok.Text:sub(1, colon - 1), tok.Text:sub(colon + 1)
+			end
+			local valueStop = if colon then absStart(tok) + colon - 2 else absStop(tok)
+			local ok, message = true, nil
+			if not typing(tok) or colon then
+				ok, message = ArgumentTypes.Validate(arg, value, env)
+			end
+			add(absStart(tok), valueStop, if ok then kindFor(arg, value) else "error")
+			if not ok and message then
+				table.insert(segment.Errors, message)
+			end
+			if colon and arg.Modifier then
+				add(valueStop + 1, valueStop + 1, "punct")
+				local modOk, modMessage = true, nil
+				if not typing(tok) and mod ~= "" then
+					modOk, modMessage = ArgumentTypes.Validate(arg.Modifier, mod :: string, env)
+				end
+				add(valueStop + 2, absStop(tok), if modOk then "modifier" else "error")
+				if not modOk and modMessage then
+					table.insert(segment.Errors, modMessage)
+				end
+			end
+			table.insert(segment.Values, { Arg = arg, Text = value, Mod = if mod ~= "" then mod else nil })
+
+			-- "@team Red": the next token is the selector's value.
+			if ai == 1 and meta.RequiresTarget and arg.Type == "players" then
+				local selType = isValueSelector(value:match("([^,]*)$") or value)
+				local nextTok = tokens[ti + 1]
+				if selType and nextTok then
+					ti += 1
+					local selArg: ArgSpec = { Name = selType .. " name", Type = selType }
+					local selOk, selMessage = true, nil
+					if not typing(nextTok) then
+						selOk, selMessage = ArgumentTypes.Validate(selArg, nextTok.Text, env)
+					end
+					add(absStart(nextTok), absStop(nextTok), if selOk then "name" else "error")
+					if not selOk and selMessage then
+						table.insert(segment.Errors, selMessage)
+					end
+					segment.Values[#segment.Values].Text ..= " " .. nextTok.Text
+				end
+			end
+			ti += 1
+			ai += 1
+		end
+	end
+
+	table.sort(spans, function(a, b)
+		return a.Start < b.Start
+	end)
+	return spans, segments
+end
+
+local UNIT_NAMES = {
+	{ 31536000, "year" },
+	{ 2592000, "month" },
+	{ 604800, "week" },
+	{ 86400, "day" },
+	{ 3600, "hour" },
+	{ 60, "minute" },
+	{ 1, "second" },
+}
+
+function UsageSpec.PrettyDuration(raw: string): string?
+	local seconds = ArgumentTypes.ParseDuration(raw)
+	if not seconds then
+		return nil
+	end
+	if seconds == math.huge then
+		return "permanent"
+	end
+	for _, unit in ipairs(UNIT_NAMES) do
+		if seconds >= unit[1] then
+			local n = seconds / unit[1]
+			local shown = if n == math.floor(n) then tostring(n) else ("%.1f"):format(n)
+			return ("%s %s%s"):format(shown, unit[2], if n == 1 then "" else "s")
+		end
+	end
+	return raw
+end
+
+local function prettyValue(arg: ArgSpec, text: string): string
+	if arg.Type == "duration" then
+		local pretty = UsageSpec.PrettyDuration(text)
+		if pretty then
+			return ("%s (%s)"):format(text, pretty)
+		end
+	elseif arg.Type == "text" then
+		return '"' .. text .. '"'
+	end
+	return text
+end
+
+-- Live parse: "target = Player1 · duration = 3d (3 days) · reason = "x""
+function UsageSpec.Breakdown(segment: Segment): string
+	if not segment.Command then
+		return ""
+	end
+	local parts = {}
+	for _, v in ipairs(segment.Values) do
+		if v.Text ~= "" then
+			table.insert(parts, ("%s = %s"):format(v.Arg.Name, prettyValue(v.Arg, v.Text)))
+		end
+		if v.Mod and v.Arg.Modifier then
+			table.insert(parts, ("%s = %s"):format(v.Arg.Modifier.Name, prettyValue(v.Arg.Modifier, v.Mod)))
+		end
+	end
+	return table.concat(parts, " · ")
+end
+
+-- ---------------------------------------------------------------------------
+-- W06: usage examples (explicit Examples first, then generated ones)
+-- ---------------------------------------------------------------------------
+local TEXT_SAMPLES: { [string]: string } = {
+	reason = '"Breaking the rules"',
+	message = '"Hello everyone"',
+	text = '"Hello everyone"',
+	label = '"Event starts"',
+	description = '"Helps new players"',
+}
+local STRING_SAMPLES: { [string]: string } = {
+	itemname = "Sword",
+	storename = "PlayerData",
+	key = "Player_123",
+	modulename = "MyModule",
+	newname = "NewName",
+	name = "Name",
+	node = "+moderation.kick",
+	id = "a1b2c3",
+	destination = "Spawn",
+	value = "10",
+	jsonvalue = "{}",
+	kind = "userid",
+}
+
+local function sample(arg: ArgSpec, env: any): string
+	local choices = arg.Choices :: any
+	if type(choices) == "function" then
+		local ok, list = pcall(choices)
+		choices = if ok then list else nil
+	end
+	if type(choices) == "table" and #choices > 0 then
+		return choices[1]
+	end
+	local t = arg.Type
+	if t == "players" then
+		return "me"
+	elseif t == "player" then
+		return if env and env.LocalPlayer then env.LocalPlayer.Name else "Player1"
+	elseif t == "duration" then
+		return "30m"
+	elseif t == "number" or t == "integer" then
+		return (arg.Suggestions and arg.Suggestions[1]) or tostring(arg.Min or 10)
+	elseif t == "boolean" then
+		return "on"
+	elseif t == "rank" then
+		local ranks = env and env.Ranks
+		return if ranks and #ranks > 0 then ranks[#ranks].Name else "Moderator"
+	elseif t == "team" then
+		local teams = env and env.Teams
+		return if teams and #teams > 0 then teams[1].Name else "Red"
+	elseif t == "command" then
+		return "ban"
+	elseif t == "text" then
+		return TEXT_SAMPLES[arg.Name:lower()] or '"Some text"'
+	end
+	return STRING_SAMPLES[arg.Name:lower()] or arg.Name
+end
+
+function UsageSpec.Examples(def: any, env: any): { string }
+	local out: { string } = {}
+	for _, e in ipairs(def.Examples or {}) do
+		table.insert(out, e)
+	end
+	local args: { ArgSpec } = def.Args or {}
+	local function build(includeOptional: boolean): string
+		local parts = { def.Name }
+		for _, arg in ipairs(args) do
+			if arg.Optional and not includeOptional then
+				continue
+			end
+			local v = sample(arg, env)
+			if arg.Modifier and (includeOptional or not arg.Modifier.Optional) then
+				v ..= ":" .. sample(arg.Modifier, env)
+			end
+			table.insert(parts, v)
+		end
+		return table.concat(parts, " ")
+	end
+	for _, line in ipairs({ build(false), build(true) }) do
+		if not table.find(out, line) then
+			table.insert(out, line)
+		end
+	end
+	return out
+end
+
 return UsageSpec

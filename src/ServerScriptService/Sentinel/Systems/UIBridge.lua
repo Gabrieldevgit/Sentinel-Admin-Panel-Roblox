@@ -150,6 +150,7 @@ local LIMITS: { [string]: { number } } = {
 	GetAuditLogRemote = { 4, 1 },
 	GetRanksSnapshotRemote = { 3, 1.5 },
 	GetAutocompleteDataRemote = { 4, 1 },
+	PreviewCommandRemote = { 10, 5 },
 	GetPlayerListRemote = { 6, 2 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
@@ -287,6 +288,7 @@ bindInvoke(getCommandListRemote, function(player: Player)
 			Permission = def.Permission,
 			Category = def.Category,
 			RequiresTarget = def.RequiresTarget == true,
+			Cooldown = def.Cooldown,
 			Args = serializeArgs(def.Args),
 			Examples = def.Examples,
 		})
@@ -563,6 +565,17 @@ bindInvoke(getAutocompleteDataRemote, function(player: Player)
 		})
 	end
 	return { Ranks = ranks }
+end)
+
+-- Palette dry run (W06): who a command would affect, whether rank
+-- protection skips anyone, and whether it will ask for confirmation.
+-- Nothing executes.
+local previewCommandRemote = getOrCreate("PreviewCommandRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(previewCommandRemote, function(player: Player, rawText: any)
+	if not isStaff(player) or type(rawText) ~= "string" or #rawText == 0 or #rawText > 500 then
+		return nil
+	end
+	return CommandProcessor.Preview(player, (rawText:gsub("^%s*;", "")))
 end)
 
 
