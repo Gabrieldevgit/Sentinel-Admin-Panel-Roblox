@@ -4,8 +4,8 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-15 by the session that wrote the weekend schedule
-and ran W01–W04 (tests, sweep, RankService, Ranks page, security)._
+_Last updated: 2026-11-15 (end of session) — schedule written, W01–W04
+done, committed and pushed. Start with §6 "Next session"._
 
 ---
 
@@ -127,21 +127,24 @@ Control" UI, all driven by one command grammar
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
   - `Core/` — `CommandRegistry`, `PermissionSystem`, `Logger`,
-    `Parser/` (Tokenizer, CommandParser, TargetResolver, Duration/Quantity
-    parsers, CommandProcessor).
+    `RateLimiter`, `CommandPolicy` (risk levels, owner-only), `Parser/`
+    (Tokenizer, CommandParser, TargetResolver, Duration/Quantity parsers,
+    CommandProcessor).
   - `Systems/` — services (Economy, Inventory, ChatModeration, Punishment,
-    ServerState, Environment, Developer, **UIBridge**, **RankService**).
+    ServerState, Environment, Developer, **UIBridge**, **RankService**,
+    **TextFilterService**).
+  - `Commands/<Category>/*.lua` — each file self-registers commands.
+  - `Tests/` — TestRunner + `*.spec` modules (see §2).
   - `Commands/Ranks/Ranks.lua` — `;ranks`, `;rankinfo`, `;createrank`,
     `;editrank`, `;rankperm`, `;assignrank`, `;bindrank`, `;rankbindings`,
-    `;rankhistory`, `;resetranks confirm`, `;updaterank`, `;rankpreset`, …
-    (see the file header).
+    `;rankhistory`, `;resetranks`, `;updaterank`, `;rankpreset`, …
+    (see the file header). `Commands/Server/Confirm.lua` — `;confirm`.
 - `src/StarterGui/SentinelUI/RankManagementPage.lua` — Ranks page (tabs
   Ranks / Assignments / History). Reads `GetRanksSnapshotRemote`; every
   write is a normal command sent via `ExecuteCommandRemote`. Widgets have
   stable names (`Body.RankList.Rank_<name>`, `Body.Detail.Field_<key>`,
   `Body.Detail.NodeList.Node_<node>`, `Body.AddForm.Row1.Box_*`, …) so
   Studio MCP mouse input can target them by instance path.
-  - `Commands/<Category>/*.lua` — each file self-registers commands.
 - `src/StarterGui/SentinelUI/` — `Theme`, `Shell` (window), pages
   (`DashboardPage`, `PlayersPage`, …), `CommandPalette`,
   `NotificationCenter`.
@@ -227,9 +230,9 @@ Rules that keep it sound:
 - Resize handle was rewritten with the drag fix but **not re-tested by hand**.
 - The old panel's `AdminPanelClient` also binds **F** to its own fly; its
   `AdminPanelV43` / `NotificationGui` duplicate in PlayerGui on each respawn.
-- Local-only modules not wired up or not in Studio yet: `BanPromptSystem`,
-  `InGameSettingsPage`, `PlayerControlsSystem`, `RankManagementPage`,
-  `Config.lua` (see `REFERENCE_PANEL_ADAPTATION.md`).
+- Modules not wired up yet: `BanPromptSystem`, `InGameSettingsPage`
+  (W08), `PlayerControlsSystem` (W09). `Config.lua` ranks are now only
+  reference; RankService owns ranks.
 - Harmless console noise from the game's assets: sound
   `118939739460633` (no permission), asset `203785492` (wrong type).
 - `;give` needs tools in `ServerStorage.SentinelTools` (none exist yet).
@@ -264,33 +267,55 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play.
-- Verified working: command pipeline, Gems/Coins grants, `;message`/`;msg`,
-  `;hint`, alias variants (`superfling`, `bigexplosion`), fly + bottom-right
-  fly menu (Deactivate / Noclip toggle / Close), mute/unmute/timed mute,
-  panel drag from the whole top bar (clamped on-screen).
-- W01–W04 (pulled forward to 2026-11-15) are done except the unverified
-  items in §5. W01–W03 are committed and pushed (`bb204a7`); W04 is being
-  committed with this update. Rank data in the testing place is back to
-  the 6 defaults (history kept). Next: W05 command palette I.
-- Latest commit on `main`: `47f0bd7` (schedule). `dad045a` and earlier are
-  pushed; `47f0bd7` is local only.
-- Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
-  reuses an existing `leaderstats` folder. Saved as place version 82.
-- Feature blueprint: 103 bullets ✅ (W01: command aliases/chaining/
+- Sentinel server and client boot cleanly in Play. Unit tests 36/36.
+- **W01–W04 are done** (all pulled forward and built on 2026-11-15), except
+  the unverified items in §5. Everything is committed and pushed:
+  `main` = `origin/main` = `4f89db2` ("W04: security hardening…"). The
+  only later change is this end-of-session HANDOFF update (commit it if
+  it is still uncommitted).
+- Commits this session: `47f0bd7` schedule, `88c77f6` W01+W02, `bb204a7`
+  W03, `4f89db2` W04.
+- **Schedule position:** the next item is **W05 — Command palette I**
+  (argument types, autocomplete, ghost text, inline validation; fix
+  Ctrl+Shift+P, known issue #5). It was scheduled for Dec 19–20, so the
+  project is about **4 weekends ahead**. Rows in
+  [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
+  keep their dates; just continue with the next undone row.
+- Testing-place state: rank data is back to the 6 default ranks (history
+  kept). Studio-only change (not in repo): `ServerScriptService.Datastore.
+  DataHandler` reuses an existing `leaderstats` folder (place version 82).
+- Feature blueprint: **118 bullets ✅** — W01 73 (command aliases/chaining/
   cooldowns, player actions, effects, moderation basics, lock/maintenance,
-  announcement, currency/XP/level; W02: rank CRUD/templates/hierarchy/
+  announcement, currency/XP/level), W02 30 (rank CRUD/templates/hierarchy/
   inheritance/expiry, nodes/wildcards/history, UserId/username/group/
   group-role/creator/temporary assignment, owner protection, no
-  self-demotion; W03: explicit deny, permission search/presets/editor/
-  preview; W04: command visibility, risk indicators, bulk confirmation,
-  validation, rate limiting, confirmation). 118 total.
-- **Schedule:** [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
-  maps the whole blueprint onto 42 weekends (Sat+Sun ~4–6 h each; Fridays
-  are buffer only), W01 = 2026-11-21 → W42 = 2027-09-05. Start each
-  session by finding the current week's row.
+  self-demotion), W03 5 (explicit deny, permission search/presets/editor/
+  preview), W04 10 (command visibility, risk indicators, bulk confirmation,
+  server-authoritative execution, permission checks, validation, rate
+  limiting, cooldowns, destructive-action confirmation, no client-trusted
+  permissions).
+
+### Next session — open items to raise with the user
+
+1. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
+   is redundant and logs `unknown role 'Owner'` at boot. The user can
+   delete it in Studio (it isn't in the repo); ask before touching it.
+2. **Two-player test session** (Studio *Test > Clients and Servers*, 2
+   clients, give one a lower rank such as Moderator). Covers: rank
+   protection in real commands (can't target equal/higher), hidden pages
+   (`!page.<id>`), the view-only Ranks page, the Owner-only refusal,
+   bulk confirmation with real targets, permission-denied feedback,
+   multi-player targeting and the Staff Online count. Tick the matching
+   blueprint bullets once verified.
+3. **Live-server check**: text censoring (Studio doesn't filter text).
+4. Scaffold `src/client`, `src/server`, `src/shared` — ask whether to delete.
+5. Then start **W05**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (session end)** — Stopped after W04 at the user's request.
+  All work committed and pushed (`4f89db2`). Open items for next time are
+  listed in §6 "Next session"; next feature work is W05.
 
 - **2026-11-15 (W04)** — Audited every client→server entry point. Added
   `Core/RateLimiter` (all remotes, chat commands, MovementRemote; one
