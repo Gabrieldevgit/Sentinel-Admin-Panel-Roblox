@@ -553,6 +553,7 @@ CommandRegistry.Register({
 	Aliases = { "charactermaterial" },
 	Description = "Applies a material/skin preset to target player's character (gold, silver, diamond, neon, glass, metal, normal).",
 	Usage = "/skin target [preset]",
+	ArgHints = { preset = { Type = "choice", Choices = { "gold", "silver", "diamond", "neon", "glass", "metal", "plastic", "normal" }, Description = "Material preset" } },
 	Permission = "player.effects",
 	Category = "Effects",
 	Cooldown = 1,

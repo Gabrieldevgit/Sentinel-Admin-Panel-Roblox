@@ -41,7 +41,7 @@ raycast.com
 
 Command execution
 - Chat commands with configurable prefixes (;, /, !, .).
-- Graphical command palette.
+- ✅ Graphical command palette.
 - Command bar.
 - ✅ Command aliases and shortcuts.
 - ✅ Command chaining and sequential execution.
@@ -56,22 +56,22 @@ Command execution
 - Success, failure and permission-denied feedback.
 - Execution duration measurement.
 Intelligent autocomplete
-- Fuzzy command search.
-- Command name suggestions.
-- Alias suggestions.
-- Live player autocomplete.
-- Player avatars and display names.
-- Team and rank suggestions.
-- Argument autocomplete.
-- Duration autocomplete.
-- Numeric argument suggestions.
-- Custom argument types.
-- Context-aware suggestions.
+- ✅ Fuzzy command search.
+- ✅ Command name suggestions.
+- ✅ Alias suggestions.
+- ✅ Live player autocomplete.
+- ✅ Player avatars and display names.
+- ✅ Team and rank suggestions.
+- ✅ Argument autocomplete.
+- ✅ Duration autocomplete.
+- ✅ Numeric argument suggestions.
+- ✅ Custom argument types.
+- ✅ Context-aware suggestions.
 - Inline syntax highlighting.
-- Ghost-text suggestions.
-- Inline validation errors.
-- Argument descriptions.
-- Required and optional argument indicators.
+- ✅ Ghost-text suggestions.
+- ✅ Inline validation errors.
+- ✅ Argument descriptions.
+- ✅ Required and optional argument indicators.
 Advanced command intelligence
 - Live command parser.
 - Interactive command builder.
@@ -79,7 +79,7 @@ Advanced command intelligence
 - Suggested commands based on context.
 - Command documentation viewer.
 - Usage examples.
-- Permission requirements displayed before execution.
+- ✅ Permission requirements displayed before execution.
 - ✅ Risk indicators for destructive actions.
 - Preview of affected players.
 - ✅ Bulk-action confirmation.
@@ -88,13 +88,13 @@ Advanced command intelligence
 - Favorites.
 - Recently used commands.
 - Searchable history.
-- Keyboard navigation.
+- ✅ Keyboard navigation.
 Developer command framework
 - Custom command registration through ModuleScripts.
 - Command API.
-- Custom argument/type API.
-- Custom validation functions.
-- Custom autocomplete providers.
+- ✅ Custom argument/type API.
+- ✅ Custom validation functions.
+- ✅ Custom autocomplete providers.
 - Before-execution hooks.
 - After-execution hooks.
 - Middleware.

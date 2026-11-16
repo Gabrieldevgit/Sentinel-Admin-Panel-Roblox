@@ -45,6 +45,7 @@ local Players = game:GetService("Players")
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Types"))
+local ArgumentTypes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("ArgumentTypes"))
 
 local PermissionSystem = require(script.Parent.Parent:WaitForChild("PermissionSystem"))
 
@@ -145,8 +146,15 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 	elseif kind == "Last" then
 		return lastTargets[executor.UserId] or {}
 	elseif kind == "Named" then
-		local player = Players:FindFirstChild(selector.Value or selector.Raw)
-		return if player and player:IsA("Player") then { player :: Player } else {}
+		-- Exact name, then case-insensitive Name/DisplayName, then a unique
+		-- prefix — the same rules the palette's ArgumentTypes.FindPlayer uses.
+		local name = selector.Value or selector.Raw
+		local exact = Players:FindFirstChild(name)
+		if exact and exact:IsA("Player") then
+			return { exact :: Player }
+		end
+		local found = ArgumentTypes.FindPlayer(name, allPlayers())
+		return if found then { found } else {}
 	elseif kind == "Team" then
 		local list = {}
 		for _, p in ipairs(allPlayers()) do

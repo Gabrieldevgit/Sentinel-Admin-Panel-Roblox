@@ -129,6 +129,12 @@ export type CommandDefinition = {
 	-- Overrides for Core/CommandPolicy: "low" | "medium" | "high" | "critical"
 	Risk: string?,
 	OwnerOnly: boolean?,
+	-- Typed arguments (W05, see Shared/UsageSpec + ArgumentTypes). Args is
+	-- filled at Register time from Usage unless given; ArgHints refines the
+	-- parsed list; Examples are shown in the palette.
+	Args: { any }?,
+	ArgHints: { [any]: any }?,
+	Examples: { string }?,
 	Execute: (ctx: CommandContext) -> CommandResult,
 }
 

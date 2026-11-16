@@ -149,6 +149,7 @@ local LIMITS: { [string]: { number } } = {
 	GetCommandListRemote = { 4, 1 },
 	GetAuditLogRemote = { 4, 1 },
 	GetRanksSnapshotRemote = { 3, 1.5 },
+	GetAutocompleteDataRemote = { 4, 1 },
 	GetPlayerListRemote = { 6, 2 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
@@ -228,6 +229,39 @@ bindInvoke(getServerStateRemote, function(player: Player)
 	}
 end)
 
+-- Args for the palette: copies plain fields and resolves Choices given
+-- as functions (e.g. the current weather list) to plain string lists.
+local function serializeArg(arg: any): any
+	if type(arg) ~= "table" then
+		return nil
+	end
+	local choices = arg.Choices
+	if type(choices) == "function" then
+		local ok, list = pcall(choices)
+		choices = if ok and type(list) == "table" then list else nil
+	end
+	return {
+		Name = arg.Name,
+		Type = arg.Type,
+		Optional = arg.Optional,
+		Rest = arg.Rest,
+		Choices = choices,
+		Suggestions = arg.Suggestions,
+		Description = arg.Description,
+		Min = arg.Min,
+		Max = arg.Max,
+		Modifier = serializeArg(arg.Modifier),
+	}
+end
+
+local function serializeArgs(args: any): { any }
+	local out = {}
+	for _, arg in ipairs(if type(args) == "table" then args else {}) do
+		table.insert(out, serializeArg(arg))
+	end
+	return out
+end
+
 bindInvoke(getCommandListRemote, function(player: Player)
 	if not isStaff(player) then
 		return {}
@@ -252,6 +286,9 @@ bindInvoke(getCommandListRemote, function(player: Player)
 			Usage = def.Usage,
 			Permission = def.Permission,
 			Category = def.Category,
+			RequiresTarget = def.RequiresTarget == true,
+			Args = serializeArgs(def.Args),
+			Examples = def.Examples,
 		})
 	end
 	return list
@@ -509,6 +546,24 @@ end)
 local RankService = require(Sentinel:WaitForChild("Systems"):WaitForChild("RankService"))
 local getRanksSnapshotRemote = getOrCreate("GetRanksSnapshotRemote", "RemoteFunction") :: RemoteFunction
 local getHiddenPagesRemote = getOrCreate("GetHiddenPagesRemote", "RemoteFunction") :: RemoteFunction
+local getAutocompleteDataRemote = getOrCreate("GetAutocompleteDataRemote", "RemoteFunction") :: RemoteFunction
+
+-- Palette autocomplete (W05): rank names/colours. Staff only.
+bindInvoke(getAutocompleteDataRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
+	local ranks = {}
+	for _, rank in ipairs(RankService.GetRanks()) do
+		local c = (rank :: any).Color
+		table.insert(ranks, {
+			Name = rank.Name,
+			Priority = rank.Priority,
+			Color = if type(c) == "table" and #c == 3 then Color3.fromRGB(c[1], c[2], c[3]) else nil,
+		})
+	end
+	return { Ranks = ranks }
+end)
 
 
 bindInvoke(getRanksSnapshotRemote, function(player: Player)

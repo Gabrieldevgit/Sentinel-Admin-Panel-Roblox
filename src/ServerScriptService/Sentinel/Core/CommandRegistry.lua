@@ -47,6 +47,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 local Types = require(SentinelShared:WaitForChild("Types"))
 local EventBus = require(SentinelShared:WaitForChild("EventBus"))
+local UsageSpec = require(SentinelShared:WaitForChild("UsageSpec"))
+local ArgumentTypes = require(SentinelShared:WaitForChild("ArgumentTypes"))
 
 local PermissionSystem = require(script.Parent:WaitForChild("PermissionSystem"))
 local Logger = require(script.Parent:WaitForChild("Logger"))
@@ -75,6 +77,19 @@ end
 
 function CommandRegistry.Register(def: CommandDefinition)
 	validate(def)
+
+	-- Typed arguments (W05): parsed from Usage, refined by ArgHints, or
+	-- given explicitly as Args. Used by the palette for autocomplete and
+	-- inline validation.
+	local args = UsageSpec.Build(def)
+	for _, arg in ipairs(args) do
+		for _, spec in ipairs({ arg, arg.Modifier }) do
+			if spec and type(spec.Choices) ~= "function" and not ArgumentTypes.Has(spec.Type) then
+				warn(("[Sentinel.CommandRegistry] '%s' argument '%s' has unknown type '%s'"):format(def.Name, spec.Name, spec.Type))
+			end
+		end
+	end
+	def.Args = args
 
 	byName[def.Name] = def
 	for _, alias in ipairs(def.Aliases) do

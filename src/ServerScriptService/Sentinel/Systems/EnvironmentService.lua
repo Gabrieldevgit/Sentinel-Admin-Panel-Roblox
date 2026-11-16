@@ -139,6 +139,24 @@ function EnvironmentService.RegisterWeather(name: string, applyFn: () -> ())
 	weatherHandlers[name] = applyFn
 end
 
+local function sortedKeys(map: { [string]: any }): { string }
+	local list = {}
+	for name in pairs(map) do
+		table.insert(list, name)
+	end
+	table.sort(list)
+	return list
+end
+
+-- For palette autocomplete (W05).
+function EnvironmentService.GetWeatherNames(): { string }
+	return sortedKeys(weatherHandlers)
+end
+
+function EnvironmentService.GetLightingPresetNames(): { string }
+	return sortedKeys(lightingPresets)
+end
+
 function EnvironmentService.SetWeather(name: string): boolean
 	local handler, canonical = findByName(weatherHandlers, name)
 	name = canonical or name

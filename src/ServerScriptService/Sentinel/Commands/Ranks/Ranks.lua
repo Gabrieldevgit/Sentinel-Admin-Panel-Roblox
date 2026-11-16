@@ -196,6 +196,8 @@ register({
 	Aliases = {},
 	Description = "Edits a rank's priority, color, icon, description or inheritance.",
 	Usage = "/editrank Rank priority|color|icon|description|inherits value",
+	ArgHints = { option = { Name = "field", Description = "Which property to change" }, value = { Description = "New value" } },
+	Examples = { "editrank Moderator color 0,170,255", 'editrank Moderator description "Keeps chat clean"' },
 	Permission = "ranks.manage",
 	Execute = function(ctx: Ctx): Result
 		if not ctx.Arguments[2] then
@@ -252,6 +254,20 @@ register({
 	Aliases = {},
 	Description = "Adds a bundle of permission nodes to a rank (no args: list presets).",
 	Usage = "/rankpreset [Rank Preset]",
+	ArgHints = {
+		Preset = {
+			Type = "choice",
+			Description = "Permission preset to add to the rank",
+			Choices = function()
+				local names = {}
+				for _, p in ipairs(RankService.GetPresets()) do
+					table.insert(names, p.Name)
+				end
+				return names
+			end,
+		},
+	},
+	Examples = { "rankpreset Moderator Moderation" },
 	Permission = "ranks.manage",
 	Execute = function(ctx: Ctx): Result
 		if not ctx.Arguments[2] then
@@ -322,6 +338,15 @@ register({
 	Aliases = { "rankbind" },
 	Description = "Assigns a rank by username, UserId, group, group role, GamePass, asset, creator or private-server owner.",
 	Usage = "/bindrank kind value Rank [duration] [minGroupRank]",
+	ArgHints = {
+		kind = {
+			Type = "choice",
+			Choices = { "userid", "username", "group", "grouprole", "gamepass", "asset", "creator", "privateserver" },
+			Description = "What grants the rank",
+		},
+		value = { Description = "UserId, username, group id, pass id or asset id (none for creator/privateserver)" },
+	},
+	Examples = { "bindrank group 1234567 Moderator 30d 200" },
 	Permission = "ranks.assign",
 	Execute = function(ctx: Ctx): Result
 		local args = ctx.Arguments

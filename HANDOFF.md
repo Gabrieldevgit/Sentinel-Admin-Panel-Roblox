@@ -4,8 +4,8 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-15 (end of session) — schedule written, W01–W04
-done, committed and pushed. Start with §6 "Next session"._
+_Last updated: 2026-11-15 (W05 session) — W05 palette autocomplete built,
+verified in Play, committed and pushed. Start with §6 "Next session"._
 
 ---
 
@@ -112,8 +112,11 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security, 36 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete, 46 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
+    Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
+    modules (cached between calls) — a spec that tests Shared code must
+    require from `Shared.Sentinel:Clone()` (see `Autocomplete.spec`).
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
 - Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
   chat prefix `;`.
@@ -122,7 +125,20 @@ Control" UI, all driven by one command grammar
 
 - `src/ReplicatedStorage/Shared/Sentinel/` — `Types.lua` (single contract
   for all modules), `EventBus.lua`, `Signal.lua`, `Config.lua`, plus
-  auto-created remotes.
+  auto-created remotes. **W05:** `ArgumentTypes.lua` (type registry:
+  players/player/duration/number/integer/boolean/choice/rank/team/string/
+  text + `Register` for custom types; validate + suggest) and
+  `UsageSpec.lua` (parses `Usage` into typed `Args`; `Analyze` tells the
+  palette which argument the cursor is on, errors, missing args).
+- **Typed command args:** `CommandRegistry.Register` sets `def.Args` from
+  `Usage` (grammar in `UsageSpec` header). Refine with `ArgHints = { name =
+  { Type, Choices (list or function), Description, Min, Max, Suggestions } }`,
+  or give `Args` outright; `Examples = {...}` show in the palette. Keep
+  `Usage` strings in the `name [optional] a|b text... target:mod` grammar.
+  `GetCommandListRemote` now sends `Args`, `RequiresTarget`, `Examples`;
+  `GetAutocompleteDataRemote` sends rank names/colours.
+- `TargetResolver` name lookup = exact name, then case-insensitive
+  Name/DisplayName, then a unique prefix (`ArgumentTypes.FindPlayer`).
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -225,8 +241,14 @@ Rules that keep it sound:
 ## 5. Known issues & open work
 
 - `reference/PHASE7-KNOWN-ISSUES.md` is the detailed Phase 7 bug list.
-  Still open there: ServerPage preset rows don't wrap (#1); Ctrl+Shift+P
-  responsiveness and inline ghost-text suggestions (#5).
+  Still open there: ServerPage preset rows don't wrap (#1). #5 (palette
+  shortcut + ghost text) was rebuilt in W05 and Ctrl+Shift+P works with
+  Studio MCP input; **not yet tried on a real keyboard** (Studio itself may
+  grab the chord — if so, add a fallback key in W08 keybinds).
+- W05 palette leftovers: ghost text is hidden for quoted completions
+  (team names with spaces) and once the input scrolls horizontally; the
+  value being typed isn't validated until you move past it; the
+  "Recent" rows are session-only (persisted history = W06/W08).
 - Resize handle was rewritten with the drag fix but **not re-tested by hand**.
 - The old panel's `AdminPanelClient` also binds **F** to its own fly; its
   `AdminPanelV43` / `NotificationGui` duplicate in PlayerGui on each respawn.
@@ -268,23 +290,24 @@ Rules that keep it sound:
 ## 6. Current state
 
 - Sentinel server and client boot cleanly in Play. Unit tests 36/36.
-- **W01–W04 are done** (all pulled forward and built on 2026-11-15), except
-  the unverified items in §5. Everything is committed and pushed:
-  `main` = `origin/main` = `4f89db2` ("W04: security hardening…"). The
-  only later change is this end-of-session HANDOFF update (commit it if
-  it is still uncommitted).
-- Commits this session: `47f0bd7` schedule, `88c77f6` W01+W02, `bb204a7`
-  W03, `4f89db2` W04.
-- **Schedule position:** the next item is **W05 — Command palette I**
-  (argument types, autocomplete, ghost text, inline validation; fix
-  Ctrl+Shift+P, known issue #5). It was scheduled for Dec 19–20, so the
-  project is about **4 weekends ahead**. Rows in
+- **W01–W05 are done** (all pulled forward, built on 2026-11-15), except
+  the unverified items in §5. Everything is committed and pushed to
+  `main` (latest commit: "W05: typed palette autocomplete…").
+- **Schedule position:** the next item is **W06 — Palette II** (syntax
+  highlighting, live parser, execution + affected-player preview, docs
+  viewer, usage examples). W06 was scheduled for Dec 26–27, so the
+  project is about **5 weekends ahead**. Rows in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
   keep their dates; just continue with the next undone row.
 - Testing-place state: rank data is back to the 6 default ranks (history
   kept). Studio-only change (not in repo): `ServerScriptService.Datastore.
   DataHandler` reuses an existing `leaderstats` folder (place version 82).
-- Feature blueprint: **118 bullets ✅** — W01 73 (command aliases/chaining/
+- Feature blueprint: **139 bullets ✅** — W05 21 (graphical palette,
+  fuzzy/name/alias suggestions, live players with avatars + display names,
+  team/rank/argument/duration/numeric suggestions, custom types + custom
+  validation + custom autocomplete providers, context-aware suggestions,
+  ghost text, inline validation, arg descriptions, required/optional
+  markers, permission shown before execution, keyboard navigation), W01 73 (command aliases/chaining/
   cooldowns, player actions, effects, moderation basics, lock/maintenance,
   announcement, currency/XP/level), W02 30 (rank CRUD/templates/hierarchy/
   inheritance/expiry, nodes/wildcards/history, UserId/username/group/
@@ -309,9 +332,21 @@ Rules that keep it sound:
    blueprint bullets once verified.
 3. **Live-server check**: text censoring (Studio doesn't filter text).
 4. Scaffold `src/client`, `src/server`, `src/shared` — ask whether to delete.
-5. Then start **W05**.
+5. Then start **W06**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (W05)** — Built typed palette autocomplete: shared
+  `ArgumentTypes` + `UsageSpec`; registry derives `Args` from every
+  `Usage` (ArgHints on weather, lightingpreset, skin, rankpreset,
+  bindrank, editrank); UIBridge sends Args + new
+  `GetAutocompleteDataRemote`; rewrote `CommandPalette` (signature line,
+  arg hint, inline validation, ghost text, Tab/↑↓/Enter/Esc, avatars,
+  team/rank swatches, recent rows). Player names now resolve
+  case-insensitively / by display name / unique prefix. Tests 46/46;
+  driven in Play with keyboard + mouse (Ctrl+Shift+P, Tab accept, arrow
+  selection, click accept, Enter runs + keeps focus, history ↑).
+  ✅ 21 bullets. Committed and pushed.
 
 - **2026-11-15 (session end)** — Stopped after W04 at the user's request.
   All work committed and pushed (`4f89db2`). Open items for next time are
