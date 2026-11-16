@@ -1,633 +1,717 @@
--- ============================================
--- RANK MANAGEMENT PAGE
--- ============================================
--- Adapted from Admin Panel V4.3 Rank Management GUI
--- Features: User/Group/GamePass/Asset bindings, Owner-only access
+--!strict
+--[[
+	RankManagementPage.lua
 
-local Players = game:GetService("Players")
+	Purpose:
+		The Ranks page (W03): a UI over Systems/RankService. Replaces the
+		earlier prototype that used local fake data.
+
+	How it talks to the server:
+		- Reads: GetRanksSnapshotRemote (staff + ranks.view) — ranks,
+		  assignments, history, presets, command list, permission preview.
+		- Writes: plain Sentinel commands sent through ExecuteCommandRemote
+		  (;createrank, ;editrank, ;rankperm, ;rankpreset, ;bindrank,
+		  ;unbindrank, ...). So every change goes through the same
+		  permission / hierarchy / logging pipeline as chat commands, and
+		  results show up as normal toasts.
+
+	Tabs:
+		Ranks        list + editor (details, permission editor with search,
+		             allow/deny/none per node, presets, preview)
+		Assignments  every binding with remove, plus an "add" form
+		History      recent rank and permission changes
+
+	Public API:
+		RankManagementPage.Build(container: Frame, pageIds: {string}?): ()
+--]]
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
-local Theme = require(script.Parent.Theme)
-local Config = require(ReplicatedStorage.Shared.Sentinel.Config)
+local Theme = require(script.Parent:WaitForChild("Theme"))
 
 local RankManagementPage = {}
-RankManagementPage.__index = RankManagementPage
 
--- ============================================
--- STATE
--- ============================================
-local adminList = {}
-local bindingMethods = {}
+local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
--- ============================================
--- INITIALIZATION
--- ============================================
-function RankManagementPage.new(parent)
-	local self = setmetatable({}, RankManagementPage)
-	self.parent = parent
-	self.container = nil
-	self.theme = Theme
-	self.isOwner = false
-	self:Build()
-	return self
+-- Extra nodes that aren't a command's permission but matter for ranks.
+local EXTRA_NODES = {
+	"panel.open",
+	"ranks.view",
+	"ranks.manage",
+	"ranks.assign",
+}
+
+local BINDING_KINDS = { "username", "userid", "group", "grouprole", "gamepass", "asset" }
+
+-- ---------------------------------------------------------------------------
+-- Small widget helpers
+-- ---------------------------------------------------------------------------
+local function label(parent: Instance, text: string, size: number?, color: Color3?, font: Enum.Font?): TextLabel
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Size = UDim2.new(1, 0, 0, (size or 13) + 8)
+	l.Font = font or Theme.Font.Regular
+	l.TextSize = size or 13
+	l.TextColor3 = color or Theme.Colors.Text
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextWrapped = true
+	l.Text = text
+	l.Parent = parent
+	return l
 end
 
-function RankManagementPage:Build()
-	-- Main container
-	self.container = Instance.new("ScrollingFrame")
-	self.container.Name = "RankManagementPage"
-	self.container.Size = UDim2.new(1, 0, 1, 0)
-	self.container.BackgroundTransparency = 1
-	self.container.ScrollBarThickness = 6
-	self.container.CanvasSize = UDim2.new(0, 0, 0, 0)
-	self.container.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	self.container.Parent = self.parent
-
-	local layout = Instance.new("UIListLayout", self.container)
-	layout.Padding = UDim.new(0, 15)
-
-	local padding = Instance.new("UIPadding", self.container)
-	padding.PaddingTop = UDim.new(0, 15)
-	padding.PaddingLeft = UDim.new(0, 15)
-	padding.PaddingRight = UDim.new(0, 15)
-
-	-- Check if owner
-	self:CheckPermissions()
-
-	-- Build sections
-	self:BuildHeader()
-	self:BuildBindingMethodsSection()
-	self:BuildAdminListSection()
+local function button(parent: Instance, text: string, width: number, color: Color3?): TextButton
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0, width, 0, 28)
+	b.BackgroundColor3 = color or Theme.Colors.SurfaceRaised
+	b.AutoButtonColor = true
+	b.Font = Theme.Font.Medium
+	b.TextSize = 13
+	b.TextColor3 = Theme.Colors.Text
+	b.Text = text
+	b.Name = "Button_" .. text:gsub("[^%w]", "")
+	b.Parent = parent
+	Theme.corner(b, Theme.Radius.S)
+	return b
 end
 
--- ============================================
--- PERMISSION CHECK
--- ============================================
-function RankManagementPage:CheckPermissions()
-	-- This would normally call a remote to check if player is game owner
-	-- For now, we'll assume the player has permission if they're testing in Studio
-	local player = Players.LocalPlayer
-	self.isOwner = game.GameId == 0 or player.UserId == game.CreatorId
+local function textbox(parent: Instance, placeholder: string, text: string?, width: UDim?): TextBox
+	local t = Instance.new("TextBox")
+	t.Size = UDim2.new(width or UDim.new(1, 0), UDim.new(0, 28))
+	t.BackgroundColor3 = Theme.Colors.SurfaceRaised
+	t.ClearTextOnFocus = false
+	t.Font = Theme.Font.Regular
+	t.TextSize = 13
+	t.TextColor3 = Theme.Colors.Text
+	t.PlaceholderText = placeholder
+	t.PlaceholderColor3 = Theme.Colors.TextSecondary
+	t.TextXAlignment = Enum.TextXAlignment.Left
+	t.Text = text or ""
+	t.ClipsDescendants = true
+	t.Name = "Box_" .. placeholder:gsub("[^%w]", "")
+	t.Parent = parent
+	Theme.corner(t, Theme.Radius.S)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingLeft = UDim.new(0, 8)
+	pad.Parent = t
+	return t
 end
 
--- ============================================
--- HEADER SECTION
--- ============================================
-function RankManagementPage:BuildHeader()
-	local headerFrame = Instance.new("Frame", self.container)
-	headerFrame.Size = UDim2.new(1, 0, 0, 100)
-	headerFrame.BackgroundColor3 = self.theme.Current.Primary
-	headerFrame.BorderSizePixel = 0
-	headerFrame.LayoutOrder = 1
-
-	local corner = Instance.new("UICorner", headerFrame)
-	corner.CornerRadius = UDim.new(0, 12)
-
-	-- Title
-	local title = Instance.new("TextLabel", headerFrame)
-	title.Size = UDim2.new(1, -20, 0, 50)
-	title.Position = UDim2.new(0, 10, 0, 10)
-	title.BackgroundTransparency = 1
-	title.Text = "👑 Admin Rank Management"
-	title.TextColor3 = Color3.new(1, 1, 1)
-	title.Font = self.theme.Current.FontBold
-	title.TextSize = 24
-	title.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Subtitle
-	local subtitle = Instance.new("TextLabel", headerFrame)
-	subtitle.Size = UDim2.new(1, -20, 0, 30)
-	subtitle.Position = UDim2.new(0, 10, 0, 60)
-	subtitle.BackgroundTransparency = 1
-	subtitle.Text = self.isOwner and "Configure permissions and rank bindings" or "⚠️ Owner access required"
-	subtitle.TextColor3 = Color3.new(1, 1, 1)
-	subtitle.Font = self.theme.Current.Font
-	subtitle.TextSize = 14
-	subtitle.TextXAlignment = Enum.TextXAlignment.Left
+local function row(parent: Instance, height: number?, order: number?): Frame
+	local r = Instance.new("Frame")
+	r.BackgroundTransparency = 1
+	r.Size = UDim2.new(1, 0, 0, height or 28)
+	r.LayoutOrder = order or 0
+	r.Parent = parent
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Padding = UDim.new(0, 6)
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = r
+	return r
 end
 
--- ============================================
--- BINDING METHODS SECTION
--- ============================================
-function RankManagementPage:BuildBindingMethodsSection()
-	local sectionFrame = self:CreateSectionFrame("🔗 Permission Binding Methods")
-	sectionFrame.LayoutOrder = 2
-
-	-- Method cards
-	local methodsContainer = Instance.new("Frame", sectionFrame)
-	methodsContainer.Size = UDim2.new(1, -20, 0, 0)
-	methodsContainer.Position = UDim2.new(0, 10, 0, 50)
-	methodsContainer.BackgroundTransparency = 1
-	methodsContainer.AutomaticSize = Enum.AutomaticSize.Y
-
-	local methodsLayout = Instance.new("UIGridLayout", methodsContainer)
-	methodsLayout.CellSize = UDim2.new(0.48, -5, 0, 140)
-	methodsLayout.CellPadding = UDim.new(0, 10)
-
-	-- Username Method
-	self:CreateMethodCard(methodsContainer, {
-		icon = "👤",
-		title = "Username Binding",
-		description = "Assign ranks by Roblox Username",
-		placeholder = "PlayerUsername",
-		buttonText = "Add by Username",
-		method = "Username",
-	})
-
-	-- UserId Method
-	self:CreateMethodCard(methodsContainer, {
-		icon = "🆔",
-		title = "User ID Binding",
-		description = "Assign ranks by Roblox User ID",
-		placeholder = "12345678",
-		buttonText = "Add by User ID",
-		method = "UserId",
-	})
-
-	-- Group Method
-	self:CreateMethodCard(methodsContainer, {
-		icon = "👥",
-		title = "Group Binding",
-		description = "Link ranks to Roblox Group roles",
-		placeholder = "GroupId:RoleId",
-		buttonText = "Add Group Binding",
-		method = "GroupId",
-	})
-
-	-- GamePass Method
-	self:CreateMethodCard(methodsContainer, {
-		icon = "🎫",
-		title = "GamePass Binding",
-		description = "Grant ranks for GamePass ownership",
-		placeholder = "GamePassId",
-		buttonText = "Add GamePass",
-		method = "GamePassId",
-	})
+local function vlist(parent: Instance, padding: number?): UIListLayout
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, padding or 6)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = parent
+	return layout
 end
 
-function RankManagementPage:CreateMethodCard(parent, data)
-	local card = Instance.new("Frame", parent)
-	card.BackgroundColor3 = self.theme.Current.Surface
-	card.BorderSizePixel = 0
-
-	local cardCorner = Instance.new("UICorner", card)
-	cardCorner.CornerRadius = UDim.new(0, 10)
-
-	-- Icon
-	local icon = Instance.new("TextLabel", card)
-	icon.Size = UDim2.new(0, 40, 0, 40)
-	icon.Position = UDim2.new(0, 10, 0, 10)
-	icon.BackgroundTransparency = 1
-	icon.Text = data.icon
-	icon.TextSize = 28
-
-	-- Title
-	local title = Instance.new("TextLabel", card)
-	title.Size = UDim2.new(1, -60, 0, 25)
-	title.Position = UDim2.new(0, 55, 0, 10)
-	title.BackgroundTransparency = 1
-	title.Text = data.title
-	title.TextColor3 = self.theme.Current.Text
-	title.Font = self.theme.Current.FontBold
-	title.TextSize = 14
-	title.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Description
-	local desc = Instance.new("TextLabel", card)
-	desc.Size = UDim2.new(1, -60, 0, 20)
-	desc.Position = UDim2.new(0, 55, 0, 35)
-	desc.BackgroundTransparency = 1
-	desc.Text = data.description
-	desc.TextColor3 = self.theme.Current.TextDim
-	desc.Font = self.theme.Current.Font
-	desc.TextSize = 11
-	desc.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Input field
-	local input = Instance.new("TextBox", card)
-	input.Size = UDim2.new(1, -20, 0, 30)
-	input.Position = UDim2.new(0, 10, 0, 60)
-	input.BackgroundColor3 = self.theme.Current.Background
-	input.PlaceholderText = data.placeholder
-	input.Text = ""
-	input.TextColor3 = self.theme.Current.Text
-	input.PlaceholderColor3 = self.theme.Current.TextDim
-	input.Font = self.theme.Current.Font
-	input.TextSize = 12
-	input.BorderSizePixel = 0
-	input.ClearTextOnFocus = false
-
-	local inputCorner = Instance.new("UICorner", input)
-	inputCorner.CornerRadius = UDim.new(0, 6)
-
-	-- Rank selector
-	local rankSelector = Instance.new("TextButton", card)
-	rankSelector.Size = UDim2.new(1, -20, 0, 25)
-	rankSelector.Position = UDim2.new(0, 10, 0, 95)
-	rankSelector.BackgroundColor3 = self.theme.Current.Background
-	rankSelector.Text = "Select Rank  ▼"
-	rankSelector.TextColor3 = self.theme.Current.Text
-	rankSelector.Font = self.theme.Current.Font
-	rankSelector.TextSize = 12
-	rankSelector.BorderSizePixel = 0
-
-	local selectorCorner = Instance.new("UICorner", rankSelector)
-	selectorCorner.CornerRadius = UDim.new(0, 6)
-
-	-- Add button
-	local addBtn = Instance.new("TextButton", card)
-	addBtn.Size = UDim2.new(1, -20, 0, 30)
-	addBtn.Position = UDim2.new(0, 10, 1, -35)
-	addBtn.BackgroundColor3 = self.isOwner and self.theme.Current.Success or self.theme.Current.Secondary
-	addBtn.Text = data.buttonText
-	addBtn.TextColor3 = self.theme.Current.Text
-	addBtn.Font = self.theme.Current.FontBold
-	addBtn.TextSize = 12
-	addBtn.BorderSizePixel = 0
-
-	local addCorner = Instance.new("UICorner", addBtn)
-	addCorner.CornerRadius = UDim.new(0, 6)
-
-	-- Rank dropdown logic
-	local selectedRank = "Moderator"
-	rankSelector.MouseButton1Click:Connect(function()
-		-- Show rank dropdown (simplified for now)
-		local dropdown = self:CreateRankDropdown(rankSelector, function(rank)
-			selectedRank = rank
-			rankSelector.Text = rank .. "  ▼"
-		end)
-	end)
-
-	-- Add binding logic
-	addBtn.MouseButton1Click:Connect(function()
-		if not self.isOwner then
-			return
-		end
-
-		local value = input.Text
-		if value ~= "" then
-			self:AddBinding(data.method, value, selectedRank)
-			input.Text = ""
-		end
-	end)
+local function scroller(parent: Instance, position: UDim2, size: UDim2): ScrollingFrame
+	local s = Instance.new("ScrollingFrame")
+	s.Position = position
+	s.Size = size
+	s.BackgroundColor3 = Theme.Colors.Surface
+	s.BorderSizePixel = 0
+	s.ScrollBarThickness = 4
+	s.CanvasSize = UDim2.new()
+	s.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	s.Parent = parent
+	Theme.corner(s, Theme.Radius.M)
+	Theme.padding(s, Theme.Spacing.S)
+	return s
 end
 
-function RankManagementPage:CreateRankDropdown(parentButton, callback)
-	-- Remove existing dropdown
-	local existing = parentButton.Parent:FindFirstChild("RankDropdown")
-	if existing then
-		existing:Destroy()
-		return
-	end
-
-	local dropdown = Instance.new("Frame", parentButton.Parent)
-	dropdown.Name = "RankDropdown"
-	dropdown.Size = UDim2.new(1, -20, 0, 0)
-	dropdown.Position = UDim2.new(0, 10, 0, 120)
-	dropdown.BackgroundColor3 = self.theme.Current.Background
-	dropdown.BorderSizePixel = 0
-	dropdown.ZIndex = 100
-	dropdown.AutomaticSize = Enum.AutomaticSize.Y
-
-	local corner = Instance.new("UICorner", dropdown)
-	corner.CornerRadius = UDim.new(0, 8)
-
-	local listLayout = Instance.new("UIListLayout", dropdown)
-
-	for _, rank in ipairs(Config.RANKS) do
-		local option = Instance.new("TextButton", dropdown)
-		option.Size = UDim2.new(1, 0, 0, 30)
-		option.BackgroundColor3 = self.theme.Current.Surface
-		option.Text = rank.name
-		option.TextColor3 = rank.color
-		option.Font = self.theme.Current.Font
-		option.TextSize = 13
-		option.BorderSizePixel = 0
-
-		local optionCorner = Instance.new("UICorner", option)
-		optionCorner.CornerRadius = UDim.new(0, 6)
-
-		option.MouseButton1Click:Connect(function()
-			callback(rank.name)
-			dropdown:Destroy()
-		end)
-	end
-
-	-- Auto-close after 5 seconds
-	task.delay(5, function()
-		if dropdown and dropdown.Parent then
-			dropdown:Destroy()
-		end
-	end)
-
-	return dropdown
-end
-
--- ============================================
--- ADMIN LIST SECTION
--- ============================================
-function RankManagementPage:BuildAdminListSection()
-	local sectionFrame = self:CreateSectionFrame("📋 Current Admin List")
-	sectionFrame.LayoutOrder = 3
-
-	-- Search bar
-	local searchBar = Instance.new("TextBox", sectionFrame)
-	searchBar.Size = UDim2.new(1, -20, 0, 35)
-	searchBar.Position = UDim2.new(0, 10, 0, 50)
-	searchBar.BackgroundColor3 = self.theme.Current.Surface
-	searchBar.PlaceholderText = "🔍 Search admins..."
-	searchBar.Text = ""
-	searchBar.TextColor3 = self.theme.Current.Text
-	searchBar.PlaceholderColor3 = self.theme.Current.TextDim
-	searchBar.Font = self.theme.Current.Font
-	searchBar.TextSize = 13
-	searchBar.BorderSizePixel = 0
-
-	local searchCorner = Instance.new("UICorner", searchBar)
-	searchCorner.CornerRadius = UDim.new(0, 8)
-
-	-- Admin list
-	local adminListContainer = Instance.new("ScrollingFrame", sectionFrame)
-	adminListContainer.Size = UDim2.new(1, -20, 0, 300)
-	adminListContainer.Position = UDim2.new(0, 10, 0, 95)
-	adminListContainer.BackgroundColor3 = self.theme.Current.Surface
-	adminListContainer.BorderSizePixel = 0
-	adminListContainer.ScrollBarThickness = 6
-	adminListContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
-	adminListContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
-
-	local listCorner = Instance.new("UICorner", adminListContainer)
-	listCorner.CornerRadius = UDim.new(0, 8)
-
-	local listLayout = Instance.new("UIListLayout", adminListContainer)
-	listLayout.Padding = UDim.new(0, 8)
-
-	local listPadding = Instance.new("UIPadding", adminListContainer)
-	listPadding.PaddingTop = UDim.new(0, 8)
-	listPadding.PaddingLeft = UDim.new(0, 8)
-	listPadding.PaddingRight = UDim.new(0, 8)
-
-	-- Placeholder admin entries
-	self:RefreshAdminList(adminListContainer)
-end
-
-function RankManagementPage:RefreshAdminList(container)
-	-- Clear existing
-	for _, child in ipairs(container:GetChildren()) do
-		if child:IsA("Frame") then
+local function clear(frame: Instance)
+	for _, child in ipairs(frame:GetChildren()) do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UICorner") then
 			child:Destroy()
 		end
 	end
+end
 
-	-- Add placeholder entries
-	if #adminList == 0 then
-		local emptyLabel = Instance.new("TextLabel", container)
-		emptyLabel.Size = UDim2.new(1, -16, 0, 50)
-		emptyLabel.BackgroundTransparency = 1
-		emptyLabel.Text = "No admins configured yet.\nUse the binding methods above to add admins."
-		emptyLabel.TextColor3 = self.theme.Current.TextDim
-		emptyLabel.Font = self.theme.Current.Font
-		emptyLabel.TextSize = 12
-		emptyLabel.TextWrapped = true
-	else
-		for _, admin in ipairs(adminList) do
-			self:CreateAdminRow(container, admin)
-		end
+-- Values go into a command line; strip quotes and line breaks so they
+-- can't break tokenizing, then quote anything with spaces.
+local function arg(value: string): string
+	local clean = value:gsub('["\r\n]', ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if clean:find("%s") then
+		return '"' .. clean .. '"'
 	end
+	return clean
 end
 
-function RankManagementPage:CreateAdminRow(parent, admin)
-	local row = Instance.new("Frame", parent)
-	row.Size = UDim2.new(1, -16, 0, 70)
-	row.BackgroundColor3 = self.theme.Current.Background
-	row.BorderSizePixel = 0
+-- ---------------------------------------------------------------------------
+-- Page
+-- ---------------------------------------------------------------------------
+function RankManagementPage.Build(container: Frame, pageIds: { string }?)
+	local snapshotRemote = SentinelShared:WaitForChild("GetRanksSnapshotRemote", 10) :: RemoteFunction?
+	local executeRemote = SentinelShared:WaitForChild("ExecuteCommandRemote") :: RemoteEvent
+	local resultRemote = SentinelShared:WaitForChild("CommandResultRemote") :: RemoteEvent
 
-	local rowCorner = Instance.new("UICorner", row)
-	rowCorner.CornerRadius = UDim.new(0, 8)
+	local snapshot: any = nil
+	local selectedRank: string? = nil
+	local activeTab = "Ranks"
+	local nodeFilter = ""
+	local pendingRefresh = false
+	local render: () -> ()
 
-	-- Username/Identifier
-	local nameLabel = Instance.new("TextLabel", row)
-	nameLabel.Size = UDim2.new(0.4, 0, 0, 25)
-	nameLabel.Position = UDim2.new(0, 10, 0, 10)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = admin.username or admin.identifier
-	nameLabel.TextColor3 = self.theme.Current.Text
-	nameLabel.Font = self.theme.Current.FontBold
-	nameLabel.TextSize = 14
-	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	local header = label(container, "👑 Ranks", 20, Theme.Colors.Text, Theme.Font.Bold)
+	header.Size = UDim2.new(1, -110, 0, 28)
+	local subtitle = label(container, "Loading…", 13, Theme.Colors.TextSecondary)
+	subtitle.Position = UDim2.new(0, 0, 0, 28)
+	subtitle.Size = UDim2.new(1, -110, 0, 20)
 
-	-- Rank badge
-	local rankBadge = Instance.new("TextLabel", row)
-	rankBadge.Size = UDim2.new(0, 100, 0, 25)
-	rankBadge.Position = UDim2.new(0.45, 0, 0, 10)
-	rankBadge.BackgroundColor3 = admin.rankColor or self.theme.Current.Primary
-	rankBadge.Text = admin.rank
-	rankBadge.TextColor3 = self.theme.Current.Text
-	rankBadge.Font = self.theme.Current.FontBold
-	rankBadge.TextSize = 11
+	local refreshButton = button(container, "Refresh", 100)
+	refreshButton.AnchorPoint = Vector2.new(1, 0)
+	refreshButton.Position = UDim2.new(1, 0, 0, 0)
 
-	local badgeCorner = Instance.new("UICorner", rankBadge)
-	badgeCorner.CornerRadius = UDim.new(0, 12)
-
-	-- Binding method
-	local methodLabel = Instance.new("TextLabel", row)
-	methodLabel.Size = UDim2.new(1, -20, 0, 20)
-	methodLabel.Position = UDim2.new(0, 10, 0, 40)
-	methodLabel.BackgroundTransparency = 1
-	methodLabel.Text = "Via: " .. (admin.method or "Username")
-	methodLabel.TextColor3 = self.theme.Current.TextDim
-	methodLabel.Font = self.theme.Current.Font
-	methodLabel.TextSize = 11
-	methodLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	-- Edit button
-	local editBtn = Instance.new("TextButton", row)
-	editBtn.Size = UDim2.new(0, 80, 0, 30)
-	editBtn.Position = UDim2.new(1, -90, 0.5, -15)
-	editBtn.BackgroundColor3 = self.theme.Current.Primary
-	editBtn.Text = "Edit"
-	editBtn.TextColor3 = self.theme.Current.Text
-	editBtn.Font = self.theme.Current.FontBold
-	editBtn.TextSize = 12
-	editBtn.BorderSizePixel = 0
-
-	local editCorner = Instance.new("UICorner", editBtn)
-	editCorner.CornerRadius = UDim.new(0, 6)
-
-	editBtn.MouseButton1Click:Connect(function()
-		self:ShowEditDialog(admin)
-	end)
-
-	-- Remove button
-	local removeBtn = Instance.new("TextButton", row)
-	removeBtn.Size = UDim2.new(0, 80, 0, 30)
-	removeBtn.Position = UDim2.new(1, -180, 0.5, -15)
-	removeBtn.BackgroundColor3 = self.theme.Current.Error
-	removeBtn.Text = "Remove"
-	removeBtn.TextColor3 = self.theme.Current.Text
-	removeBtn.Font = self.theme.Current.FontBold
-	removeBtn.TextSize = 12
-	removeBtn.BorderSizePixel = 0
-
-	local removeCorner = Instance.new("UICorner", removeBtn)
-	removeCorner.CornerRadius = UDim.new(0, 6)
-
-	removeBtn.MouseButton1Click:Connect(function()
-		self:RemoveAdmin(admin)
-	end)
-end
-
--- ============================================
--- ACTIONS
--- ============================================
-function RankManagementPage:AddBinding(method, value, rank)
-	-- This would call a remote to add the binding on the server
-	-- For now, add to local list
-	table.insert(adminList, {
-		username = value,
-		rank = rank,
-		method = method,
-		rankColor = Config.GetRank(rank) and Config.GetRank(rank).color,
-	})
-
-	self:Refresh()
-end
-
-function RankManagementPage:RemoveAdmin(admin)
-	-- Remove from list
-	for i, a in ipairs(adminList) do
-		if a == admin then
-			table.remove(adminList, i)
-			break
-		end
-	end
-
-	self:Refresh()
-end
-
-function RankManagementPage:ShowEditDialog(admin)
-	-- Create edit dialog
-	local dialog = Instance.new("ScreenGui", Players.LocalPlayer.PlayerGui)
-	dialog.Name = "EditAdminDialog"
-	dialog.ResetOnSpawn = false
-
-	local overlay = Instance.new("Frame", dialog)
-	overlay.Size = UDim2.new(1, 0, 1, 0)
-	overlay.BackgroundColor3 = Color3.new(0, 0, 0)
-	overlay.BackgroundTransparency = 0.5
-	overlay.BorderSizePixel = 0
-
-	local frame = Instance.new("Frame", dialog)
-	frame.Size = UDim2.new(0, 400, 0, 300)
-	frame.Position = UDim2.new(0.5, -200, 0.5, -150)
-	frame.BackgroundColor3 = self.theme.Current.Surface
-	frame.BorderSizePixel = 0
-
-	local frameCorner = Instance.new("UICorner", frame)
-	frameCorner.CornerRadius = UDim.new(0, 15)
-
-	-- Title
-	local title = Instance.new("TextLabel", frame)
-	title.Size = UDim2.new(1, -20, 0, 40)
-	title.Position = UDim2.new(0, 10, 0, 10)
-	title.BackgroundTransparency = 1
-	title.Text = "Edit Rank for " .. (admin.username or admin.identifier)
-	title.TextColor3 = self.theme.Current.Text
-	title.Font = self.theme.Current.FontBold
-	title.TextSize = 18
-
-	-- Rank selector
-	local rankLabel = Instance.new("TextLabel", frame)
-	rankLabel.Size = UDim2.new(1, -20, 0, 20)
-	rankLabel.Position = UDim2.new(0, 10, 0, 60)
-	rankLabel.BackgroundTransparency = 1
-	rankLabel.Text = "Select new rank:"
-	rankLabel.TextColor3 = self.theme.Current.TextDim
-	rankLabel.Font = self.theme.Current.Font
-	rankLabel.TextSize = 12
-	rankLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-	local ranksContainer = Instance.new("Frame", frame)
-	ranksContainer.Size = UDim2.new(1, -20, 0, 140)
-	ranksContainer.Position = UDim2.new(0, 10, 0, 90)
-	ranksContainer.BackgroundTransparency = 1
-
-	local ranksLayout = Instance.new("UIGridLayout", ranksContainer)
-	ranksLayout.CellSize = UDim2.new(0.48, -5, 0, 35)
-	ranksLayout.CellPadding = UDim.new(0, 5)
-
-	for _, rank in ipairs(Config.RANKS) do
-		local rankBtn = Instance.new("TextButton", ranksContainer)
-		rankBtn.BackgroundColor3 = rank.color
-		rankBtn.Text = rank.name
-		rankBtn.TextColor3 = self.theme.Current.Text
-		rankBtn.Font = self.theme.Current.FontBold
-		rankBtn.TextSize = 12
-		rankBtn.BorderSizePixel = admin.rank == rank.name and 3 or 0
-
-		local rankBtnCorner = Instance.new("UICorner", rankBtn)
-		rankBtnCorner.CornerRadius = UDim.new(0, 8)
-
-		rankBtn.MouseButton1Click:Connect(function()
-			admin.rank = rank.name
-			admin.rankColor = rank.color
-			dialog:Destroy()
-			self:Refresh()
+	local tabs = row(container, 30)
+	tabs.Name = "Tabs"
+	tabs.Position = UDim2.new(0, 0, 0, 54)
+	local tabButtons: { [string]: TextButton } = {}
+	for i, name in ipairs({ "Ranks", "Assignments", "History" }) do
+		local b = button(tabs, name, 120)
+		b.LayoutOrder = i
+		tabButtons[name] = b
+		b.MouseButton1Click:Connect(function()
+			activeTab = name
+			render()
 		end)
 	end
 
-	-- Close button
-	local closeBtn = Instance.new("TextButton", frame)
-	closeBtn.Size = UDim2.new(1, -20, 0, 35)
-	closeBtn.Position = UDim2.new(0, 10, 1, -45)
-	closeBtn.BackgroundColor3 = self.theme.Current.Error
-	closeBtn.Text = "Cancel"
-	closeBtn.TextColor3 = self.theme.Current.Text
-	closeBtn.Font = self.theme.Current.FontBold
-	closeBtn.TextSize = 13
-	closeBtn.BorderSizePixel = 0
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.BackgroundTransparency = 1
+	body.Position = UDim2.new(0, 0, 0, 92)
+	body.Size = UDim2.new(1, 0, 1, -92)
+	body.Parent = container
 
-	local closeCorner = Instance.new("UICorner", closeBtn)
-	closeCorner.CornerRadius = UDim.new(0, 8)
-
-	closeBtn.MouseButton1Click:Connect(function()
-		dialog:Destroy()
-	end)
-end
-
--- ============================================
--- HELPERS
--- ============================================
-function RankManagementPage:CreateSectionFrame(title)
-	local frame = Instance.new("Frame", self.container)
-	frame.Size = UDim2.new(1, 0, 0, 200)
-	frame.BackgroundColor3 = self.theme.Current.Background
-	frame.BorderSizePixel = 0
-	frame.AutomaticSize = Enum.AutomaticSize.Y
-
-	local corner = Instance.new("UICorner", frame)
-	corner.CornerRadius = UDim.new(0, 12)
-
-	-- Section header
-	local header = Instance.new("TextLabel", frame)
-	header.Size = UDim2.new(1, -20, 0, 35)
-	header.Position = UDim2.new(0, 10, 0, 10)
-	header.BackgroundTransparency = 1
-	header.Text = title
-	header.TextColor3 = self.theme.Current.Primary
-	header.Font = self.theme.Current.FontBold
-	header.TextSize = 18
-	header.TextXAlignment = Enum.TextXAlignment.Left
-
-	return frame
-end
-
-function RankManagementPage:Refresh()
-	if self.container then
-		self.container:Destroy()
+	local function send(commandText: string)
+		executeRemote:FireServer(commandText)
 	end
-	self:Build()
+
+	local function refresh()
+		if not snapshotRemote then
+			subtitle.Text = "Rank data is unavailable (server remote missing)."
+			return
+		end
+		local ok, data = pcall(function()
+			return (snapshotRemote :: RemoteFunction):InvokeServer()
+		end)
+		if not ok then
+			subtitle.Text = "Could not load ranks."
+			return
+		end
+		if data == nil then
+			-- Rate-limited or no ranks.view: try once more shortly.
+			if not pendingRefresh then
+				pendingRefresh = true
+				task.delay(0.7, function()
+					pendingRefresh = false
+					refresh()
+				end)
+			end
+			return
+		end
+		snapshot = data
+		snapshot.PageIds = pageIds or {}
+		render()
+	end
+
+	-- ----------------------------------------------------------------------
+	-- Ranks tab
+	-- ----------------------------------------------------------------------
+	local function findRank(name: string?): any
+		if not snapshot or not name then
+			return nil
+		end
+		for _, r in ipairs(snapshot.Ranks) do
+			if r.Name == name then
+				return r
+			end
+		end
+		return nil
+	end
+
+	local function renderRanksTab()
+		local canManage = snapshot.Me.CanManage and not snapshot.ReadOnly
+
+		local list = scroller(body, UDim2.new(0, 0, 0, 0), UDim2.new(0, 230, 1, -40))
+		list.Name = "RankList"
+		vlist(list, 4)
+		for i, r in ipairs(snapshot.Ranks) do
+			local item = Instance.new("TextButton")
+			item.LayoutOrder = i
+			item.Size = UDim2.new(1, 0, 0, 40)
+			item.BackgroundColor3 = if r.Name == selectedRank then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+			item.BackgroundTransparency = if r.Name == selectedRank then 0.6 else 0
+			item.AutoButtonColor = true
+			item.Font = Theme.Font.Medium
+			item.TextSize = 13
+			item.TextColor3 = Theme.Colors.Text
+			item.TextXAlignment = Enum.TextXAlignment.Left
+			item.Text = ("      %s %s  ·  %d%s"):format(
+				r.Icon,
+				r.Name,
+				r.Priority,
+				if #r.OnlineHolders > 0 then ("  ·  %d online"):format(#r.OnlineHolders) else ""
+			)
+			item.Name = "Rank_" .. r.Name
+			item.Parent = list
+			Theme.corner(item, Theme.Radius.S)
+			local dot = Instance.new("Frame")
+			dot.Size = UDim2.new(0, 10, 0, 10)
+			dot.Position = UDim2.new(0, 8, 0.5, -5)
+			dot.BackgroundColor3 = Color3.fromRGB(r.Color[1], r.Color[2], r.Color[3])
+			dot.Parent = item
+			Theme.corner(dot, UDim.new(1, 0))
+			item.MouseButton1Click:Connect(function()
+				selectedRank = r.Name
+				render()
+			end)
+		end
+
+		-- New / duplicate / delete
+		local actions = row(body, 32)
+		actions.Name = "Actions"
+		actions.Position = UDim2.new(0, 0, 1, -32)
+		actions.Size = UDim2.new(0, 230, 0, 32)
+		local newName = textbox(actions, "New rank name", "", UDim.new(0, 86))
+		local createB = button(actions, "+ New", 52, Theme.Colors.Accent)
+		local dupB = button(actions, "Copy", 40)
+		local delB = button(actions, "Del", 34, Theme.Colors.Error)
+		newName.LayoutOrder, createB.LayoutOrder, dupB.LayoutOrder, delB.LayoutOrder = 1, 2, 3, 4
+		for _, w in ipairs({ newName, createB, dupB, delB } :: { GuiObject }) do
+			w.Visible = canManage
+		end
+		createB.MouseButton1Click:Connect(function()
+			if newName.Text ~= "" then
+				-- New ranks start at priority 1; edit it afterwards.
+				send(("createrank %s 1"):format(arg(newName.Text)))
+				selectedRank = newName.Text
+			end
+		end)
+		dupB.MouseButton1Click:Connect(function()
+			if selectedRank and newName.Text ~= "" then
+				send(("duplicaterank %s %s"):format(selectedRank, arg(newName.Text)))
+				selectedRank = newName.Text
+			end
+		end)
+		delB.MouseButton1Click:Connect(function()
+			if selectedRank then
+				send(("deleterank %s"):format(selectedRank))
+				selectedRank = nil
+			end
+		end)
+
+		-- Detail panel
+		local rank = findRank(selectedRank)
+		local detail = scroller(body, UDim2.new(0, 240, 0, 0), UDim2.new(1, -240, 1, 0))
+		detail.Name = "Detail"
+		vlist(detail, 8)
+		if not rank then
+			label(detail, "Select a rank.", 14, Theme.Colors.TextSecondary)
+			return
+		end
+
+		local title = label(detail, ("%s %s"):format(rank.Icon, rank.Name), 18, Theme.Colors.Text, Theme.Font.Bold)
+		title.LayoutOrder = 1
+		local meta = label(
+			detail,
+			("Priority %d%s · %d assignment(s) · online: %s"):format(
+				rank.Priority,
+				if rank.Protected then " · protected" else "",
+				(function()
+					local n = 0
+					for _, b in ipairs(snapshot.Bindings) do
+						if b.Rank == rank.Name then
+							n += 1
+						end
+					end
+					return n
+				end)(),
+				if #rank.OnlineHolders > 0 then table.concat(rank.OnlineHolders, ", ") else "nobody"
+			),
+			12,
+			Theme.Colors.TextSecondary
+		)
+		meta.LayoutOrder = 2
+
+		-- Details form
+		local fields = {
+			{ Key = "name", Label = "Name", Value = rank.Name },
+			{ Key = "priority", Label = "Priority", Value = tostring(rank.Priority) },
+			{ Key = "color", Label = "Color (R,G,B or #hex)", Value = ("%d,%d,%d"):format(rank.Color[1], rank.Color[2], rank.Color[3]) },
+			{ Key = "icon", Label = "Icon", Value = rank.Icon },
+			{ Key = "description", Label = "Description", Value = rank.Description },
+			{ Key = "inherits", Label = "Inherits (comma list)", Value = table.concat(rank.Inherits, ",") },
+		}
+		local boxes: { [string]: TextBox } = {}
+		for i, f in ipairs(fields) do
+			local r = row(detail, 28, 10 + i)
+			r.Name = "Field_" .. f.Key
+			local l = label(r, f.Label, 12, Theme.Colors.TextSecondary)
+			l.Size = UDim2.new(0, 150, 1, 0)
+			local box = textbox(r, f.Label, f.Value, UDim.new(1, -156))
+			box.TextEditable = canManage and not rank.Protected or (canManage and (f.Key == "color" or f.Key == "icon" or f.Key == "description"))
+			boxes[f.Key] = box
+		end
+		local saveRow = row(detail, 30, 20)
+		saveRow.Name = "SaveRow"
+		local saveB = button(saveRow, "Save details", 120, Theme.Colors.Accent)
+		saveB.Visible = canManage
+		saveB.MouseButton1Click:Connect(function()
+			-- One ;updaterank for all changed fields (separate commands would
+			-- trip the per-command cooldown), then the rename if any.
+			local pairsText = {}
+			for _, f in ipairs(fields) do
+				local newValue = boxes[f.Key].Text
+				if f.Key ~= "name" and newValue ~= f.Value then
+					local value = if newValue == "" and f.Key == "inherits" then "none" else newValue
+					local quoted = arg(value)
+					if quoted == "" then
+						quoted = '""'
+					end
+					table.insert(pairsText, f.Key .. " " .. quoted)
+				end
+			end
+			local parts = {}
+			if #pairsText > 0 then
+				table.insert(parts, ("updaterank %s %s"):format(rank.Name, table.concat(pairsText, " ")))
+			end
+			local newName = boxes.name.Text
+			if newName ~= rank.Name and newName ~= "" then
+				table.insert(parts, ("renamerank %s %s"):format(rank.Name, arg(newName)))
+				selectedRank = newName
+			end
+			if #parts > 0 then
+				send(table.concat(parts, " && "))
+			end
+		end)
+
+		-- Presets
+		local presetTitle = label(detail, "Permission presets", 14, Theme.Colors.Text, Theme.Font.Bold)
+		presetTitle.LayoutOrder = 30
+		local presetRow = Instance.new("Frame")
+		presetRow.BackgroundTransparency = 1
+		presetRow.Size = UDim2.new(1, 0, 0, 0)
+		presetRow.AutomaticSize = Enum.AutomaticSize.Y
+		presetRow.LayoutOrder = 31
+		presetRow.Name = "Presets"
+		presetRow.Parent = detail
+		local grid = Instance.new("UIGridLayout")
+		grid.CellSize = UDim2.new(0, 130, 0, 28)
+		grid.CellPadding = UDim2.new(0, 6, 0, 6)
+		grid.Parent = presetRow
+		for _, preset in ipairs(snapshot.Presets) do
+			local b = button(presetRow, "+ " .. preset.Name, 130)
+			b.Active = canManage and not rank.Protected
+			b.AutoButtonColor = b.Active
+			b.TextTransparency = if b.Active then 0 else 0.5
+			b.MouseButton1Click:Connect(function()
+				if b.Active then
+					send(("rankpreset %s %s"):format(rank.Name, preset.Name))
+				end
+			end)
+		end
+
+		-- Permission preview
+		local previewTitle = label(
+			detail,
+			("Preview: can run %d of %d commands"):format(#rank.AllowedCommands, #snapshot.Commands),
+			14,
+			Theme.Colors.Text,
+			Theme.Font.Bold
+		)
+		previewTitle.LayoutOrder = 40
+		local previewText = label(detail, table.concat(rank.AllowedCommands, ", "), 12, Theme.Colors.TextSecondary)
+		previewText.LayoutOrder = 41
+		previewText.AutomaticSize = Enum.AutomaticSize.Y
+
+		-- Permission editor
+		local editorTitle = label(detail, "Permissions (click to cycle: — / Allow / Deny)", 14, Theme.Colors.Text, Theme.Font.Bold)
+		editorTitle.LayoutOrder = 50
+		local search = textbox(detail, "🔍 Search permissions or commands…", nodeFilter)
+		search.LayoutOrder = 51
+
+		local nodeList = Instance.new("Frame")
+		nodeList.BackgroundTransparency = 1
+		nodeList.Size = UDim2.new(1, 0, 0, 0)
+		nodeList.AutomaticSize = Enum.AutomaticSize.Y
+		nodeList.LayoutOrder = 52
+		nodeList.Name = "NodeList"
+		nodeList.Parent = detail
+		vlist(nodeList, 3)
+
+		-- node -> commands using it
+		local nodeCommands: { [string]: { string } } = {}
+		for _, cmd in ipairs(snapshot.Commands) do
+			nodeCommands[cmd.Permission] = nodeCommands[cmd.Permission] or {}
+			table.insert(nodeCommands[cmd.Permission], cmd.Name)
+		end
+		local allNodes: { [string]: boolean } = {}
+		for node in pairs(nodeCommands) do
+			allNodes[node] = true
+		end
+		for _, node in ipairs(EXTRA_NODES) do
+			allNodes[node] = true
+		end
+		for _, pageId in ipairs(snapshot.PageIds or {}) do
+			allNodes["page." .. pageId:lower()] = true
+		end
+		for _, n in ipairs(rank.Nodes) do
+			allNodes[if n:sub(1, 1) == "!" then n:sub(2) else n] = true
+		end
+		local sorted = {}
+		for node in pairs(allNodes) do
+			table.insert(sorted, node)
+		end
+		table.sort(sorted)
+
+		local allowedSet: { [string]: boolean } = {}
+		for _, c in ipairs(rank.AllowedCommands) do
+			allowedSet[c] = true
+		end
+
+		local function renderNodes()
+			clear(nodeList)
+			local filter = nodeFilter:lower()
+			local shown = 0
+			for i, node in ipairs(sorted) do
+				local cmds = nodeCommands[node] or {}
+				local haystack = (node .. " " .. table.concat(cmds, " ")):lower()
+				if filter ~= "" and not haystack:find(filter, 1, true) then
+					continue
+				end
+				shown += 1
+				local direct = if table.find(rank.Nodes, "!" .. node)
+					then "deny"
+					elseif table.find(rank.Nodes, node) then "allow"
+					else nil
+				-- Effective state for nodes that gate commands.
+				local effective = nil
+				if #cmds > 0 then
+					effective = allowedSet[cmds[1]] == true
+				end
+
+				local r = row(nodeList, 26, i)
+				r.Name = "Node_" .. node:gsub("[^%w]", "_")
+				local stateB = button(r, if direct == "allow" then "Allow" elseif direct == "deny" then "Deny" else "—", 64)
+				stateB.BackgroundColor3 = if direct == "allow"
+					then Theme.Colors.Success
+					elseif direct == "deny" then Theme.Colors.Error
+					else Theme.Colors.SurfaceRaised
+				local nodeLabel = label(r, node, 13, Theme.Colors.Text, Theme.Font.Mono)
+				nodeLabel.Size = UDim2.new(0, 200, 1, 0)
+				nodeLabel.TextWrapped = false
+				nodeLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				local info = label(
+					r,
+					(if effective == true then "✔ effective  " elseif effective == false then "✖ not effective  " else "")
+						.. (if #cmds > 0 then table.concat(cmds, ", ") else ""),
+					11,
+					if effective then Theme.Colors.Success else Theme.Colors.TextSecondary
+				)
+				info.Size = UDim2.new(1, -282, 1, 0)
+				info.TextWrapped = false
+				info.TextTruncate = Enum.TextTruncate.AtEnd
+
+				local editable = canManage and not rank.Protected
+				stateB.AutoButtonColor = editable
+				stateB.MouseButton1Click:Connect(function()
+					if not editable then
+						return
+					end
+					-- — -> Allow -> Deny -> —
+					if direct == nil then
+						send(("rankperm %s +%s"):format(rank.Name, node))
+					elseif direct == "allow" then
+						send(("rankperm %s +!%s"):format(rank.Name, node)) -- replaces the allow
+					else
+						send(("rankperm %s -!%s"):format(rank.Name, node))
+					end
+				end)
+			end
+			if shown == 0 then
+				label(nodeList, "No permissions match.", 12, Theme.Colors.TextSecondary)
+			end
+		end
+		renderNodes()
+		search:GetPropertyChangedSignal("Text"):Connect(function()
+			nodeFilter = search.Text
+			renderNodes()
+		end)
+	end
+
+	-- ----------------------------------------------------------------------
+	-- Assignments tab
+	-- ----------------------------------------------------------------------
+	local function renderAssignmentsTab()
+		local canAssign = snapshot.Me.CanAssign and not snapshot.ReadOnly
+		local list = scroller(body, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, if canAssign then -76 else 0))
+		list.Name = "AssignList"
+		vlist(list, 4)
+		for i, b in ipairs(snapshot.Bindings) do
+			local r = row(list, 30, i)
+			r.Name = "Binding_" .. b.Id
+			local removeB = button(r, "Remove", 70, Theme.Colors.Error)
+			removeB.Visible = canAssign and not b.Protected
+			local l = label(r, ("[%s] %s%s"):format(b.Id, b.Description, if b.Protected then "  (protected)" else ""), 13)
+			l.Size = UDim2.new(1, -80, 1, 0)
+			removeB.MouseButton1Click:Connect(function()
+				send(("unbindrank %s"):format(b.Id))
+			end)
+		end
+		if not canAssign then
+			return
+		end
+
+		local form = Instance.new("Frame")
+		form.Name = "AddForm"
+		form.BackgroundTransparency = 1
+		form.Position = UDim2.new(0, 0, 1, -68)
+		form.Size = UDim2.new(1, 0, 0, 68)
+		form.Parent = body
+		vlist(form, 6)
+		local r1 = row(form, 28, 1)
+		r1.Name = "Row1"
+		local kindIndex = 1
+		local kindB = button(r1, "Kind: username", 130)
+		kindB.LayoutOrder = 1
+		local valueBox = textbox(r1, "Username / id", "", UDim.new(0.3, 0))
+		valueBox.LayoutOrder = 2
+		local rankBox = textbox(r1, "Rank", "", UDim.new(0.2, 0))
+		rankBox.LayoutOrder = 3
+		local durationBox = textbox(r1, "Duration (7d; blank = forever)", "", UDim.new(0.25, 0))
+		durationBox.LayoutOrder = 4
+		local r2 = row(form, 28, 2)
+		r2.Name = "Row2"
+		local minRankBox = textbox(r2, "Min group rank (grouprole only)", "", UDim.new(0.3, 0))
+		minRankBox.LayoutOrder = 1
+		local addB = button(r2, "+ Add assignment", 140, Theme.Colors.Accent)
+		addB.LayoutOrder = 2
+		kindB.MouseButton1Click:Connect(function()
+			kindIndex = kindIndex % #BINDING_KINDS + 1
+			kindB.Text = "Kind: " .. BINDING_KINDS[kindIndex]
+		end)
+		addB.MouseButton1Click:Connect(function()
+			if valueBox.Text == "" or rankBox.Text == "" then
+				return
+			end
+			local parts = { "bindrank", BINDING_KINDS[kindIndex], arg(valueBox.Text), arg(rankBox.Text) }
+			if durationBox.Text ~= "" then
+				table.insert(parts, arg(durationBox.Text))
+			end
+			if minRankBox.Text ~= "" then
+				table.insert(parts, arg(minRankBox.Text))
+			end
+			send(table.concat(parts, " "))
+		end)
+	end
+
+	-- ----------------------------------------------------------------------
+	-- History tab
+	-- ----------------------------------------------------------------------
+	local function renderHistoryTab()
+		local list = scroller(body, UDim2.new(0, 0, 0, 0), UDim2.new(1, 0, 1, 0))
+		vlist(list, 4)
+		if #snapshot.History == 0 then
+			label(list, "No rank changes yet.", 13, Theme.Colors.TextSecondary)
+		end
+		for i, h in ipairs(snapshot.History) do
+			local l = label(
+				list,
+				("%s  ·  %s  ·  %s"):format(os.date("%Y-%m-%d %H:%M", h.Time), h.ActorName, h.Detail),
+				12
+			)
+			l.LayoutOrder = i
+			l.AutomaticSize = Enum.AutomaticSize.Y
+		end
+	end
+
+	local lastRendered = { Tab = "", Rank = "" }
+
+	render = function()
+		for name, b in pairs(tabButtons) do
+			b.BackgroundColor3 = if name == activeTab then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+		end
+		-- Keep scroll positions across refreshes (each refresh rebuilds the
+		-- body), so editing a permission far down the list doesn't jump
+		-- back to the top. The detail panel only keeps its position when
+		-- it still shows the same rank.
+		local saved: { [string]: Vector2 } = {}
+		if lastRendered.Tab == activeTab then
+			for _, name in ipairs({ "RankList", "Detail", "AssignList" }) do
+				local frame = body:FindFirstChild(name)
+				if frame and frame:IsA("ScrollingFrame") then
+					if name ~= "Detail" or lastRendered.Rank == selectedRank then
+						saved[name] = frame.CanvasPosition
+					end
+				end
+			end
+		end
+		clear(body)
+		if not snapshot then
+			return
+		end
+		subtitle.Text = ("You: %s (priority %s)%s%s"):format(
+			snapshot.Me.TopRank or "no rank",
+			if snapshot.Me.Priority == nil then "—" else tostring(snapshot.Me.Priority),
+			if snapshot.Me.CanManage then "" else " · view only",
+			if snapshot.ReadOnly then " · ⚠ rank data failed to load, editing disabled" else ""
+		)
+		if findRank(selectedRank) == nil and snapshot.Ranks[1] then
+			selectedRank = snapshot.Ranks[1].Name
+		end
+		if activeTab == "Ranks" then
+			renderRanksTab()
+		elseif activeTab == "Assignments" then
+			renderAssignmentsTab()
+		else
+			renderHistoryTab()
+		end
+		lastRendered.Tab = activeTab
+		lastRendered.Rank = selectedRank or ""
+		if next(saved) then
+			task.defer(function()
+				task.wait() -- let AutomaticCanvasSize settle first
+				for name, position in pairs(saved) do
+					local frame = body:FindFirstChild(name)
+					if frame and frame:IsA("ScrollingFrame") then
+						frame.CanvasPosition = position
+					end
+				end
+			end)
+		end
+	end
+
+	refreshButton.MouseButton1Click:Connect(refresh)
+
+	-- Refresh after any command result while the page is visible (covers
+	-- our own edits and rank commands typed in chat or the palette).
+	resultRemote.OnClientEvent:Connect(function()
+		if container.Visible then
+			task.delay(0.6, refresh)
+		end
+	end)
+	container:GetPropertyChangedSignal("Visible"):Connect(function()
+		if container.Visible then
+			refresh()
+		end
+	end)
 end
 
 return RankManagementPage

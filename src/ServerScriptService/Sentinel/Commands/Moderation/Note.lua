@@ -81,6 +81,7 @@ CommandRegistry.Register({
 
 CommandRegistry.Register({
 	Name = "notes",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = {},
 	Description = "Lists staff notes for a player.",
 	Usage = "/notes target",

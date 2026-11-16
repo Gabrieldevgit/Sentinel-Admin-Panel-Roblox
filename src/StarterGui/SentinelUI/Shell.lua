@@ -50,8 +50,30 @@ local NAV_ITEMS = {
 	{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
 	{ Id = "Developer", Label = "Developer", Icon = "🔧" },
 	{ Id = "Notifications", Label = "Notifications", Icon = "🔔" },
+	{ Id = "Ranks", Label = "Ranks", Icon = "👑" },
 	{ Id = "Settings", Label = "Settings", Icon = "⚙" },
 }
+
+function Shell.GetPageIds(): { string }
+	local ids = {}
+	for _, item in ipairs(NAV_ITEMS) do
+		table.insert(ids, item.Id)
+	end
+	return ids
+end
+
+-- Hides/shows a page's sidebar entry (page visibility permissions). The
+-- server is still the authority: hidden pages' remotes stay permission-
+-- checked; this only keeps the navigation tidy.
+function Shell.SetPageVisible(id: string, visible: boolean)
+	local button = navButtons[id]
+	if button then
+		button.Visible = visible
+	end
+	if not visible and currentPageId == id and id ~= "Dashboard" then
+		Shell.ShowPage("Dashboard")
+	end
+end
 
 function Shell.ShowPage(id: string)
 	if currentPageId == id then

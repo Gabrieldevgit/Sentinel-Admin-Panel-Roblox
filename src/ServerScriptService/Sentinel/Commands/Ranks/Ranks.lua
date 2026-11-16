@@ -17,6 +17,8 @@
 		;duplicaterank Rank NewName
 		;editrank Rank priority|color|icon|description|inherits value...
 		;rankperm Rank +node | -node             grant / remove a permission node
+		;rankperm Rank +!node                    explicitly deny a node (-!node removes the denial)
+		;rankpreset [Rank Preset]                add a bundle of nodes (no args: list presets)
 		;assignrank target[:duration] Rank       give online player(s) a rank (temporary with :7d)
 		;unassignrank target Rank
 		;bindrank kind value Rank [duration] [minGroupRank]
@@ -204,6 +206,29 @@ register({
 })
 
 register({
+	Name = "updaterank",
+	Aliases = {},
+	Description = "Edits several rank fields at once (quote values with spaces).",
+	Usage = '/updaterank Rank field value [field value ...]  e.g. priority 25 description "Helps new players"',
+	Permission = "ranks.manage",
+	Execute = function(ctx: Ctx): Result
+		local args = ctx.Arguments
+		if #args < 3 or (#args - 1) % 2 ~= 0 then
+			return result(false, "Usage: /updaterank Rank field value [field value ...]")
+		end
+		local messages = {}
+		for i = 2, #args, 2 do
+			local ok, msg = RankService.EditRank(ctx.Executor, args[1], args[i], args[i + 1])
+			table.insert(messages, msg)
+			if not ok then
+				return result(false, table.concat(messages, " "))
+			end
+		end
+		return result(true, table.concat(messages, " "))
+	end,
+})
+
+register({
 	Name = "rankperm",
 	Aliases = { "rankpermission" },
 	Description = "Grants (+node) or removes (-node) a permission node on a rank.",
@@ -219,6 +244,24 @@ register({
 			sign, node = "+", change
 		end
 		return result(RankService.SetNode(ctx.Executor, name, node, sign == "+"))
+	end,
+})
+
+register({
+	Name = "rankpreset",
+	Aliases = {},
+	Description = "Adds a bundle of permission nodes to a rank (no args: list presets).",
+	Usage = "/rankpreset [Rank Preset]",
+	Permission = "ranks.manage",
+	Execute = function(ctx: Ctx): Result
+		if not ctx.Arguments[2] then
+			local parts = {}
+			for _, preset in ipairs(RankService.GetPresets()) do
+				table.insert(parts, ("%s (%s)"):format(preset.Name, preset.Description))
+			end
+			return result(ctx.Arguments[1] == nil, "Presets: " .. table.concat(parts, " | "))
+		end
+		return result(RankService.ApplyPreset(ctx.Executor, ctx.Arguments[1], ctx.Arguments[2]))
 	end,
 })
 

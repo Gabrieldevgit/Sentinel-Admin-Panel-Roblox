@@ -545,6 +545,7 @@ if sentinelUIFolder then
 		{ Name = "DeveloperPage" },
 		{ Name = "NotificationCenter" },
 		{ Name = "SettingsPage" },
+		{ Name = "RankManagementPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -580,6 +581,7 @@ if sentinelUIFolder then
 	local developerPageModule = loadedModules.DeveloperPage
 	local notificationCenterModule = loadedModules.NotificationCenter
 	local settingsPageModule = loadedModules.SettingsPage
+	local rankPageModule = loadedModules.RankManagementPage
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -606,6 +608,7 @@ if sentinelUIFolder then
 		local DeveloperPage = require(developerPageModule)
 		local NotificationCenter = require(notificationCenterModule)
 		local SettingsPage = require(settingsPageModule)
+		local RankManagementPage = require(rankPageModule)
 
 		Shell.Init()
 		CommandPalette.Init()
@@ -620,7 +623,22 @@ if sentinelUIFolder then
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
+		RankManagementPage.Build(Shell.RegisterPage("Ranks", "Ranks", "👑"), Shell.GetPageIds())
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
+
+		-- Page visibility permissions: hide pages the player's ranks
+		-- explicitly deny ("!page.<id>"). Visible by default.
+		local hiddenPagesRemote = SentinelShared:FindFirstChild("GetHiddenPagesRemote") :: RemoteFunction?
+		if hiddenPagesRemote then
+			local okHidden, hidden = pcall(function()
+				return (hiddenPagesRemote :: RemoteFunction):InvokeServer(Shell.GetPageIds())
+			end)
+			if okHidden and type(hidden) == "table" then
+				for _, pageId in ipairs(hidden) do
+					Shell.SetPageVisible(pageId, false)
+				end
+			end
+		end
 
 		Shell.searchButton.MouseButton1Click:Connect(function()
 			CommandPalette.Open()

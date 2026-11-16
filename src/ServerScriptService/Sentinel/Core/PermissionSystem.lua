@@ -26,6 +26,10 @@
 		PermissionSystem.GrantTemporary(player, node, seconds)
 		PermissionSystem.UndefineRole(roleName)
 		PermissionSystem.IsRoleDefined(roleName): boolean
+		PermissionSystem.Evaluate(player, node): "allow" | "deny" | nil
+		PermissionSystem.RoleHas(roleName, node): boolean
+
+		Nodes starting with "!" are explicit denials (see evaluateRole).
 
 		Role definitions and assignments are owned by Systems/RankService.
 
@@ -113,54 +117,85 @@ local function nodeMatches(granted: string, requested: string): boolean
 	return false
 end
 
-local function roleHasNode(roleName: string, requested: string, visited: { [string]: boolean }): boolean
+-- Evaluates one role (and its inheritance chain) for `requested`:
+-- "allow", "deny" or nil (no opinion). A role's OWN nodes are checked
+-- before its parents', and within one level a deny ("!node") beats an
+-- allow — so "developer.*" + "!developer.execute" works, and a child rank
+-- can re-allow something a parent denies.
+local function evaluateRole(roleName: string, requested: string, visited: { [string]: boolean }): string?
 	if visited[roleName] then
-		return false -- guard against inheritance cycles
+		return nil -- guard against inheritance cycles
 	end
 	visited[roleName] = true
 
 	local def = roles[roleName]
 	if not def then
-		return false
+		return nil
 	end
 
+	local allowed = false
 	for _, granted in ipairs(def.Nodes) do
-		if nodeMatches(granted, requested) then
-			return true
+		if granted:sub(1, 1) == "!" then
+			if nodeMatches(granted:sub(2), requested) then
+				return "deny"
+			end
+		elseif nodeMatches(granted, requested) then
+			allowed = true
 		end
 	end
+	if allowed then
+		return "allow"
+	end
 
+	local parentDenied = false
 	for _, parentRole in ipairs(def.Inherits) do
-		if roleHasNode(parentRole, requested, visited) then
-			return true
+		local verdict = evaluateRole(parentRole, requested, visited)
+		if verdict == "allow" then
+			return "allow"
+		elseif verdict == "deny" then
+			parentDenied = true
 		end
 	end
-
-	return false
+	return if parentDenied then "deny" else nil
 end
 
-function PermissionSystem.Has(player: Player, node: string): boolean
+-- "allow", "deny" (explicitly denied and nothing allows it) or nil.
+-- Across separately-assigned roles any allow wins, so a low rank's deny
+-- (e.g. on VIP) can never cripple a staff rank the same player holds.
+function PermissionSystem.Evaluate(player: Player, node: string): string?
 	-- Temporary grants first (cheap check, self-expiring).
 	local temp = temporaryGrants[player.UserId]
 	if temp and temp[node] then
 		if temp[node] > os.time() then
-			return true
+			return "allow"
 		end
 		temp[node] = nil
 	end
 
 	local assigned = playerRoles[player.UserId]
 	if not assigned then
-		return false
+		return nil
 	end
 
+	local denied = false
 	for roleName in pairs(assigned) do
-		if roleHasNode(roleName, node, {}) then
-			return true
+		local verdict = evaluateRole(roleName, node, {})
+		if verdict == "allow" then
+			return "allow"
+		elseif verdict == "deny" then
+			denied = true
 		end
 	end
+	return if denied then "deny" else nil
+end
 
-	return false
+function PermissionSystem.Has(player: Player, node: string): boolean
+	return PermissionSystem.Evaluate(player, node) == "allow"
+end
+
+-- Does a ROLE (with inheritance) allow `node`? For permission previews.
+function PermissionSystem.RoleHas(roleName: string, node: string): boolean
+	return evaluateRole(roleName, node, {}) == "allow"
 end
 
 function PermissionSystem.GetRoles(player: Player): { string }

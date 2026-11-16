@@ -58,6 +58,7 @@ end
 -- /goto [target]
 CommandRegistry.Register({
 	Name = "goto",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = { "to" },
 	Description = "Teleports you to a target player.",
 	Usage = "/goto target",

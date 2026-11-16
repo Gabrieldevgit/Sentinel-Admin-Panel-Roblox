@@ -184,6 +184,7 @@ CommandRegistry.Register({
 -- /pm [target] [message...]
 CommandRegistry.Register({
 	Name = "pm",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = { "privatemessage" },
 	Description = "Sends a private pop-up message to a specific player.",
 	Usage = "/pm target message...",
@@ -216,6 +217,7 @@ CommandRegistry.Register({
 -- /view [target]
 CommandRegistry.Register({
 	Name = "view",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = { "watch", "spectate" },
 	Description = "Spectates a target player's camera view.",
 	Usage = "/view target",

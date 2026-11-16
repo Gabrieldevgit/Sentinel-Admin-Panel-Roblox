@@ -138,16 +138,16 @@ Rank management
 Permission management
 - ✅ Granular permission nodes.
 - ✅ Wildcard permissions.
-- Explicit permission denial.
+- ✅ Explicit permission denial.
 - ✅ Permission inheritance.
 - ✅ Individual command permissions.
 - Page visibility permissions.
 - Action-level permissions.
 - Target-level restrictions.
-- Permission search.
-- Permission presets.
-- Permission editor.
-- Permission preview.
+- ✅ Permission search.
+- ✅ Permission presets.
+- ✅ Permission editor.
+- ✅ Permission preview.
 - ✅ Permission change history.
 Rank assignment methods
 - ✅ Roblox UserId.

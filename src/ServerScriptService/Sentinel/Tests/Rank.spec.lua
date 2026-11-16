@@ -106,6 +106,35 @@ return function(t)
 		t.ok(found and found.MinRank == 200 and found.ExpiresAt ~= nil, "grouprole with min rank and expiry")
 	end)
 
+	t.test("deny nodes and presets", function()
+		t.ok((RankService.CreateRank(owner, "Builder", 20)))
+		t.ok((RankService.SetNode(admin, "Builder", "!moderation.kick", true)), "admin may add a denial")
+		t.ok(not (RankService.SetNode(owner, "Builder", "!*", true)), "cannot deny everything")
+		t.ok(table.find(RankService.GetRank("Builder").Nodes, "!moderation.kick") ~= nil)
+		local ok, msg = RankService.ApplyPreset(admin, "Builder", "teleport")
+		t.ok(ok, msg)
+		t.ok(PermissionSystem.RoleHas("Builder", "player.bring"))
+		t.ok(not (RankService.ApplyPreset(admin, "Builder", "teleport")), "re-applying adds nothing")
+		local okDev, msgDev = RankService.ApplyPreset(admin, "Builder", "DevReadOnly")
+		t.ok(okDev, msgDev) -- admin holds the read-only developer nodes
+		t.ok(not (RankService.ApplyPreset(admin, "Owner", "teleport")), "owner rank is fixed")
+		t.ok(not (RankService.ApplyPreset(admin, "Builder", "nope")))
+	end)
+
+	t.test("target protection by rank", function()
+		local mod = { UserId = -8010, Name = "TMod" } :: any
+		local mod2 = { UserId = -8011, Name = "TMod2" } :: any
+		local guest = { UserId = -8012, Name = "Guest" } :: any
+		PermissionSystem.AssignRole(mod, "Moderator")
+		PermissionSystem.AssignRole(mod2, "Moderator")
+		t.ok(RankService.CanTarget(admin, mod), "admin can target moderator")
+		t.ok(not RankService.CanTarget(mod, admin), "moderator cannot target admin")
+		t.ok(not RankService.CanTarget(mod, mod2), "equal ranks are protected")
+		t.ok(RankService.CanTarget(mod, guest), "unranked players are not protected")
+		t.ok(RankService.CanTarget(mod, mod), "yourself is fine")
+		t.ok(not RankService.CanTarget(admin, owner), "nobody below can target the owner")
+	end)
+
 	t.test("delete cleans up inheritance and assignments", function()
 		t.ok(not (RankService.DeleteRank(admin, "Admin")), "admin cannot delete own rank")
 		t.ok((RankService.DeleteRank(owner, "Mentor")))

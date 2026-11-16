@@ -52,6 +52,28 @@ return function(t)
 		t.ok(not PermissionSystem.Has(nobody, "server.unlock"))
 	end)
 
+	t.test("explicit deny", function()
+		PermissionSystem.DefineRole("TestDev", { "developer.*", "!developer.execute" })
+		PermissionSystem.DefineRole("TestDevChild", { "developer.execute" }, { "TestDev" })
+		PermissionSystem.DefineRole("TestVipDeny", { "!moderation.kick" })
+		local dev = { UserId = -9101 } :: any
+		local child = { UserId = -9102 } :: any
+		local both = { UserId = -9103 } :: any
+		PermissionSystem.AssignRole(dev, "TestDev")
+		PermissionSystem.AssignRole(child, "TestDevChild")
+		PermissionSystem.AssignRole(both, "TestMod")
+		PermissionSystem.AssignRole(both, "TestVipDeny")
+		t.ok(PermissionSystem.Has(dev, "developer.stats"), "wildcard still allows the rest")
+		t.ok(not PermissionSystem.Has(dev, "developer.execute"), "deny beats wildcard in the same rank")
+		t.eq(PermissionSystem.Evaluate(dev, "developer.execute"), "deny")
+		t.eq(PermissionSystem.Evaluate(dev, "economy.give"), nil)
+		t.ok(PermissionSystem.Has(child, "developer.execute"), "child rank can re-allow")
+		t.ok(not PermissionSystem.Has(child, "developer.datastore.write") == false, "child inherits parent allows")
+		t.ok(PermissionSystem.Has(both, "moderation.kick"), "another rank's deny can't remove a staff allow")
+		t.ok(PermissionSystem.RoleHas("TestDev", "developer.console"))
+		t.ok(not PermissionSystem.RoleHas("TestDev", "developer.execute"))
+	end)
+
 	t.test("unknown role assignment errors", function()
 		t.ok(not pcall(PermissionSystem.AssignRole, nobody, "DoesNotExist"))
 	end)

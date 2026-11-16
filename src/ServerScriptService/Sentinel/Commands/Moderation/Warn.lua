@@ -86,6 +86,7 @@ CommandRegistry.Register({
 
 CommandRegistry.Register({
 	Name = "warnings",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = { "warns" },
 	Description = "Lists a player's warning history.",
 	Usage = "/warnings target",

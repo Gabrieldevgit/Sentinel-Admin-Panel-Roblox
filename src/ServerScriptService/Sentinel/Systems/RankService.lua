@@ -566,10 +566,17 @@ local function validRankName(name: any): boolean
 	return type(name) == "string" and #name >= 1 and #name <= 24 and name:match("^[%w_]+$") ~= nil
 end
 
--- "*" or category.action[.more] where any segment may be "*".
+-- "*" or category.action[.more] where any segment may be "*". A leading
+-- "!" makes it an explicit denial ("!developer.execute").
 local function validNode(node: any): boolean
 	if type(node) ~= "string" or #node < 1 or #node > 64 then
 		return false
+	end
+	if node:sub(1, 1) == "!" then
+		node = node:sub(2)
+		if node == "*" then
+			return false -- denying everything is never what you want
+		end
 	end
 	if node == "*" then
 		return true
@@ -849,7 +856,7 @@ function RankService.SetNode(actor: Player, name: string, node: string, add: boo
 		return false, "Permission nodes look like category.action, e.g. moderation.kick or player.*"
 	end
 	-- You cannot hand out a permission you don't have yourself.
-	if add and not isRoot(actor) and not PermissionSystem.Has(actor, node) then
+	if add and node:sub(1, 1) ~= "!" and not isRoot(actor) and not PermissionSystem.Has(actor, node) then
 		return false, ("You cannot grant %s because you don't have it."):format(node)
 	end
 	local nodes = state.Ranks[canonical].Nodes
@@ -858,7 +865,17 @@ function RankService.SetNode(actor: Player, name: string, node: string, add: boo
 		if idx then
 			return false, ("%s already has %s."):format(canonical, node)
 		end
+		-- Allow and deny of the same node are mutually exclusive: switching
+		-- one to the other is a single change.
+		local opposite = if node:sub(1, 1) == "!" then node:sub(2) else "!" .. node
+		local oppositeIdx = table.find(nodes, opposite)
+		if oppositeIdx then
+			table.remove(nodes, oppositeIdx)
+		end
 		table.insert(nodes, node)
+		if node:sub(1, 1) == "!" then
+			return commit(actor, "deny", ("Denied %s on %s."):format(node:sub(2), canonical))
+		end
 		return commit(actor, "grant", ("Granted %s to %s."):format(node, canonical))
 	end
 	if not idx then
@@ -1037,6 +1054,124 @@ function RankService.RemoveUserRank(actor: Player, userId: number, rankName: str
 	end
 	return false, ("That player doesn't have %s through a direct assignment."):format(canonical)
 end
+
+-- ---------------------------------------------------------------------------
+-- Permission presets: named bundles of nodes that can be added to a rank.
+-- ---------------------------------------------------------------------------
+local PRESETS: { [string]: { Description: string, Nodes: { string } } } = {
+	PanelAccess = { Description = "Open the panel and view ranks", Nodes = { "panel.open", "ranks.view" } },
+	Moderation = {
+		Description = "Kick, mute, warn, notes, freeze, jail",
+		Nodes = { "moderation.kick", "moderation.mute", "moderation.warn", "moderation.notes", "player.freeze", "player.jail" },
+	},
+	FullModeration = { Description = "All moderation incl. bans and access lists", Nodes = { "moderation.*", "player.freeze", "player.jail" } },
+	Teleport = { Description = "Goto, bring, teleport, spawn", Nodes = { "player.goto", "player.bring", "player.teleport", "player.spawn" } },
+	PlayerFun = {
+		Description = "Fly, noclip, speed, jump, spin, effects",
+		Nodes = { "player.fly", "player.noclip", "player.speed", "player.jump", "player.spin", "player.effects" },
+	},
+	Economy = { Description = "Currency, XP, badges and items", Nodes = { "economy.*", "inventory.*" } },
+	Server = { Description = "Announcements, lock, maintenance, environment", Nodes = { "server.*", "environment.*" } },
+	DevReadOnly = {
+		Description = "Read-only developer tools",
+		Nodes = { "developer.stats", "developer.console", "developer.remotemonitor", "developer.datastore.read" },
+	},
+}
+
+function RankService.GetPresets(): { { Name: string, Description: string, Nodes: { string } } }
+	local list = {}
+	for name, preset in pairs(PRESETS) do
+		table.insert(list, { Name = name, Description = preset.Description, Nodes = table.clone(preset.Nodes) })
+	end
+	table.sort(list, function(a, b)
+		return a.Name < b.Name
+	end)
+	return list
+end
+
+-- Adds every node of a preset the rank doesn't already have (one history
+-- entry). Same rules as SetNode: only for ranks below you, and only nodes
+-- you hold yourself.
+function RankService.ApplyPreset(actor: Player, rankName: string, presetName: string): (boolean, string)
+	local writable, why = guardWritable()
+	if not writable then
+		return false, why
+	end
+	local canonical = RankService.ResolveRankName(rankName)
+	if not canonical then
+		return false, ("Unknown rank '%s'."):format(tostring(rankName))
+	end
+	local presetKey = nil
+	for name in pairs(PRESETS) do
+		if name:lower() == (presetName or ""):lower() then
+			presetKey = name
+		end
+	end
+	if not presetKey then
+		local names = {}
+		for _, p in ipairs(RankService.GetPresets()) do
+			table.insert(names, p.Name)
+		end
+		return false, "Unknown preset. Presets: " .. table.concat(names, ", ")
+	end
+	if state.Ranks[canonical].Protected then
+		return false, ("%s always has every permission."):format(canonical)
+	end
+	if not canManage(actor, canonical) then
+		return false, "You can only edit ranks below your own."
+	end
+	local nodes = state.Ranks[canonical].Nodes
+	local added, skipped = {}, {}
+	for _, node in ipairs(PRESETS[presetKey].Nodes) do
+		if table.find(nodes, node) then
+			continue
+		end
+		if not isRoot(actor) and not PermissionSystem.Has(actor, node) then
+			table.insert(skipped, node)
+			continue
+		end
+		table.insert(nodes, node)
+		table.insert(added, node)
+	end
+	if #added == 0 then
+		return false, if #skipped > 0
+			then ("Nothing added; you don't hold: %s."):format(table.concat(skipped, ", "))
+			else ("%s already has everything in %s."):format(canonical, presetKey)
+	end
+	local ok, msg = commit(actor, "preset", ("Applied preset %s to %s: %s."):format(presetKey, canonical, table.concat(added, ", ")))
+	if #skipped > 0 then
+		msg ..= (" Skipped (you don't hold them): %s."):format(table.concat(skipped, ", "))
+	end
+	return ok, msg
+end
+
+-- ---------------------------------------------------------------------------
+-- Target protection: staff can't target players ranked equal to or above
+-- them (immunity by rank). Yourself is always allowed.
+-- ---------------------------------------------------------------------------
+function RankService.CanTarget(executor: Player, target: Player): boolean
+	if executor == target then
+		return true
+	end
+	local targetPriority = RankService.GetPriority(target)
+	if targetPriority == -math.huge then
+		return true -- unranked players are never protected
+	end
+	return targetPriority < RankService.GetPriority(executor)
+end
+
+local CommandProcessor = require(Core:WaitForChild("Parser"):WaitForChild("CommandProcessor"))
+CommandProcessor.SetTargetFilter(function(executor: Player, _def: any, targets: { Player })
+	local allowed, blocked = {}, 0
+	for _, target in ipairs(targets) do
+		if RankService.CanTarget(executor, target) then
+			table.insert(allowed, target)
+		else
+			blocked += 1
+		end
+	end
+	return allowed, blocked
+end)
 
 -- ---------------------------------------------------------------------------
 -- Startup

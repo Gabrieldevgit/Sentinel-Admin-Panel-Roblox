@@ -45,6 +45,16 @@ type ParsedCommand = Types.ParsedCommand
 
 local CommandProcessor = {}
 
+-- Optional policy that removes protected players from a command's targets
+-- (installed by Systems/RankService: no targeting equal/higher ranks).
+-- Returns the allowed targets and how many were removed.
+type TargetFilter = (executor: Player, def: Types.CommandDefinition, targets: { Player }) -> ({ Player }, number)
+local targetFilter: TargetFilter? = nil
+
+function CommandProcessor.SetTargetFilter(fn: TargetFilter?)
+	targetFilter = fn
+end
+
 function CommandProcessor.Process(executor: Player, rawInput: string): { CommandResult }
 	local results: { CommandResult } = {}
 
@@ -88,6 +98,18 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 			break
 		end
 
+		local blocked = 0
+		if def.RequiresTarget and targetFilter and def.TargetProtection ~= false then
+			targets, blocked = targetFilter(executor, def, targets)
+			if #targets == 0 then
+				table.insert(results, {
+					Success = false,
+					Message = ("You can't use %s on players ranked equal to or above you."):format(def.Name),
+				})
+				break
+			end
+		end
+
 		local ctx: Types.CommandContext = {
 			Executor = executor,
 			Targets = targets,
@@ -98,6 +120,9 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 		}
 
 		local result = CommandRegistry.Dispatch(def, executor, ctx)
+		if blocked > 0 and result.Message then
+			result.Message ..= (" (skipped %d player(s) ranked equal to or above you)"):format(blocked)
+		end
 		table.insert(results, result)
 
 		if not result.Success then

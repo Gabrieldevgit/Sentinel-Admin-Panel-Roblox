@@ -59,6 +59,7 @@ CommandRegistry.Register({
 
 CommandRegistry.Register({
 	Name = "pingview",
+	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
 	Aliases = { "ping" },
 	Description = "Shows a player's ping in milliseconds.",
 	Usage = "/pingview target",

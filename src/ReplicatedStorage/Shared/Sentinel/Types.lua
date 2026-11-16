@@ -119,6 +119,9 @@ export type CommandDefinition = {
 	Log: boolean,
 	Undoable: boolean,
 	RequiresTarget: boolean?,
+	-- false = may target players ranked equal/above the executor (read-only
+	-- or harmless commands). Default: protected.
+	TargetProtection: boolean?,
 	Execute: (ctx: CommandContext) -> CommandResult,
 }
 

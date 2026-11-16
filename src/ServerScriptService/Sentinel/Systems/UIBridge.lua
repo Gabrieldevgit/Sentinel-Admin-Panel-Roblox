@@ -417,6 +417,105 @@ function getPlayerNotesRemote.OnServerInvoke(player: Player, userId: number?)
 	return NoteCommand.GetNotes(userId)
 end
 
+-- ---------------------------------------------------------------------------
+-- Rank Management page (W03). Read-only snapshot; every change the page
+-- makes is sent as a normal command through ExecuteCommandRemote, so it
+-- goes through the same permission/cooldown/logging pipeline as chat.
+-- ---------------------------------------------------------------------------
+local RankService = require(Sentinel:WaitForChild("Systems"):WaitForChild("RankService"))
+local getRanksSnapshotRemote = getOrCreate("GetRanksSnapshotRemote", "RemoteFunction") :: RemoteFunction
+local getHiddenPagesRemote = getOrCreate("GetHiddenPagesRemote", "RemoteFunction") :: RemoteFunction
+
+local lastRankSnapshot: { [number]: number } = {}
+Players.PlayerRemoving:Connect(function(p: Player)
+	lastRankSnapshot[p.UserId] = nil
+end)
+
+function getRanksSnapshotRemote.OnServerInvoke(player: Player)
+	if not isStaff(player) or not PermissionSystem.Has(player, "ranks.view") then
+		return nil
+	end
+	-- Light rate limit: the snapshot walks every command for every rank.
+	local now = os.clock()
+	if lastRankSnapshot[player.UserId] and now - lastRankSnapshot[player.UserId] < 0.5 then
+		return nil
+	end
+	lastRankSnapshot[player.UserId] = now
+
+	local commands = {}
+	for _, def in ipairs(CommandRegistry.All()) do
+		table.insert(commands, { Name = def.Name, Permission = def.Permission, Category = def.Category })
+	end
+	table.sort(commands, function(a, b)
+		return a.Name < b.Name
+	end)
+
+	local holders: { [string]: { string } } = {}
+	local online = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		for _, roleName in ipairs(PermissionSystem.GetRoles(p)) do
+			holders[roleName] = holders[roleName] or {}
+			table.insert(holders[roleName], p.Name)
+		end
+		table.insert(online, { Name = p.Name, UserId = p.UserId, TopRank = RankService.GetTopRank(p) })
+	end
+
+	local ranks = RankService.GetRanks()
+	for _, rank in ipairs(ranks :: { any }) do
+		-- Permission preview: which commands this rank can run (with
+		-- inheritance and denials applied).
+		local allowed = {}
+		for _, cmd in ipairs(commands) do
+			if PermissionSystem.RoleHas(rank.Name, cmd.Permission) then
+				table.insert(allowed, cmd.Name)
+			end
+		end
+		rank.AllowedCommands = allowed
+		rank.OnlineHolders = holders[rank.Name] or {}
+	end
+
+	local bindings = RankService.GetBindings()
+	for _, b in ipairs(bindings :: { any }) do
+		b.Description = RankService.DescribeBinding(b)
+	end
+
+	return {
+		Ranks = ranks,
+		Bindings = bindings,
+		History = RankService.GetHistory(30),
+		Presets = RankService.GetPresets(),
+		Commands = commands,
+		Online = online,
+		ReadOnly = RankService.IsReadOnly(),
+		Me = {
+			Priority = (function()
+				local priority = RankService.GetPriority(player)
+				return if priority == -math.huge then nil else priority
+			end)(),
+			TopRank = RankService.GetTopRank(player),
+			CanManage = PermissionSystem.Has(player, "ranks.manage"),
+			CanAssign = PermissionSystem.Has(player, "ranks.assign"),
+		},
+	}
+end
+
+-- Page visibility: a page is hidden only when the player's ranks
+-- explicitly deny "page.<id>" (e.g. "!page.economy"); visible by default.
+function getHiddenPagesRemote.OnServerInvoke(player: Player, pageIds: any)
+	if not isStaff(player) or type(pageIds) ~= "table" or #pageIds > 50 then
+		return {}
+	end
+	local hidden = {}
+	for _, id in ipairs(pageIds) do
+		if type(id) == "string" and #id <= 32 and id:match("^%w+$") then
+			if PermissionSystem.Evaluate(player, "page." .. id:lower()) == "deny" then
+				table.insert(hidden, id)
+			end
+		end
+	end
+	return hidden
+end
+
 executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: string)
 	if type(rawText) ~= "string" or #rawText == 0 or #rawText > 500 then
 		return

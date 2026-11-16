@@ -5,7 +5,7 @@
 > it, what state it is in right now, and the rules every session follows.
 
 _Last updated: 2026-11-15 by the session that wrote the weekend schedule
-and ran W01 + W02 (tests, verification sweep, RankService)._
+and ran W01–W03 (tests, verification sweep, RankService, Ranks page)._
 
 ---
 
@@ -102,10 +102,14 @@ Control" UI, all driven by one command grammar
     **Client** DataModel instead. In **Edit** mode, `require` results are
     cached between calls, so after an edit you get the old code: require a
     `:Clone()`.
+  - Studio MCP mouse clicks in the panel's **top-left** can be swallowed by
+    Roblox's chat window (CoreGui). Hide it for the test session:
+    `TextChatService.ChatWindowConfiguration.Enabled = false` (Client).
+    Also scroll a ScrollingFrame so the target is on screen before clicking.
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks, 29 cases). Run in Edit mode:
+    permissions + ranks, 32 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
 - Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
@@ -126,7 +130,14 @@ Control" UI, all driven by one command grammar
     ServerState, Environment, Developer, **UIBridge**, **RankService**).
   - `Commands/Ranks/Ranks.lua` — `;ranks`, `;rankinfo`, `;createrank`,
     `;editrank`, `;rankperm`, `;assignrank`, `;bindrank`, `;rankbindings`,
-    `;rankhistory`, `;resetranks confirm`, … (see the file header).
+    `;rankhistory`, `;resetranks confirm`, `;updaterank`, `;rankpreset`, …
+    (see the file header).
+- `src/StarterGui/SentinelUI/RankManagementPage.lua` — Ranks page (tabs
+  Ranks / Assignments / History). Reads `GetRanksSnapshotRemote`; every
+  write is a normal command sent via `ExecuteCommandRemote`. Widgets have
+  stable names (`Body.RankList.Rank_<name>`, `Body.Detail.Field_<key>`,
+  `Body.Detail.NodeList.Node_<node>`, `Body.AddForm.Row1.Box_*`, …) so
+  Studio MCP mouse input can target them by instance path.
   - `Commands/<Category>/*.lua` — each file self-registers commands.
 - `src/StarterGui/SentinelUI/` — `Theme`, `Shell` (window), pages
   (`DashboardPage`, `PlayersPage`, …), `CommandPalette`,
@@ -148,6 +159,18 @@ Rules that keep it sound:
   touch ranks below their priority; Owner rank and creator binding are
   protected. If the store fails to load it runs read-only on defaults.
   Outside a running game it never touches the DataStore (tests).
+- **Permissions:** `!node` = explicit deny. Within one rank its own nodes
+  beat inherited ones and deny beats allow; across separately assigned
+  ranks any allow wins. `PermissionSystem.Evaluate` returns
+  allow/deny/nil. Pages are hidden only when `page.<id>` is explicitly
+  denied (`GetHiddenPagesRemote`).
+- **Target protection:** `CommandProcessor.SetTargetFilter` (installed by
+  RankService) drops targets ranked equal/above the executor (yourself
+  and unranked players are always allowed). Harmless commands opt out
+  with `TargetProtection = false` (goto, view, pingview, pm, notes,
+  warnings).
+- Running several commands of the **same name** in one `&&` chain trips
+  their cooldown — the UI must send one command (hence `;updaterank`).
 - New command = new `CommandRegistry.Register({...})` in `Commands/<Cat>/`.
   **Names and aliases must be unique across all commands** — a duplicate
   asserts and aborts server boot (happened with `m`).
@@ -204,6 +227,12 @@ Rules that keep it sound:
   the first player) is now redundant — the creator binding does it — and
   errors with `unknown role 'Owner'` because it runs before RankService.
   Ask the user to delete it.
+- W03 not yet verified (need two players — Studio *Test > Clients and
+  Servers* with 2 clients, give one a lower rank): target protection in
+  real commands (rank immunity / can't punish equal or higher), page
+  visibility (`!page.<id>` on a non-Owner rank), view-only page for a
+  rank without `ranks.manage`. Logic is unit-tested in `Rank.spec`.
+- UX: the open chat window overlaps the panel's top-left corner.
 - W02 not yet verified: GamePass/Asset ownership bindings (need an owned
   pass/asset), private-server-owner binding (needs a live private server),
   automatic promotions (not built). Hierarchy rules were verified with
@@ -218,11 +247,10 @@ Rules that keep it sound:
   `;hint`, alias variants (`superfling`, `bigexplosion`), fly + bottom-right
   fly menu (Deactivate / Noclip toggle / Close), mute/unmute/timed mute,
   panel drag from the whole top bar (clamped on-screen).
-- W01 and W02 (both pulled forward to 2026-11-15) are done except the
-  unverified items in §5. Uncommitted: all W01 + W02 work, blueprint ✅s
-  and this handoff. Rank data in the testing place was reset to defaults
-  after testing. Next: W03 (rank UI + permission editor, explicit deny,
-  punish-hierarchy).
+- W01–W03 (pulled forward to 2026-11-15) are done except the unverified
+  items in §5. W01+W02 are committed and pushed (`88c77f6`); W03 is
+  uncommitted. Rank data in the testing place is back to the 6 defaults
+  (history kept). Next: W04 security hardening.
 - Latest commit on `main`: `47f0bd7` (schedule). `dad045a` and earlier are
   pushed; `47f0bd7` is local only.
 - Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
@@ -232,13 +260,24 @@ Rules that keep it sound:
   announcement, currency/XP/level; W02: rank CRUD/templates/hierarchy/
   inheritance/expiry, nodes/wildcards/history, UserId/username/group/
   group-role/creator/temporary assignment, owner protection, no
-  self-demotion).
+  self-demotion; W03: explicit deny, permission search/presets/editor/
+  preview). 108 total.
 - **Schedule:** [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
   maps the whole blueprint onto 42 weekends (Sat+Sun ~4–6 h each; Fridays
   are buffer only), W01 = 2026-11-21 → W42 = 2027-09-05. Start each
   session by finding the current week's row.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (W03)** — Explicit deny (`!node`), permission presets
+  (`;rankpreset`), multi-field `;updaterank`, allow↔deny switch in one
+  `;rankperm`, target protection hook in CommandProcessor, page
+  visibility via `!page.<id>`, `GetRanksSnapshotRemote`, and a rebuilt
+  Ranks page (list, details form, permission editor with search and
+  allow/deny cycling, presets, command preview, assignments form,
+  history; scroll kept across refreshes). Tests 32/32; page driven by
+  mouse in Play (create, save, allow/deny, preset, assign/remove,
+  history, delete). ✅ 5 bullets; two-player items listed in §5.
 
 - **2026-11-15 (W02)** — Added `Systems/RankService` (persistent ranks +
   bindings, hierarchy, history, expiry loop, cross-server reload) and
