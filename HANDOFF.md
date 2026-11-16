@@ -5,7 +5,7 @@
 > it, what state it is in right now, and the rules every session follows.
 
 _Last updated: 2026-11-15 by the session that wrote the weekend schedule
-and ran W01–W03 (tests, verification sweep, RankService, Ranks page)._
+and ran W01–W04 (tests, sweep, RankService, Ranks page, security)._
 
 ---
 
@@ -106,10 +106,13 @@ Control" UI, all driven by one command grammar
     Roblox's chat window (CoreGui). Hide it for the test session:
     `TextChatService.ChatWindowConfiguration.Enabled = false` (Client).
     Also scroll a ScrollingFrame so the target is on screen before clicking.
+  - Mouse `moveTo` with raw x/y takes **GUI coordinates** (inset added
+    for you): use `AbsolutePosition + AbsoluteSize/2`. Screenshots are
+    1.25× the viewport.
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks, 32 cases). Run in Edit mode:
+    permissions + ranks + security, 36 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
 - Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
@@ -169,6 +172,21 @@ Rules that keep it sound:
   and unranked players are always allowed). Harmless commands opt out
   with `TargetProtection = false` (goto, view, pingview, pm, notes,
   warnings).
+- **Security (W04):**
+  - Every `OnServerInvoke` in UIBridge is registered through
+    `bindInvoke(remote, handler)` (per-player rate limit from `LIMITS`,
+    errors caught → returns nil). Validate client values with
+    `validUserId` / `clampCount` / `sanitizeLogFilter`. New remotes must use
+    `bindInvoke`; RemoteEvents use `Core/RateLimiter` directly.
+  - `Core/CommandPolicy.lua` holds command **risk levels** and **owner-only**
+    commands. High/critical (and medium hitting ≥3 players) return
+    `NeedsConfirmation` + `ConfirmId`; `;confirm [id]` replays the pending
+    chain (`CommandProcessor.ConfirmPending`). The panel shows
+    `ConfirmDialog` for it (init.client). UI code that already confirmed
+    may send `ExecuteCommandRemote:FireServer(text, { Confirmed = true })`.
+  - Text shown to other players goes through `Systems/TextFilterService`
+    (`ForBroadcast` / `ForUser`); on failure show nothing, never the
+    original. Studio doesn't censor, so filtering is only visible live.
 - Running several commands of the **same name** in one `&&` chain trips
   their cooldown — the UI must send one command (hence `;updaterank`).
 - New command = new `CommandRegistry.Register({...})` in `Commands/<Cat>/`.
@@ -233,6 +251,10 @@ Rules that keep it sound:
   visibility (`!page.<id>` on a non-Owner rank), view-only page for a
   rank without `ranks.manage`. Logic is unit-tested in `Rank.spec`.
 - UX: the open chat window overlaps the panel's top-left corner.
+- W04 not yet verified: actual text censoring (live server only),
+  owner-only refusal and bulk confirmation with real targets (need a
+  second player). Remaining W04-adjacent work: persistent audit records
+  (W10), offline lookups (W13), failure retries.
 - W02 not yet verified: GamePass/Asset ownership bindings (need an owned
   pass/asset), private-server-owner binding (needs a live private server),
   automatic promotions (not built). Hierarchy rules were verified with
@@ -247,10 +269,10 @@ Rules that keep it sound:
   `;hint`, alias variants (`superfling`, `bigexplosion`), fly + bottom-right
   fly menu (Deactivate / Noclip toggle / Close), mute/unmute/timed mute,
   panel drag from the whole top bar (clamped on-screen).
-- W01–W03 (pulled forward to 2026-11-15) are done except the unverified
-  items in §5. W01+W02 are committed and pushed (`88c77f6`); W03 is
-  uncommitted. Rank data in the testing place is back to the 6 defaults
-  (history kept). Next: W04 security hardening.
+- W01–W04 (pulled forward to 2026-11-15) are done except the unverified
+  items in §5. W01–W03 are committed and pushed (`bb204a7`); W04 is being
+  committed with this update. Rank data in the testing place is back to
+  the 6 defaults (history kept). Next: W05 command palette I.
 - Latest commit on `main`: `47f0bd7` (schedule). `dad045a` and earlier are
   pushed; `47f0bd7` is local only.
 - Studio-only change (not in repo): `ServerScriptService.Datastore.DataHandler`
@@ -261,13 +283,25 @@ Rules that keep it sound:
   inheritance/expiry, nodes/wildcards/history, UserId/username/group/
   group-role/creator/temporary assignment, owner protection, no
   self-demotion; W03: explicit deny, permission search/presets/editor/
-  preview). 108 total.
+  preview; W04: command visibility, risk indicators, bulk confirmation,
+  validation, rate limiting, confirmation). 118 total.
 - **Schedule:** [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md)
   maps the whole blueprint onto 42 weekends (Sat+Sun ~4–6 h each; Fridays
   are buffer only), W01 = 2026-11-21 → W42 = 2027-09-05. Start each
   session by finding the current week's row.
 
 ## 7. Session log (newest first)
+
+- **2026-11-15 (W04)** — Audited every client→server entry point. Added
+  `Core/RateLimiter` (all remotes, chat commands, MovementRemote; one
+  "slow down" notice per burst, spam logged as `security.ratelimit`),
+  `bindInvoke` + validation in UIBridge (staff gates on command list and
+  server stats; command list is permission-aware with risk flags),
+  `Core/CommandPolicy` (risk, owner-only) with `;confirm` and the panel
+  ConfirmDialog, `Systems/TextFilterService` on announce/countdown/msg/
+  hint/pm/kick/ban/warn text, risk badges in palette + Commands page.
+  Tests 36/36; verified in Play (confirm + cancel via dialog, spam,
+  malformed args, filter path). ✅ 10 bullets.
 
 - **2026-11-15 (W03)** — Explicit deny (`!node`), permission presets
   (`;rankpreset`), multi-field `;updaterank`, allow↔deny switch in one

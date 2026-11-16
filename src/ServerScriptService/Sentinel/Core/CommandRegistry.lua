@@ -50,6 +50,7 @@ local EventBus = require(SentinelShared:WaitForChild("EventBus"))
 
 local PermissionSystem = require(script.Parent:WaitForChild("PermissionSystem"))
 local Logger = require(script.Parent:WaitForChild("Logger"))
+local CommandPolicy = require(script.Parent:WaitForChild("CommandPolicy"))
 
 type CommandDefinition = Types.CommandDefinition
 type CommandContext = Types.CommandContext
@@ -149,7 +150,9 @@ end
 function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx: CommandContext): CommandResult
 	EventBus.Publish("Command.BeforeExecute", def, executor, ctx)
 
-	if not PermissionSystem.Has(executor, def.Permission) then
+	-- Public commands (e.g. ;confirm, which only replays the player's own
+	-- pending, fully re-checked command) skip the node check.
+	if not (def :: any).Public and not PermissionSystem.Has(executor, def.Permission) then
 		local result: CommandResult = { Success = false, Message = "You do not have permission to do that." }
 		EventBus.Publish("Command.Denied", def, executor, ctx)
 		Logger.Write({
@@ -162,6 +165,22 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 			Message = "Permission denied: " .. def.Permission,
 		})
 		return result
+	end
+
+	-- Owner-only commands: refused for anyone without the Owner rank, no
+	-- matter which permission nodes they hold.
+	if CommandPolicy.IsOwnerOnly(def) and not table.find(PermissionSystem.GetRoles(executor), "Owner") then
+		EventBus.Publish("Command.Denied", def, executor, ctx)
+		Logger.Write({
+			Executor = tostring(executor.UserId),
+			ExecutorName = executor.Name,
+			Command = def.Name,
+			Arguments = ctx.Arguments,
+			Result = "Denied",
+			Severity = "Warning",
+			Message = "Owner-only command",
+		})
+		return { Success = false, Message = ("%s is restricted to the Owner."):format(def.Name) }
 	end
 
 	if not checkAndSetCooldown(executor, def) then

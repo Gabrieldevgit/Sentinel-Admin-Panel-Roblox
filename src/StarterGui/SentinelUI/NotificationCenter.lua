@@ -251,7 +251,9 @@ function NotificationCenter.Init()
 				if result.Message then
 					-- The persistent log always gets every result — mute
 					-- only suppresses the popup, not the record of it.
-					if not mutedToasts then
+					-- Pending confirmations get the ConfirmDialog instead of a
+					-- red "Failed" toast (they haven't failed, they're waiting).
+					if not mutedToasts and not result.NeedsConfirmation then
 						showToast(result.Success == true, result.Message)
 					end
 					pushHistory({

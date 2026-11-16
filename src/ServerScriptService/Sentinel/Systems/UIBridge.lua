@@ -135,6 +135,73 @@ local function isStaff(player: Player): boolean
 	return PermissionSystem.Has(player, "panel.open")
 end
 
+-- ---------------------------------------------------------------------------
+-- Security (W04): every client -> server entry point is rate limited per
+-- player, and handler errors are caught so a bad request returns nil
+-- instead of surfacing a server error to the client.
+-- ---------------------------------------------------------------------------
+local RateLimiter = require(Sentinel:WaitForChild("Core"):WaitForChild("RateLimiter"))
+local CommandPolicy = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandPolicy"))
+
+-- capacity (burst), refill per second. Heavier snapshots get tighter limits.
+local LIMITS: { [string]: { number } } = {
+	CanOpenPanelRemote = { 5, 1 },
+	GetCommandListRemote = { 4, 1 },
+	GetAuditLogRemote = { 4, 1 },
+	GetRanksSnapshotRemote = { 3, 1.5 },
+	GetPlayerListRemote = { 6, 2 },
+}
+local DEFAULT_LIMIT = { 10, 4 }
+
+local function bindInvoke(remote: RemoteFunction, handler: (Player, ...any) -> ...any)
+	local limit = LIMITS[remote.Name] or DEFAULT_LIMIT
+	local limiter = RateLimiter.new(remote.Name, limit[1], limit[2])
+	remote.OnServerInvoke = function(player: Player, ...)
+		if not limiter:Allow(player) then
+			return nil
+		end
+		local results = table.pack(pcall(handler, player, ...))
+		if not results[1] then
+			warn(("[Sentinel.UIBridge] %s failed for %s: %s"):format(remote.Name, player.Name, tostring(results[2])))
+			return nil
+		end
+		return table.unpack(results, 2, results.n)
+	end
+end
+
+-- Input validation helpers for client-supplied values.
+local function validUserId(value: any): boolean
+	return type(value) == "number" and value == value and value > 0 and value % 1 == 0 and value < 2 ^ 53
+end
+
+local function clampCount(value: any, default: number, max: number): number
+	if type(value) ~= "number" or value ~= value then
+		return default
+	end
+	return math.clamp(math.floor(value), 1, max)
+end
+
+-- Only known string/number fields survive; everything else is dropped.
+local function sanitizeLogFilter(filter: any): any
+	if type(filter) ~= "table" then
+		return nil
+	end
+	local clean = {}
+	for _, key in ipairs({ "Player", "Command", "Moderator", "Server" }) do
+		local v = filter[key]
+		if type(v) == "string" and #v <= 100 then
+			clean[key] = v
+		end
+	end
+	for _, key in ipairs({ "Since", "Until" }) do
+		local v = filter[key]
+		if type(v) == "number" and v == v then
+			clean[key] = v
+		end
+	end
+	return if next(clean) then clean else nil
+end
+
 -- The client calls this BEFORE building any UI at all (Shell, Command
 -- Palette, pages) — not just before running commands. Without this, a
 -- non-staff player could still see the whole panel (player list, roles,
@@ -142,14 +209,14 @@ end
 -- would be denied. This is the single source of truth for "should this
 -- client even construct the UI" — the client must not decide that on its
 -- own.
-function canOpenPanelRemote.OnServerInvoke(player: Player)
+bindInvoke(canOpenPanelRemote, function(player: Player)
 	return isStaff(player)
-end
+end)
 
 -- Read-only snapshot of toggleable server state, for Quick Action cards
 -- that need to show their current status (e.g. "Lock Server: 🟢 Unlocked")
 -- rather than being blind one-shot buttons.
-function getServerStateRemote.OnServerInvoke(player: Player)
+bindInvoke(getServerStateRemote, function(player: Player)
 	if not isStaff(player) then
 		return {}
 	end
@@ -159,12 +226,26 @@ function getServerStateRemote.OnServerInvoke(player: Player)
 		SlowModeSeconds = ServerStateService.GetSlowMode(),
 		TimeFrozen = EnvironmentService.IsTimeFrozen(),
 	}
-end
+end)
 
-function getCommandListRemote.OnServerInvoke(_player: Player)
+bindInvoke(getCommandListRemote, function(player: Player)
+	if not isStaff(player) then
+		return {}
+	end
+	-- Permission-aware: only commands this player can actually run.
+	local isOwner = table.find(PermissionSystem.GetRoles(player), "Owner") ~= nil
 	local list = {}
 	for _, def in ipairs(CommandRegistry.All()) do
+		local public = (def :: any).Public == true
+		if not public and not PermissionSystem.Has(player, def.Permission) then
+			continue
+		end
+		if CommandPolicy.IsOwnerOnly(def) and not isOwner then
+			continue
+		end
 		table.insert(list, {
+			Risk = CommandPolicy.GetRisk(def),
+			OwnerOnly = CommandPolicy.IsOwnerOnly(def),
 			Name = def.Name,
 			Aliases = def.Aliases,
 			Description = def.Description,
@@ -174,13 +255,16 @@ function getCommandListRemote.OnServerInvoke(_player: Player)
 		})
 	end
 	return list
-end
+end)
 
-function getServerStatsRemote.OnServerInvoke(_player: Player)
+bindInvoke(getServerStatsRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
 	return DeveloperService.GetServerStats()
-end
+end)
 
-function getPlayerListRemote.OnServerInvoke(player: Player)
+bindInvoke(getPlayerListRemote, function(player: Player)
 	if not isStaff(player) then
 		return {}
 	end
@@ -210,28 +294,28 @@ function getPlayerListRemote.OnServerInvoke(player: Player)
 		})
 	end
 	return list
-end
+end)
 
-function getModerationLogRemote.OnServerInvoke(player: Player, count: number?)
+bindInvoke(getModerationLogRemote, function(player: Player, count: number?)
 	if not isStaff(player) then
 		return {}
 	end
 	local all = Logger.Query(nil)
-	local n = count or 30
+	local n = clampCount(count, 30, 200)
 	local result = {}
 	local startIndex = math.max(1, #all - n + 1)
 	for i = startIndex, #all do
 		table.insert(result, all[i])
 	end
 	return result
-end
+end)
 
-function getAuditLogRemote.OnServerInvoke(player: Player, filter: any)
+bindInvoke(getAuditLogRemote, function(player: Player, filter: any)
 	if not isStaff(player) then
 		return { Entries = {}, Stats = { Total = 0, SuccessRate = 100, TopCommands = {} } }
 	end
 
-	local entries = Logger.Query(filter)
+	local entries = Logger.Query(sanitizeLogFilter(filter))
 	local total = #entries
 	local successes = 0
 	local commandCounts: { [string]: number } = {}
@@ -276,12 +360,12 @@ function getAuditLogRemote.OnServerInvoke(player: Player, filter: any)
 			ActiveStaffCount = staffOnline,
 		},
 	}
-end
+end)
 
 local EconomyService = require(Sentinel:WaitForChild("Systems"):WaitForChild("EconomyService"))
 
-function getEconomySnapshotRemote.OnServerInvoke(player: Player, userId: number)
-	if not isStaff(player) or type(userId) ~= "number" then
+bindInvoke(getEconomySnapshotRemote, function(player: Player, userId: number)
+	if not isStaff(player) or not validUserId(userId) then
 		return nil
 	end
 	local target = Players:GetPlayerByUserId(userId)
@@ -294,26 +378,26 @@ function getEconomySnapshotRemote.OnServerInvoke(player: Player, userId: number)
 		XP = EconomyService.GetBalance(target, "XP"),
 		Level = EconomyService.GetBalance(target, "Level"),
 	}
-end
+end)
 
-function getRecentLogsRemote.OnServerInvoke(player: Player, count: number?)
+bindInvoke(getRecentLogsRemote, function(player: Player, count: number?)
 	if not isStaff(player) then
 		return {}
 	end
-	return DeveloperService.GetRecentLogs(count)
-end
+	return DeveloperService.GetRecentLogs(clampCount(count, 50, 200))
+end)
 
-function getRecentRemoteCallsRemote.OnServerInvoke(player: Player, count: number?)
+bindInvoke(getRecentRemoteCallsRemote, function(player: Player, count: number?)
 	if not isStaff(player) then
 		return {}
 	end
-	return DeveloperService.GetRecentRemoteCalls(count)
-end
+	return DeveloperService.GetRecentRemoteCalls(clampCount(count, 50, 200))
+end)
 
 -- Settings page Permissions viewer (Phase 7E): read-only, no assign/
 -- revoke controls exist in the UI, so this only ever hands back data,
 -- never accepts a role name to change anything.
-function getPermissionsSnapshotRemote.OnServerInvoke(player: Player)
+bindInvoke(getPermissionsSnapshotRemote, function(player: Player)
 	if not isStaff(player) then
 		return nil
 	end
@@ -321,14 +405,14 @@ function getPermissionsSnapshotRemote.OnServerInvoke(player: Player)
 		MyRoles = PermissionSystem.GetRoles(player),
 		Roles = PermissionSystem.GetAllRoleDefinitions(),
 	}
-end
+end)
 
 -- Inventory tab (Phase 7F): reads Tool instances directly rather than
 -- adding a new InventoryService function — this is a simple enumeration,
 -- not business logic InventoryService owns (it only knows about give/
 -- remove/duplicate/save/restore, not "list what's currently there").
-function getPlayerInventoryRemote.OnServerInvoke(player: Player, userId: number?)
-	if not isStaff(player) or type(userId) ~= "number" then
+bindInvoke(getPlayerInventoryRemote, function(player: Player, userId: number?)
+	if not isStaff(player) or not validUserId(userId) then
 		return nil
 	end
 	local target = Players:GetPlayerByUserId(userId)
@@ -350,7 +434,7 @@ function getPlayerInventoryRemote.OnServerInvoke(player: Player, userId: number?
 		table.insert(items, { Name = equippedTool.Name, Equipped = true })
 	end
 	return items
-end
+end)
 
 -- Moderation History tab (Phase 7F): Logger.Query's `Player` filter does
 -- an EXACT match against `entry.Target`, which is a comma-joined string
@@ -359,8 +443,8 @@ end
 -- by splitting on comma and checking membership is the correct behavior;
 -- Logger.Query itself isn't changed, since other callers may rely on its
 -- current (admittedly surprising) exact-match semantics.
-function getPlayerModerationHistoryRemote.OnServerInvoke(player: Player, userId: number?, count: number?)
-	if not isStaff(player) or type(userId) ~= "number" then
+bindInvoke(getPlayerModerationHistoryRemote, function(player: Player, userId: number?, count: number?)
+	if not isStaff(player) or not validUserId(userId) then
 		return {}
 	end
 	local target = Players:GetPlayerByUserId(userId)
@@ -381,17 +465,17 @@ function getPlayerModerationHistoryRemote.OnServerInvoke(player: Player, userId:
 				end
 			end
 		end
-		if #matches >= (count or 30) then
+		if #matches >= clampCount(count, 30, 100) then
 			break
 		end
 	end
 	return matches
-end
+end)
 
 -- Session tab (Phase 7F): join time comes from the tiny tracker above;
 -- everything else is read straight off the Player instance.
-function getPlayerSessionRemote.OnServerInvoke(player: Player, userId: number?)
-	if not isStaff(player) or type(userId) ~= "number" then
+bindInvoke(getPlayerSessionRemote, function(player: Player, userId: number?)
+	if not isStaff(player) or not validUserId(userId) then
 		return nil
 	end
 	local target = Players:GetPlayerByUserId(userId)
@@ -404,18 +488,18 @@ function getPlayerSessionRemote.OnServerInvoke(player: Player, userId: number?)
 		JoinedAt = sessionStartedAt[target.UserId],
 		Ping = DeveloperService.GetPing(target),
 	}
-end
+end)
 
 -- Notes tab (Phase 7F): read-only here — adding a note still goes through
 -- ExecuteCommandRemote ("/note target text") so the "moderation.notes"
 -- permission node is actually enforced, same reasoning as DataStores in
 -- the Developer Tools page.
-function getPlayerNotesRemote.OnServerInvoke(player: Player, userId: number?)
-	if not isStaff(player) or type(userId) ~= "number" then
+bindInvoke(getPlayerNotesRemote, function(player: Player, userId: number?)
+	if not isStaff(player) or not validUserId(userId) then
 		return {}
 	end
 	return NoteCommand.GetNotes(userId)
-end
+end)
 
 -- ---------------------------------------------------------------------------
 -- Rank Management page (W03). Read-only snapshot; every change the page
@@ -426,21 +510,11 @@ local RankService = require(Sentinel:WaitForChild("Systems"):WaitForChild("RankS
 local getRanksSnapshotRemote = getOrCreate("GetRanksSnapshotRemote", "RemoteFunction") :: RemoteFunction
 local getHiddenPagesRemote = getOrCreate("GetHiddenPagesRemote", "RemoteFunction") :: RemoteFunction
 
-local lastRankSnapshot: { [number]: number } = {}
-Players.PlayerRemoving:Connect(function(p: Player)
-	lastRankSnapshot[p.UserId] = nil
-end)
 
-function getRanksSnapshotRemote.OnServerInvoke(player: Player)
+bindInvoke(getRanksSnapshotRemote, function(player: Player)
 	if not isStaff(player) or not PermissionSystem.Has(player, "ranks.view") then
 		return nil
 	end
-	-- Light rate limit: the snapshot walks every command for every rank.
-	local now = os.clock()
-	if lastRankSnapshot[player.UserId] and now - lastRankSnapshot[player.UserId] < 0.5 then
-		return nil
-	end
-	lastRankSnapshot[player.UserId] = now
 
 	local commands = {}
 	for _, def in ipairs(CommandRegistry.All()) do
@@ -497,11 +571,11 @@ function getRanksSnapshotRemote.OnServerInvoke(player: Player)
 			CanAssign = PermissionSystem.Has(player, "ranks.assign"),
 		},
 	}
-end
+end)
 
 -- Page visibility: a page is hidden only when the player's ranks
 -- explicitly deny "page.<id>" (e.g. "!page.economy"); visible by default.
-function getHiddenPagesRemote.OnServerInvoke(player: Player, pageIds: any)
+bindInvoke(getHiddenPagesRemote, function(player: Player, pageIds: any)
 	if not isStaff(player) or type(pageIds) ~= "table" or #pageIds > 50 then
 		return {}
 	end
@@ -514,13 +588,26 @@ function getHiddenPagesRemote.OnServerInvoke(player: Player, pageIds: any)
 		end
 	end
 	return hidden
-end
+end)
 
-executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: string)
+local executeLimiter = RateLimiter.new("ExecuteCommandRemote", 8, 4)
+
+-- options.Confirmed: the UI already showed its own confirmation dialog
+-- (e.g. Quick Actions' typed SHUTDOWN). Confirmations are a safeguard
+-- against mistakes, not a permission: Dispatch still checks everything.
+executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: any, options: any)
 	if type(rawText) ~= "string" or #rawText == 0 or #rawText > 500 then
 		return
 	end
-	local results = CommandProcessor.Process(player, rawText)
+	local allowed, firstDrop = executeLimiter:Allow(player)
+	if not allowed then
+		if firstDrop then
+			commandResultRemote:FireClient(player, { { Success = false, Message = "Slow down — too many commands." } })
+		end
+		return
+	end
+	local confirmed = type(options) == "table" and options.Confirmed == true
+	local results = CommandProcessor.Process(player, rawText, { Confirmed = confirmed })
 	commandResultRemote:FireClient(player, results)
 end)
 

@@ -23,6 +23,7 @@ local Types = require(SentinelShared:WaitForChild("Types"))
 local EventBus = require(SentinelShared:WaitForChild("EventBus"))
 
 local CommandRegistry = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
 
 CommandRegistry.Register({
 	Name = "kick",
@@ -39,8 +40,12 @@ CommandRegistry.Register({
 		local reason = if #ctx.Arguments > 0 then table.concat(ctx.Arguments, " ") else "Kicked by staff."
 
 		for _, target in ipairs(ctx.Targets) do
+			-- The kick screen shows staff-typed text to the target: filter it.
+			local shown = if #ctx.Arguments > 0
+				then TextFilterService.ForUser(ctx.Executor.UserId, reason, target.UserId) or "Kicked by staff."
+				else reason
 			EventBus.Publish("Player.BeforeKick", target, ctx.Executor, reason)
-			target:Kick(reason)
+			target:Kick(shown)
 		end
 
 		return {

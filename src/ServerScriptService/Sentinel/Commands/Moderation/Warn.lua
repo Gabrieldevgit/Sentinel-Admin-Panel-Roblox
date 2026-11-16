@@ -21,6 +21,7 @@ local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sen
 
 local Sentinel = script.Parent.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
 local PunishmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PunishmentService"))
 
 -- ---------------------------------------------------------------------------
@@ -64,7 +65,15 @@ CommandRegistry.Register({
 	Undoable = false,
 	RequiresTarget = true,
 	Execute = function(ctx: Types.CommandContext): Types.CommandResult
-		local reason = if #ctx.Arguments > 0 then table.concat(ctx.Arguments, " ") else "No reason given."
+		local reason = "No reason given."
+		if #ctx.Arguments > 0 then
+			-- Warning reasons end up on kick screens (escalation): filter them.
+			local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, table.concat(ctx.Arguments, " "))
+			if not filtered then
+				return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+			end
+			reason = filtered
+		end
 		local counts = {}
 
 		for _, target in ipairs(ctx.Targets) do

@@ -27,6 +27,7 @@ local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sen
 
 local Sentinel = script.Parent.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -63,7 +64,11 @@ CommandRegistry.Register({
 		if text == "" then
 			return { Success = false, Message = "Usage: /announce message" }
 		end
-		broadcast(text)
+		local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, text)
+		if not filtered then
+			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+		end
+		broadcast(filtered)
 		return { Success = true, Message = "Announcement sent." }
 	end,
 })
@@ -83,7 +88,14 @@ CommandRegistry.Register({
 		if not seconds or seconds <= 0 or seconds > 300 then
 			return { Success = false, Message = "Usage: /countdown seconds [label] (max 300)" }
 		end
-		local label = if #ctx.Arguments > 1 then table.concat(ctx.Arguments, " ", 2) else "Starting"
+		local label = "Starting"
+		if #ctx.Arguments > 1 then
+			local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, table.concat(ctx.Arguments, " ", 2))
+			if not filtered then
+				return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+			end
+			label = filtered
+		end
 
 		task.spawn(function()
 			for remaining = seconds, 1, -1 do

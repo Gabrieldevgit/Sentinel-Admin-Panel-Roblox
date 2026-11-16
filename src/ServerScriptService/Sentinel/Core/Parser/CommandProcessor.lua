@@ -26,7 +26,16 @@
 		Types.lua (Shared)
 
 	Public API:
-		CommandProcessor.Process(executor: Player, rawInput: string): {CommandResult}
+		CommandProcessor.Process(executor, rawInput, options?): {CommandResult}
+			options.Confirmed = true skips risk confirmation (used by
+			;confirm and by UI dialogs that already asked the user)
+		CommandProcessor.ConfirmPending(executor, id?): {CommandResult}
+		CommandProcessor.SetTargetFilter(fn)
+
+	Risky commands (see Core/CommandPolicy) don't run straight away: the
+	result has NeedsConfirmation = true and a ConfirmId, and the rest of
+	the chain (from the risky link on) is kept for CONFIRM_WINDOW seconds
+	until the player runs ;confirm.
 
 	Example usage:
 		-- rawInput does NOT include the leading "/"
@@ -39,6 +48,12 @@ local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sen
 local CommandParser = require(script.Parent:WaitForChild("CommandParser"))
 local TargetResolver = require(script.Parent:WaitForChild("TargetResolver"))
 local CommandRegistry = require(script.Parent.Parent:WaitForChild("CommandRegistry"))
+local CommandPolicy = require(script.Parent.Parent:WaitForChild("CommandPolicy"))
+local PermissionSystem = require(script.Parent.Parent:WaitForChild("PermissionSystem"))
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+
+local CONFIRM_WINDOW = 30 -- seconds a pending confirmation stays valid
 
 type CommandResult = Types.CommandResult
 type ParsedCommand = Types.ParsedCommand
@@ -55,8 +70,25 @@ function CommandProcessor.SetTargetFilter(fn: TargetFilter?)
 	targetFilter = fn
 end
 
-function CommandProcessor.Process(executor: Player, rawInput: string): { CommandResult }
+type Pending = { Id: string, RawInput: string, Expires: number }
+local pendingConfirmations: { [number]: Pending } = {}
+Players.PlayerRemoving:Connect(function(player: Player)
+	pendingConfirmations[player.UserId] = nil
+end)
+
+-- Rebuilds the raw text of a chain starting at `link`.
+local function remainingChain(link: ParsedCommand?): string
+	local parts = {}
+	while link do
+		table.insert(parts, link.RawInput)
+		link = link.NextCommand
+	end
+	return table.concat(parts, " && ")
+end
+
+function CommandProcessor.Process(executor: Player, rawInput: string, options: { Confirmed: boolean? }?): { CommandResult }
 	local results: { CommandResult } = {}
+	local confirmed = options ~= nil and options.Confirmed == true
 
 	local chain = CommandParser.ParseLine(rawInput)
 	if not chain then
@@ -110,6 +142,31 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 			end
 		end
 
+		-- Risky commands wait for an explicit ;confirm (or a UI dialog).
+		-- (Only ask when the command would actually be allowed; otherwise
+		-- Dispatch reports the denial straight away.)
+		local allowed = PermissionSystem.Has(executor, def.Permission)
+			and (not CommandPolicy.IsOwnerOnly(def) or table.find(PermissionSystem.GetRoles(executor), "Owner") ~= nil)
+		if not confirmed and allowed then
+			local needs, why = CommandPolicy.NeedsConfirmation(def, #targets)
+			if needs then
+				local id = HttpService:GenerateGUID(false):sub(1, 6):lower()
+				pendingConfirmations[executor.UserId] = {
+					Id = id,
+					RawInput = remainingChain(current),
+					Expires = os.time() + CONFIRM_WINDOW,
+				}
+				table.insert(results, {
+					Success = false,
+					NeedsConfirmation = true,
+					ConfirmId = id,
+					Risk = CommandPolicy.GetRisk(def),
+					Message = ("⚠ %s Type ;confirm within %ds to run it."):format(why, CONFIRM_WINDOW),
+				} :: any)
+				break
+			end
+		end
+
 		local ctx: Types.CommandContext = {
 			Executor = executor,
 			Targets = targets,
@@ -133,6 +190,22 @@ function CommandProcessor.Process(executor: Player, rawInput: string): { Command
 	end
 
 	return results
+end
+
+-- Runs the player's pending risky command. `id` is optional (chat users
+-- just type ;confirm); when given it must match, so an old dialog can't
+-- confirm a newer request.
+function CommandProcessor.ConfirmPending(executor: Player, id: string?): { CommandResult }
+	local pending = pendingConfirmations[executor.UserId]
+	if not pending or pending.Expires < os.time() then
+		pendingConfirmations[executor.UserId] = nil
+		return { { Success = false, Message = "Nothing to confirm (or it expired)." } }
+	end
+	if id and id ~= "" and id ~= pending.Id then
+		return { { Success = false, Message = "That confirmation is no longer pending." } }
+	end
+	pendingConfirmations[executor.UserId] = nil
+	return CommandProcessor.Process(executor, pending.RawInput, { Confirmed = true })
 end
 
 return CommandProcessor

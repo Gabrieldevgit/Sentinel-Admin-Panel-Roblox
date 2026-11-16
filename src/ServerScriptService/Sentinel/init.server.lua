@@ -114,8 +114,18 @@ local commandResultRemote = ReplicatedStorage:WaitForChild("Shared")
 	:WaitForChild("Sentinel")
 	:WaitForChild("CommandResultRemote") :: RemoteEvent
 
+local RateLimiter = require(Core:WaitForChild("RateLimiter"))
+local chatCommandLimiter = RateLimiter.new("ChatCommands", 6, 2)
+
 local function handleCommandText(player: Player, text: string)
-	if text:sub(1, 1) ~= COMMAND_PREFIX then
+	if text:sub(1, 1) ~= COMMAND_PREFIX or #text > 500 then
+		return
+	end
+	local allowed, firstDrop = chatCommandLimiter:Allow(player)
+	if not allowed then
+		if firstDrop then
+			commandResultRemote:FireClient(player, { { Success = false, Message = "Slow down — too many commands." } })
+		end
 		return
 	end
 	local results = CommandProcessor.Process(player, text:sub(2))

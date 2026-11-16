@@ -53,8 +53,11 @@ local movementRemote = getMovementRemote()
 -- noclip themselves. This only ever touches the sender's own attributes
 -- (status display for the Players page), never another player's, and
 -- grants nothing: flight itself is started only by the /fly command.
+local RateLimiter = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("RateLimiter"))
+local movementLimiter = RateLimiter.new("MovementRemote", 10, 5)
+
 movementRemote.OnServerEvent:Connect(function(player: Player, kind: unknown, value: unknown)
-	if typeof(value) ~= "boolean" then
+	if not movementLimiter:Allow(player) or typeof(value) ~= "boolean" then
 		return
 	end
 	if kind == "FlyState" and value == false then

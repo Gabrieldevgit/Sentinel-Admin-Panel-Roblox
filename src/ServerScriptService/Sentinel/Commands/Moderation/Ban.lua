@@ -31,6 +31,7 @@ local EventBus = require(SentinelShared:WaitForChild("EventBus"))
 
 local Core = script.Parent.Parent.Parent:WaitForChild("Core")
 local CommandRegistry = require(Core:WaitForChild("CommandRegistry"))
+local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
 local DurationParser = require(Core:WaitForChild("Parser"):WaitForChild("DurationParser"))
 
 local BanStore = DataStoreService:GetDataStore("Sentinel_Bans_v1")
@@ -83,7 +84,16 @@ CommandRegistry.Register({
 			return { Success = false, Message = ("Invalid duration: %s"):format(ctx.Modifier or "") }
 		end
 
-		local reason = if #ctx.Arguments > 0 then table.concat(ctx.Arguments, " ") else "Banned by staff."
+		local reason = "Banned by staff."
+		if #ctx.Arguments > 0 then
+			-- Stored and shown to the banned player on every rejoin: filter
+			-- once, store the filtered text.
+			local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, table.concat(ctx.Arguments, " "))
+			if not filtered then
+				return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+			end
+			reason = filtered
+		end
 		local issuedAt = os.time()
 		local expiresAt = if duration.IsPermanent then math.huge else issuedAt + duration.Seconds
 

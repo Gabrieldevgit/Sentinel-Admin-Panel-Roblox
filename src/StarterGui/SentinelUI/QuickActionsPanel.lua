@@ -63,9 +63,11 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 	local executeCommandRemote = SentinelShared:WaitForChild("ExecuteCommandRemote", 15) :: RemoteEvent?
 	local getServerStateRemote = SentinelShared:WaitForChild("GetServerStateRemote", 15) :: RemoteFunction?
 
-	local function runCommand(text: string)
+	-- options.Confirmed: this panel already asked (typed confirmation), so
+	-- the server shouldn't ask a second time.
+	local function runCommand(text: string, options: { Confirmed: boolean }?)
 		if executeCommandRemote then
-			executeCommandRemote:FireServer(text)
+			executeCommandRemote:FireServer(text, options)
 		end
 	end
 
@@ -276,7 +278,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 			RequiredText = "SHUTDOWN",
 			ConfirmLabel = "Shutdown",
 			OnConfirm = function()
-				runCommand("shutdown")
+				runCommand("shutdown", { Confirmed = true })
 			end,
 		})
 	end)

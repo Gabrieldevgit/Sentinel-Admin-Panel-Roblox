@@ -106,6 +106,10 @@ export type CommandResult = {
 	Message: string?,
 	Undoable: boolean?,
 	UndoData: any?,
+	-- Risky command waiting for ;confirm (see Core/CommandPolicy)
+	NeedsConfirmation: boolean?,
+	ConfirmId: string?,
+	Risk: string?,
 }
 
 export type CommandDefinition = {
@@ -122,6 +126,9 @@ export type CommandDefinition = {
 	-- false = may target players ranked equal/above the executor (read-only
 	-- or harmless commands). Default: protected.
 	TargetProtection: boolean?,
+	-- Overrides for Core/CommandPolicy: "low" | "medium" | "high" | "critical"
+	Risk: string?,
+	OwnerOnly: boolean?,
 	Execute: (ctx: CommandContext) -> CommandResult,
 }
 

@@ -35,6 +35,21 @@ local Players = game:GetService("Players")
 
 local Theme = require(script.Parent:WaitForChild("Theme", 15))
 
+-- Risk badge text/color for a command (Risk comes from the server's
+-- Core/CommandPolicy via GetCommandListRemote).
+local function riskTag(meta: any): (string, Color3?)
+	local risk = meta.Risk
+	local owner = if meta.OwnerOnly then "  · OWNER ONLY" else ""
+	if risk == "critical" then
+		return "  ⛔ CRITICAL" .. owner, Theme.Colors.Error
+	elseif risk == "high" then
+		return "  ⚠ HIGH RISK" .. owner, Theme.Colors.Error
+	elseif risk == "medium" then
+		return "  ⚠ medium" .. owner, Theme.Colors.Warning
+	end
+	return owner, nil
+end
+
 local CommandPalette = {}
 
 local localPlayer = Players.LocalPlayer
@@ -266,7 +281,11 @@ function CommandPalette.Init()
 			nameLabel.TextSize = 14
 			nameLabel.TextColor3 = Theme.Colors.Accent
 			nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-			nameLabel.Text = meta.Name
+			local tag, tagColor = riskTag(meta)
+			nameLabel.Text = meta.Name .. tag
+			if tagColor then
+				nameLabel.TextColor3 = tagColor
+			end
 			nameLabel.Parent = button
 
 			local descLabel = Instance.new("TextLabel")
@@ -286,7 +305,7 @@ function CommandPalette.Init()
 			end)
 
 			if i == 1 then
-				previewLabel.Text = ("Usage: %s   |   Permission: %s"):format(meta.Usage, meta.Permission)
+				previewLabel.Text = ("Usage: %s   |   Permission: %s%s"):format(meta.Usage, meta.Permission, (riskTag(meta)))
 			end
 		end
 

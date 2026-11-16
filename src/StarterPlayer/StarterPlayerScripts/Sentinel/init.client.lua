@@ -546,6 +546,7 @@ if sentinelUIFolder then
 		{ Name = "NotificationCenter" },
 		{ Name = "SettingsPage" },
 		{ Name = "RankManagementPage" },
+		{ Name = "ConfirmDialog" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -582,6 +583,7 @@ if sentinelUIFolder then
 	local notificationCenterModule = loadedModules.NotificationCenter
 	local settingsPageModule = loadedModules.SettingsPage
 	local rankPageModule = loadedModules.RankManagementPage
+	local confirmDialogModule = loadedModules.ConfirmDialog
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -649,6 +651,32 @@ if sentinelUIFolder then
 		-- Shell.Init itself) was the cause of an earlier bug where the
 		-- Dashboard page stayed invisible until switching tabs and back.
 		Shell.ShowPage("Dashboard")
+
+		-- Risky / bulk commands come back with NeedsConfirmation (see the
+		-- server's Core/CommandPolicy). Ask here; the server re-checks
+		-- everything when ;confirm arrives.
+		local ConfirmDialog = require(confirmDialogModule)
+		local resultRemote = SentinelShared:WaitForChild("CommandResultRemote") :: RemoteEvent
+		local executeRemote = SentinelShared:WaitForChild("ExecuteCommandRemote") :: RemoteEvent
+		resultRemote.OnClientEvent:Connect(function(results: any)
+			if type(results) ~= "table" then
+				return
+			end
+			for _, result in ipairs(results) do
+				if type(result) == "table" and result.NeedsConfirmation and type(result.ConfirmId) == "string" then
+					ConfirmDialog.Show({
+						Title = if result.Risk == "critical" then "Critical action" else "Confirm action",
+						Message = (tostring(result.Message):gsub("^⚠%s*", ""):gsub(" Type ;confirm within %d+s to run it%.", "")),
+						RequiredText = "CONFIRM",
+						ConfirmLabel = "Run it",
+						OnConfirm = function()
+							executeRemote:FireServer("confirm " .. result.ConfirmId)
+						end,
+					})
+					break
+				end
+			end
+		end)
 
 		uiBuilt = true
 		Shell.Toggle() -- open immediately on first successful build, since this call came from an explicit F6 press

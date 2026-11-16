@@ -28,6 +28,7 @@ local Types = require(SentinelShared:WaitForChild("Types"))
 local EventBus = require(SentinelShared:WaitForChild("EventBus"))
 
 local CommandRegistry = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
 
 type CommandContext = Types.CommandContext
 type CommandResult = Types.CommandResult
@@ -141,6 +142,10 @@ CommandRegistry.Register({
 		if #text == 0 then
 			return { Success = false, Message = "Message text is required." }
 		end
+		text = TextFilterService.ForBroadcast(ctx.Executor.UserId, text) :: any
+		if not text then
+			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+		end
 
 		local announceRemote = SentinelShared:FindFirstChild("AnnounceRemote")
 		if announceRemote and announceRemote:IsA("RemoteEvent") then
@@ -170,6 +175,10 @@ CommandRegistry.Register({
 		local text = table.concat(ctx.Arguments, " ")
 		if #text == 0 then
 			return { Success = false, Message = "Hint text is required." }
+		end
+		text = TextFilterService.ForBroadcast(ctx.Executor.UserId, text) :: any
+		if not text then
+			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
 		end
 
 		utilityRemote:FireAllClients("Hint", ("[%s]: %s"):format(ctx.Executor.DisplayName, text))
@@ -203,6 +212,10 @@ CommandRegistry.Register({
 		local text = table.concat(ctx.Arguments, " ")
 		if #text == 0 then
 			return { Success = false, Message = "Private message text is required." }
+		end
+		text = TextFilterService.ForUser(ctx.Executor.UserId, text, target.UserId) :: any
+		if not text then
+			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
 		end
 
 		utilityRemote:FireClient(target, "PM", ctx.Executor.DisplayName, text)

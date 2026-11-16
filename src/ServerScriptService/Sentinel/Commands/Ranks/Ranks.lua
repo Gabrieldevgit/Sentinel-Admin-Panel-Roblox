@@ -26,7 +26,7 @@
 		;unbindrank id
 		;rankbindings [Rank]                     list assignments with their ids
 		;rankhistory [count]
-		;resetranks confirm                      restore default templates (Owner only)
+		;resetranks                              restore default templates (Owner only; asks ;confirm)
 
 	Permission nodes: ranks.view (read), ranks.manage (edit ranks),
 	ranks.assign (assignments). SuperAdmin has ranks.*; Owner has *.
@@ -411,12 +411,11 @@ register({
 	Name = "resetranks",
 	Aliases = {},
 	Description = "Restores the default rank templates and assignments (Owner only).",
-	Usage = "/resetranks confirm",
+	Usage = "/resetranks",
 	Permission = "ranks.manage",
+	-- Critical + owner-only in Core/CommandPolicy, so it always asks for
+	-- ;confirm first.
 	Execute = function(ctx: Ctx): Result
-		if (ctx.Arguments[1] or ""):lower() ~= "confirm" then
-			return result(false, "This deletes every custom rank and assignment. Type /resetranks confirm to proceed.")
-		end
 		return result(RankService.ResetToDefaults(ctx.Executor))
 	end,
 })

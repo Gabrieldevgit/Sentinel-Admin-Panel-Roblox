@@ -237,7 +237,17 @@ function CommandsPage.Build(container: Frame, commandPalette: any)
 				usageLbl.TextSize = 11
 				usageLbl.TextColor3 = Theme.Colors.TextSecondary
 				usageLbl.TextXAlignment = Enum.TextXAlignment.Left
-				usageLbl.Text = ("Usage: %s   •   Node: %s"):format(cmd.Usage, cmd.Permission)
+				local risk = (cmd :: any).Risk
+				local riskText = if risk and risk ~= "low" then ("   •   Risk: %s"):format(risk:upper()) else ""
+				if (cmd :: any).OwnerOnly then
+					riskText ..= "   •   Owner only"
+				end
+				usageLbl.Text = ("Usage: %s   •   Node: %s%s"):format(cmd.Usage, cmd.Permission, riskText)
+				if risk == "high" or risk == "critical" then
+					usageLbl.TextColor3 = Theme.Colors.Error
+				elseif risk == "medium" then
+					usageLbl.TextColor3 = Theme.Colors.Warning
+				end
 				usageLbl.Parent = card
 
 				-- Action Buttons Container
