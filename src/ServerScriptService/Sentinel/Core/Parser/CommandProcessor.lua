@@ -55,6 +55,23 @@ local CommandRegistry = require(script.Parent.Parent:WaitForChild("CommandRegist
 local CommandPolicy = require(script.Parent.Parent:WaitForChild("CommandPolicy"))
 local PermissionSystem = require(script.Parent.Parent:WaitForChild("PermissionSystem"))
 local CommandHistory = require(script.Parent.Parent:WaitForChild("CommandHistory"))
+local Logger = require(script.Parent.Parent:WaitForChild("Logger"))
+
+-- W10 failed-action log: commands refused before Dispatch (no valid
+-- target, rank protection) are audited too.
+local function logRejected(def: any, executor: Player, current: any, args: { string }, result: string, message: string)
+	local fields = CommandRegistry.AuditFields(def, executor, {
+		Executor = executor,
+		Targets = {},
+		Arguments = args,
+		RawInput = current.RawInput,
+		CommandName = current.CommandName,
+	} :: any, nil)
+	fields.Result = result
+	fields.Severity = "Warning"
+	fields.Message = message
+	Logger.Write(fields :: any)
+end
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
@@ -129,9 +146,11 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 		end
 
 		if def.RequiresTarget and #targets == 0 then
+			local message = ("%s requires a valid target."):format(def.Name)
+			logRejected(def, executor, current, ctxArguments, "Failure", message)
 			table.insert(results, {
 				Success = false,
-				Message = ("%s requires a valid target."):format(def.Name),
+				Message = message,
 			})
 			break
 		end
@@ -140,9 +159,11 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 		if def.RequiresTarget and targetFilter and def.TargetProtection ~= false then
 			targets, blocked = targetFilter(executor, def, targets)
 			if #targets == 0 then
+				local message = ("You can't use %s on players ranked equal to or above you."):format(def.Name)
+				logRejected(def, executor, current, ctxArguments, "Denied", message)
 				table.insert(results, {
 					Success = false,
-					Message = ("You can't use %s on players ranked equal to or above you."):format(def.Name),
+					Message = message,
 				})
 				break
 			end

@@ -4,10 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-17 (W09 session) — W08 is committed + pushed
-(`0d24484`). **W09 responsive UI pass** is built and verified in Play,
-**not committed yet** (user commits on request). Next undone row: W10.
-Start with §6 "Next session"._
+_Last updated: 2026-11-17 (W10 + W11 session) — W09 is committed
+(`daef915`). **W10 persistent audit + W11 Logs page** are built and
+verified in Play, **not committed yet** (user commits on request). Next
+undone row: W12. Start with §6 "Next session"._
 
 ---
 
@@ -49,6 +49,16 @@ built **gradually, not all at once** — the user picks what comes next.
 - Don't reword, reorder or delete the user's blueprint items. If a feature
   is dropped or changed, ask the user before editing the blueprint.
 - Mention newly checked features in your §7 session log entry.
+
+### 0.2b W-FINAL Modules Ecosystem is LAST
+
+[`Docs/Planned/W-FINAL Sentinel Modules Ecosystem.md`](Docs/Planned/W-FINAL%20Sentinel%20Modules%20Ecosystem.md)
+(optional gameplay modules managed from a new **Modules** nav section) is
+implemented **only after every W01-W42 row is done**. Never pick it as the
+next task. Hard rule from its spec: **no module may need custom character
+animation assets** (emotes, slide, crouch, climbing... are excluded).
+When building W11-W42, keep services reusable so the modules can sit on
+top of them (polls, events, reports, rewards, inventory, webhooks).
 
 ### 0.3 General working rules
 
@@ -114,7 +124,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings, 84 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit, 94 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -325,6 +335,47 @@ Control" UI, all driven by one command grammar
     36 / 64 below 760 px; Library status label, Cross-Server tabs and
     Appearance toolbar no longer run off a narrow panel. Players page now
     shows the Overview tab for the first selected player (was blank).
+- **W10 persistent audit:**
+  - `Core/Logger` entries now carry `Id` (`<server short>-<seq>`), `Action`
+    (`<category>.<command>`), `RawInput`, `TargetIds`, `Reason`, `Changes`
+    (`{Target, Field, Before, After}` strings), `Source`, `Server` (=
+    CrossServerService id, `studio-<hex>` in Studio; set via
+    `Logger.SetServerId`). `Logger.Matches(entry, filter)` is the one filter
+    (Player / Moderator / Command / Action / Severity (`Warning+`) / Result
+    (`Failed` = not Success) / Server prefix / Since / Until / Text /
+    HasChanges). Action matches a whole dot part; commas = alternatives.
+  - `CommandRegistry`: `AuditFields(def, executor, ctx, origin)`; the reason
+    is the Usage argument named `reason*` (or `result.Reason` /
+    `ctx.Reason`). Logged: every failure (even `Log = false`), denials
+    (permission, owner-only, cooldown), Before-hook cancellations
+    (`Cancelled`); severity Critical / Warning for critical / high risk.
+    `CommandProcessor` also logs "no valid target" and rank-protection
+    refusals.
+  - Data changes: `Logger.NoteChange(target, field, before, after, actor?,
+    action?)` - inside a running command it attaches to that command's
+    entry (change scope per coroutine, opened by the audit middleware),
+    otherwise it is its own `data.change` entry. `ConfigService.Set` calls
+    it (all config / prefix / UI default changes).
+  - `Systems/AuditService`: middleware snapshots each target before / after
+    (`def.Audit` = false | preset list | fn; defaults by category: Economy
+    leaderstats, Inventory backpack, Player/Movement humanoid+attributes,
+    Effects/Moderation attributes). Logger sink -> pages of <= 100 entries
+    per server in DataStore `Sentinel_Audit_v1` + OrderedDataStore
+    `Sentinel_AuditIndex_v1` (value = newest timestamp), written every 30 s
+    and on close. `Search(filter, cursor, limit)` reads <= 6 pages per call
+    newest first (cursor `{Max, Seen}`), includes this server's unsaved
+    entries on the first call; `Prune` drops pages older than
+    `;config logretention` every 30 min. `ParseQuery` (`;logs` syntax),
+    `SanitizeFilter`, `FormatEntry`.
+  - `;logs [query]` (audit, auditlog; panel.open), `;logs status`,
+    `;logs flush` / `;logs prune` (config.edit). Remote
+    `SearchAuditLogRemote(query|filter, cursor, limit)` (staff, not
+    `!logs.view`); Players page moderation history now reads it.
+- **W11 Logs page:** `AuditLogPage.lua` (Insights > Audit Log, page id
+  `Logs`): query box, chips (result / severity / range / category / This
+  server / Changes), rows `Body.List.Row_<n>.Header` expand to every field
+  incl. before/after, "Load older" via cursor, Export modal (copyable
+  text). Page container path: `SentinelShell.Root.Workspace.LogsPage`.
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -540,6 +591,13 @@ Rules that keep it sound:
   server-side with quick keys (W08), and it binds its own keys + uses
   `Config.KEYBINDS`. Ask the user whether to delete it. `Config.lua` ranks
   are only reference; RankService owns ranks.
+- **W10/W11 open:** Discord webhook integration not built (Discord blocks
+  Roblox; needs an HTTP proxy - external infra decision). `;resetranks`
+  style confirmations are not logged until `;confirm` runs them. Pages are
+  per server, so a search sorts by page newest-time: entries from different
+  servers can interleave slightly out of order across "Load older" calls.
+  The 30-min prune and close-time flush were tested on demand / by restart
+  only. Testing place has ~8 test audit entries (harmless; 30-day retention).
 - **W09 not verified, so not ✅:** "Mobile layout" - tested only as forced
   Mobile mode on a desktop screen (no touch device / phone-size emulator
   through Studio MCP); pages were swept at 620 px, not at phone width
@@ -580,10 +638,11 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **84/84**.
-- **W09 responsive UI pass** is built and verified in Play, **not
-  committed** (see §3). The test account's Layout prefs were reset.
-  README roadmap now marks Phase 7 done.
+- Sentinel server and client boot cleanly in Play. Unit tests **94/94**.
+- **W10 persistent audit + W11 Logs page** built and verified in Play,
+  **not committed** (see §3).
+- **W09 responsive UI pass** committed (`daef915`). README roadmap marks
+  Phase 7 done.
 - **W08 settings integration** is committed (`0d24484`). Testing-place admin config is back to defaults and
   the test account's personal prefs were reset.
 - **UI redesign** committed as `6812a92`.
@@ -591,18 +650,22 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** next undone row is **W10 - Persistent audit**
-  (`Systems/AuditService` on top of `Core/Logger`, every blueprint field,
-  before/after values, failed actions, retention via
-  `Logger.SetRetentionDays`, paged storage). About 8 weekends
+- **Schedule position:** W10 + W11 done; next undone row is **W12 -
+  Moderation center** (`CaseService`, moderation dashboard, case search,
+  reason templates, bulk punishments). About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
+- **W-FINAL (Modules Ecosystem)** is planned in `Docs/Planned` and the
+  schedule (Phase 7); it comes after W42 - not next.
 - Testing-place state: 6 default ranks; prefixes reset to `;`; the test
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **219 bullets ✅**: W09 4 (sidebar customization,
+- Feature blueprint: **247 bullets ✅**: W10/W11 28 (12 audit fields,
+  search, 7 filters, pagination, persistent, export, configurable
+  retention, cross-server logs, failed-action logs, data modification
+  history, admin-config log retention), W09 4 (sidebar customization,
   resizable windows, favorite pages, compact mode), W08 20 (light theme, custom themes,
   custom palette, theme import / export, font, high contrast, open / close
   panel, palette, quick fly / noclip / god, next / previous page, custom
@@ -623,7 +686,8 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit W09** if the user agrees. Ask whether to delete
+1. **Commit W10 + W11** if the user agrees. Decide the Discord webhook
+   proxy (W11 leftover). Ask whether to delete
    `PlayerControlsSystem.lua` (see §5).
 2. **Publish and test with two
    live servers** (§5 cross-server list) and ✅ the remaining §6 blueprint
@@ -638,9 +702,28 @@ Rules that keep it sound:
 5. **Live-server check**: text censoring (Studio doesn't filter text).
 6. Phone check of the mobile layout (Studio device emulator by hand).
 7. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
-8. Then start **W10**.
+8. Then start **W12**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-17 (planning)** - Added the user's W-FINAL Modules Ecosystem
+  spec to `Docs/Planned`, as Phase 7 of the schedule and rule §0.2b (last
+  milestone, no animation assets). Committed with W10 + W11.
+
+- **2026-11-17 (W10 + W11)** - Persistent audit: richer Logger entries,
+  `Logger.Matches` / `NoteChange`, `Systems/AuditService` (paged DataStore
+  + ordered index, snapshot middleware for before/after values, search
+  with cursor, retention prune), failed / denied / cancelled / rejected
+  commands logged, config changes recorded, `;logs`, `SearchAuditLogRemote`,
+  `Audit.spec` (tests 94/94). Logs page (Insights > Audit Log). Fixed while
+  testing: rows lost their header when expanded (AutomaticSize TextButton),
+  cursor missing when unsaved entries filled a page, Config / Ranks chips
+  matched nothing. Studio MCP got stuck on "Start play hasn't finished";
+  the user restarted Studio. Verified in Play: entries persisting across 4
+  server sessions, before/after (coins, walk speed, config), failed kick
+  with reason, every filter by remote, chips / row details / export by
+  mouse, pagination to the end, `;logs prune` on a planted 40-day page.
+  ✅ 28 bullets. Not committed.
 
 - **2026-11-17 (W09)** - Responsive UI pass: UIPrefs Layout section,
   Shell `relayout` (compact metrics, mobile window, width reflow, tab

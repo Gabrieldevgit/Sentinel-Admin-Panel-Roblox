@@ -116,6 +116,7 @@ local SECTIONS = {
 		Icon = "📈",
 		Pages = {
 			{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
+			{ Id = "Logs", Label = "Audit Log", Icon = "📋" },
 			{ Id = "Developer", Label = "Developer", Icon = "🔧" },
 		},
 	},

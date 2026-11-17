@@ -109,6 +109,9 @@ function CrossServerService.ShortId(id: string?): string
 	return if id:sub(1, 7) == "studio-" then id else id:sub(1, 8)
 end
 
+-- W10: audit entries carry the same server id (Studio has no JobId).
+Logger.SetServerId(serverId, CrossServerService.ShortId(serverId))
+
 local function getOrCreateRemote(name: string): RemoteEvent
 	local existing = SentinelShared:FindFirstChild(name)
 	if existing and existing:IsA("RemoteEvent") then

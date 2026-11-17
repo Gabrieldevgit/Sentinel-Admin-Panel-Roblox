@@ -26,18 +26,33 @@ export type PermissionNode = string -- e.g. "moderation.ban"
 
 export type LogSeverity = "Info" | "Warning" | "Error" | "Critical"
 
+-- One before/after value recorded for an audited change (W10).
+export type AuditChange = {
+	Target: string?, -- player name / setting owner, nil for global data
+	Field: string,
+	Before: string?, -- values are stored as short display strings
+	After: string?,
+}
+
 export type LogEntry = {
+	Id: string?, -- "<server short id>-<sequence>", unique across servers (W10)
 	Timestamp: number,
 	Executor: string, -- UserId as string, or "SYSTEM"
 	ExecutorName: string,
-	Command: string,
+	Command: string, -- command / action name (e.g. "ban", "rank.create")
+	Action: string?, -- "<category>.<command>" (e.g. "moderation.ban")
+	RawInput: string?, -- the command line that ran
 	Arguments: { string },
-	Target: string?,
-	Result: "Success" | "Failure" | "Denied",
-	Server: string, -- JobId
+	Target: string?, -- comma-joined target names
+	TargetIds: { number }?,
+	Reason: string?,
+	Result: "Success" | "Failure" | "Denied" | "Cancelled",
+	Server: string, -- JobId (Studio: "studio-<hex>")
 	ExecutionTimeMs: number,
 	Severity: LogSeverity,
 	Message: string?,
+	Changes: { AuditChange }?, -- before/after values when relevant
+	Source: string?, -- chat | panel | keybind | remote | system ...
 }
 
 -- A single resolved target after selector expansion (@team, @role, filters, etc.)
@@ -119,6 +134,10 @@ export type CommandResult = {
 	DurationMs: number?,
 	Cancelled: boolean?,
 	HistoryId: number?,
+	-- W10 audit: commands may name the reason and before/after values
+	-- themselves; the audit middleware adds target snapshots.
+	Reason: string?,
+	Changes: { AuditChange }?,
 }
 
 export type CommandDefinition = {
@@ -154,6 +173,11 @@ export type CommandDefinition = {
 	-- it from the result's UndoData.
 	Inverse: string?,
 	Undo: ((ctx: CommandContext, result: CommandResult) -> CommandResult)?,
+	-- W10 audit: before/after snapshot of each target (Systems/AuditService).
+	-- false = none, a list of presets ("leaderstats", "humanoid",
+	-- "attributes", "backpack") or fn(player) -> { field = value }. Default
+	-- comes from the category.
+	Audit: any?,
 	Execute: (ctx: CommandContext) -> CommandResult,
 }
 

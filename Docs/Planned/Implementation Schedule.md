@@ -90,6 +90,29 @@ Standing rules applied to every weekend (from CLAUDE.md / HANDOFF.md §0):
 | W41 | Aug 28–29 | Webhooks, external logging, API integration points, multi-experience management (Open Cloud via the same backend). |
 | W42 | Sep 4–5 | Final security audit against the blueprint's §5 checklist, docs, **Sentinel 2.0 release**. |
 
+## Phase 7 — W-FINAL: Sentinel Modules Ecosystem (LAST — after W42 only)
+Full spec: [`W-FINAL Sentinel Modules Ecosystem.md`](W-FINAL%20Sentinel%20Modules%20Ecosystem.md).
+A **Modules** main nav section where the Owner browses, configures, enables / disables optional gameplay
+modules (~90 across 8 categories: movement, world, player UI, social, economy, moderation/security, game
+experience, events) through a central Module Registry (manifests, lifecycle, dependencies / conflicts,
+diagnostics, `modules.*` nodes, audit + cross-server integration). **No custom character animation assets**
+(emotes, slide, crouch, climbing etc. are excluded). **Not scheduled to dates and never the next task**:
+start it only once W01–W42 are done. Stages:
+
+| # | Scope |
+|---|---|
+| W-FINAL.1 | Module Manager foundation: registry, manifests, lifecycle, discovery, status, dependencies / compatibility, config, diagnostics. |
+| W-FINAL.2 | Essential modules: Shift To Run, Day / Night Cycle, Health Bar, Server Messages, Custom Player List, Death Screen (Simple preset). |
+| W-FINAL.3 | Player experience: Nickname GUI, Invite Friends, Realistic First-Person, Loading Screen, Spectator Camera, Crosshair, Player Settings GUI. |
+| W-FINAL.4 | Social: Player Reports, Vote Kick, Discord Feedback, Welcome Messages, Global Announcements, Suggestions. |
+| W-FINAL.5 | Economy: Gamepass Shop, Developer Product Shop, Currency Shop, Daily / Playtime Rewards, Redeem Codes, VIP. |
+| W-FINAL.6 | Advanced gameplay: Stamina, Double Jump, Dash, Wall Jump, Fall Damage, physics Ragdoll, Swimming, Dynamic Weather, Footsteps. |
+| W-FINAL.7 | Game experience + events: Tutorials, Onboarding, Quests, Achievements, Checkpoints, Rounds, Matchmaking, Polls, Live Events, Seasonal Pass. |
+| W-FINAL.8 | Module packs (Essentials, Immersive, Community, Competitive, Economy), Module Activity, diagnostics / audit / cross-server integration, security testing, UI polish, docs. |
+
+Overlap to resolve when reached: several modules (polls, events, reports, redeem codes, inventory, Discord
+webhook) build on W11 / W14 / W23–W29 services — modules must reuse those services, not duplicate them.
+
 **Total: 42 weekends → target completion Sun 2027-09-05.** Fridays absorb slippage; if two weekends slip,
 push every later row by one weekend rather than cramming.
 

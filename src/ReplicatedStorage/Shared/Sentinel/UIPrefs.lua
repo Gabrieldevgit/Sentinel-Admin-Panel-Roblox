@@ -306,7 +306,7 @@ end
 UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Insights" }
 UIPrefs.PAGE_IDS = {
 	"Dashboard", "Players", "Moderation", "Ranks", "Commands", "Library", "Server", "CrossServer",
-	"Economy", "Analytics", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
+	"Economy", "Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
 }
 UIPrefs.MAX_PINNED = 8
 

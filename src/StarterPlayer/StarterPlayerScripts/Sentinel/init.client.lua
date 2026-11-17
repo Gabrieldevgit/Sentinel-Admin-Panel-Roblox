@@ -542,6 +542,7 @@ if sentinelUIFolder then
 		{ Name = "EconomyPage" },
 		{ Name = "ServerPage" },
 		{ Name = "AnalyticsPage" },
+		{ Name = "AuditLogPage" },
 		{ Name = "DeveloperPage" },
 		{ Name = "NotificationCenter" },
 		{ Name = "SettingsPage" },
@@ -707,6 +708,7 @@ if sentinelUIFolder then
 		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
 		local crossServerContainer = Shell.RegisterPage("CrossServer", "Cross-Server", "🌐")
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
+		require(loadedModules.AuditLogPage).Build(Shell.RegisterPage("Logs", "Audit Log", "📋"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
 		NotificationCenterRef = NotificationCenter

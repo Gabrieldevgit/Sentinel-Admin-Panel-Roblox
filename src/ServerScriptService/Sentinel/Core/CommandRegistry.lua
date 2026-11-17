@@ -285,6 +285,62 @@ local function checkAndSetCooldown(executor: Player, def: CommandDefinition): bo
 	return true
 end
 
+-- W10 audit: the fields every log line about a command shares.
+-- The reason is the argument named "reason" in the command's Usage (or
+-- result.Reason / ctx.Reason when a command sets one).
+local function reasonOf(def: CommandDefinition, ctx: CommandContext): string?
+	local ctxAny = ctx :: any
+	if type(ctxAny.Reason) == "string" then
+		return ctxAny.Reason
+	end
+	local args = (def :: any).Args
+	if type(args) ~= "table" then
+		return nil
+	end
+	local index = 0
+	for _, arg in ipairs(args) do
+		local isTarget = (arg.Type == "players" or arg.Type == "player") and index == 0 and def.RequiresTarget
+		if not isTarget then
+			index += 1
+			if type(arg.Name) == "string" and arg.Name:lower():match("^reason") then
+				local words = table.move(ctx.Arguments or {}, index, #(ctx.Arguments or {}), 1, {})
+				local text = table.concat(words, " ")
+				return if text ~= "" then text else nil
+			end
+		end
+	end
+	return nil
+end
+
+local function auditFields(def: CommandDefinition, executor: Player, ctx: CommandContext, remoteOrigin: string?): { [string]: any }
+	local names, ids = {}, {}
+	for _, p in ipairs(ctx.Targets or {}) do
+		table.insert(names, p.Name)
+		table.insert(ids, p.UserId)
+	end
+	local category = (def.Category or "general"):lower():gsub("%s+", "")
+	return {
+		Executor = tostring(executor.UserId),
+		ExecutorName = if remoteOrigin then ("%s @%s"):format(executor.Name, remoteOrigin) else executor.Name,
+		Command = def.Name,
+		Action = category .. "." .. def.Name,
+		RawInput = ctx.RawInput,
+		Arguments = ctx.Arguments,
+		Target = if #names > 0 then table.concat(names, ",") else nil,
+		TargetIds = if #ids > 0 then ids else nil,
+		Reason = reasonOf(def, ctx),
+		Source = (ctx :: any).Source or (if remoteOrigin then "remote" else nil),
+	}
+end
+CommandRegistry.AuditFields = auditFields
+
+local function writeLog(fields: { [string]: any }, extra: { [string]: any })
+	for k, v in pairs(extra) do
+		fields[k] = v
+	end
+	Logger.Write(fields :: any)
+end
+
 -- Hooks, middleware, Execute, timing, logging. Shared by Dispatch (local
 -- executor, already permission-checked) and DispatchRemote.
 local function run(def: CommandDefinition, executor: Player, ctx: CommandContext, remoteOrigin: string?): CommandResult
@@ -310,6 +366,11 @@ local function run(def: CommandDefinition, executor: Player, ctx: CommandContext
 		elseif type(why) == "string" then
 			local cancelled = { Success = false, Cancelled = true, Message = why, Command = def.Name, DurationMs = 0 }
 			EventBus.Publish("Command.Cancelled", def, executor, ctx, why)
+			writeLog(auditFields(def, executor, ctx, remoteOrigin), {
+				Result = "Cancelled",
+				Severity = "Warning",
+				Message = ("Blocked by %s: %s"):format(hook.Name, why),
+			})
 			return cancelled :: any
 		end
 	end
@@ -342,21 +403,20 @@ local function run(def: CommandDefinition, executor: Player, ctx: CommandContext
 	resultAny.Command = def.Name
 	resultAny.DurationMs = math.floor(elapsedMs * 100 + 0.5) / 100
 
-	if def.Log then
-		local targetNames = {}
-		for _, p in ipairs(ctx.Targets) do
-			table.insert(targetNames, p.Name)
-		end
-		Logger.Write({
-			Executor = tostring(executor.UserId),
-			ExecutorName = if remoteOrigin then ("%s @%s"):format(executor.Name, remoteOrigin) else executor.Name,
-			Command = def.Name,
-			Arguments = ctx.Arguments,
-			Target = table.concat(targetNames, ","),
+	-- Failed runs are always logged (failed-action log), successful ones
+	-- when the command asks for it (def.Log).
+	if def.Log or not result.Success then
+		writeLog(auditFields(def, executor, ctx, remoteOrigin), {
 			Result = if result.Success then "Success" else "Failure",
-			Severity = if result.Success then "Info" else "Error",
+			Severity = if not result.Success
+				then "Error"
+				elseif CommandPolicy.GetRisk(def) == "critical" then "Critical"
+				elseif CommandPolicy.GetRisk(def) == "high" then "Warning"
+				else "Info",
 			ExecutionTimeMs = elapsedMs,
 			Message = result.Message,
+			Reason = (resultAny.Reason :: string?) or reasonOf(def, ctx),
+			Changes = resultAny.Changes,
 		})
 	end
 
@@ -384,11 +444,7 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 	if not (def :: any).Public and not PermissionSystem.Has(executor, def.Permission) then
 		local result: CommandResult = { Success = false, Message = "You do not have permission to do that." }
 		EventBus.Publish("Command.Denied", def, executor, ctx)
-		Logger.Write({
-			Executor = tostring(executor.UserId),
-			ExecutorName = executor.Name,
-			Command = def.Name,
-			Arguments = ctx.Arguments,
+		writeLog(auditFields(def, executor, ctx, nil), {
 			Result = "Denied",
 			Severity = "Warning",
 			Message = "Permission denied: " .. def.Permission,
@@ -400,11 +456,7 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 	-- matter which permission nodes they hold.
 	if CommandPolicy.IsOwnerOnly(def) and not table.find(PermissionSystem.GetRoles(executor), "Owner") then
 		EventBus.Publish("Command.Denied", def, executor, ctx)
-		Logger.Write({
-			Executor = tostring(executor.UserId),
-			ExecutorName = executor.Name,
-			Command = def.Name,
-			Arguments = ctx.Arguments,
+		writeLog(auditFields(def, executor, ctx, nil), {
 			Result = "Denied",
 			Severity = "Warning",
 			Message = "Owner-only command",
@@ -413,6 +465,11 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 	end
 
 	if not checkAndSetCooldown(executor, def) then
+		writeLog(auditFields(def, executor, ctx, nil), {
+			Result = "Denied",
+			Severity = "Info",
+			Message = "On cooldown",
+		})
 		return { Success = false, Message = "That command is on cooldown." }
 	end
 

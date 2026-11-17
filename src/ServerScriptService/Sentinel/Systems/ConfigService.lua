@@ -35,6 +35,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Signal = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Signal"))
+local Logger = require(script.Parent.Parent:WaitForChild("Core"):WaitForChild("Logger"))
 
 local ConfigService = {}
 ConfigService.Changed = Signal.new()
@@ -153,7 +154,7 @@ function ConfigService.Get(key: string): any
 	return deepCopy(values[key])
 end
 
-function ConfigService.Set(key: string, value: any, _actor: Player?): (boolean, string?)
+function ConfigService.Set(key: string, value: any, actor: Player?): (boolean, string?)
 	if DEFAULTS[key] == nil then
 		return false, "unknown setting " .. key
 	end
@@ -161,6 +162,7 @@ function ConfigService.Set(key: string, value: any, _actor: Player?): (boolean, 
 	if check and not check(value) then
 		return false, "invalid value for " .. key
 	end
+	Logger.NoteChange("config", key, values[key], value, actor, "config.set")
 	apply(key, deepCopy(value))
 	if store then
 		task.spawn(function()

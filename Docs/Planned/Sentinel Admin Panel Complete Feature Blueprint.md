@@ -613,35 +613,35 @@ Dashboard analytics
 Audit logs
 
 Every administrative action should record:
-- Timestamp.
-- Moderator UserId.
-- Moderator username.
-- Action.
-- Command.
-- Target UserId.
-- Target username.
-- Reason.
-- Server JobId.
-- Execution result.
-- Execution duration.
-- Before-and-after values when relevant.
+- ✅ Timestamp.
+- ✅ Moderator UserId.
+- ✅ Moderator username.
+- ✅ Action.
+- ✅ Command.
+- ✅ Target UserId.
+- ✅ Target username.
+- ✅ Reason.
+- ✅ Server JobId.
+- ✅ Execution result.
+- ✅ Execution duration.
+- ✅ Before-and-after values when relevant.
 Log management
-- Search logs.
-- Filter by moderator.
-- Filter by player.
-- Filter by command.
-- Filter by action.
-- Filter by severity.
-- Filter by date.
-- Filter by server.
-- Pagination.
-- Persistent logs.
-- Export logs.
-- Configurable retention.
+- ✅ Search logs.
+- ✅ Filter by moderator.
+- ✅ Filter by player.
+- ✅ Filter by command.
+- ✅ Filter by action.
+- ✅ Filter by severity.
+- ✅ Filter by date.
+- ✅ Filter by server.
+- ✅ Pagination.
+- ✅ Persistent logs.
+- ✅ Export logs.
+- ✅ Configurable retention.
 - Discord webhook integration.
-- Cross-server logs.
-- Failed-action logs.
-- Data modification history.
+- ✅ Cross-server logs.
+- ✅ Failed-action logs.
+- ✅ Data modification history.
 Visual analytics
 - Player-count graphs.
 - Server performance graphs.
@@ -879,7 +879,7 @@ Administration configuration
 - ✅ Maximum punishment duration.
 - Warning escalation.
 - ✅ Required reason settings.
-- Log retention.
+- ✅ Log retention.
 - ✅ Notification preferences.
 - Default permissions.
 - Server configuration.

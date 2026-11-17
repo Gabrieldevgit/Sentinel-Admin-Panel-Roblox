@@ -151,6 +151,7 @@ local LIMITS: { [string]: { number } } = {
 	CanOpenPanelRemote = { 5, 1 },
 	GetCommandListRemote = { 4, 1 },
 	GetAuditLogRemote = { 4, 1 },
+	SearchAuditLogRemote = { 4, 0.5 },
 	GetRanksSnapshotRemote = { 3, 1.5 },
 	GetAutocompleteDataRemote = { 4, 1 },
 	PreviewCommandRemote = { 10, 5 },
@@ -513,21 +514,13 @@ bindInvoke(getPlayerModerationHistoryRemote, function(player: Player, userId: nu
 	end
 	local targetName = target.Name
 
-	local all = Logger.Query(nil)
+	-- W10: read the persistent audit log (every server, every session).
+	local AuditService = require(Sentinel:WaitForChild("Systems"):WaitForChild("AuditService"))
+	local n = clampCount(count, 30, 100)
+	local found = AuditService.Search({ Player = targetName }, nil, n)
 	local matches = {}
-	for i = #all, 1, -1 do
-		local entry = all[i]
-		if entry.Target then
-			for name in entry.Target:gmatch("[^,]+") do
-				if name == targetName then
-					table.insert(matches, entry)
-					break
-				end
-			end
-		end
-		if #matches >= clampCount(count, 30, 100) then
-			break
-		end
+	for i = 1, math.min(n, #found.Entries) do
+		matches[i] = found.Entries[i]
 	end
 	return matches
 end)
@@ -986,6 +979,34 @@ bindInvoke(getAdminConfigRemote, function(player: Player)
 		CanEdit = PermissionSystem.Has(player, "config.edit"),
 		CanSetUIDefaults = PermissionSystem.Has(player, "config.ui"),
 	}
+end)
+
+-- ---------------------------------------------------------------------------
+-- Persistent audit log (W10 / W11). `query` is either the ;logs query text
+-- ("mod:Alice cmd:ban since:7d") or a filter table; `cursor` comes from the
+-- previous answer to load older entries.
+-- ---------------------------------------------------------------------------
+local AuditService = require(Sentinel:WaitForChild("Systems"):WaitForChild("AuditService"))
+local searchAuditLogRemote = getOrCreate("SearchAuditLogRemote", "RemoteFunction") :: RemoteFunction
+
+bindInvoke(searchAuditLogRemote, function(player: Player, query: any, cursor: any, limit: any)
+	if not isStaff(player) or PermissionSystem.Evaluate(player, "logs.view") == "deny" then
+		return { Entries = {}, Error = "You can't view the audit log." }
+	end
+	local filter
+	if type(query) == "string" then
+		local err
+		filter, err = AuditService.ParseQuery(query:sub(1, 300))
+		if not filter then
+			return { Entries = {}, Error = err }
+		end
+	else
+		filter = AuditService.SanitizeFilter(query)
+	end
+	local found = AuditService.Search(filter, cursor, clampCount(limit, 50, 100))
+	found.Status = AuditService.GetStatus()
+	found.Filter = filter
+	return found
 end)
 
 return true
