@@ -71,6 +71,22 @@ local function setBan(userId: number, record: BanRecord?)
 	end
 end
 
+-- Shared with the cross-server commands (;gban / ;gunban) so the ban store
+-- keeps exactly one owner. Returns false when the DataStore write failed.
+function BanCommand.SetBan(userId: number, record: BanRecord?): boolean
+	local ok, err = pcall(function()
+		if record then
+			BanStore:SetAsync(tostring(userId), record)
+		else
+			BanStore:RemoveAsync(tostring(userId))
+		end
+	end)
+	if not ok then
+		warn(("[Sentinel.Ban] failed to persist ban for %d: %s"):format(userId, tostring(err)))
+	end
+	return ok
+end
+
 CommandRegistry.Register({
 	Name = "ban",
 	Aliases = { "b" },

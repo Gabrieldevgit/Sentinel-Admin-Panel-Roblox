@@ -88,6 +88,16 @@ function NotificationCenter.IsReducedMotion(): boolean
 	return reducedMotion
 end
 
+local pushExternal: ((boolean, string) -> ())? = nil
+
+-- Shows a toast and records it in the notification history. Safe to call
+-- before Init (it does nothing then).
+function NotificationCenter.Push(success: boolean, message: string)
+	if pushExternal and type(message) == "string" and message ~= "" then
+		pushExternal(success == true, message:sub(1, 300))
+	end
+end
+
 local function pushHistory(entry: HistoryEntry)
 	table.insert(history, entry)
 	if #history > MAX_HISTORY then
@@ -241,6 +251,15 @@ function NotificationCenter.Init()
 		end
 
 		task.delay(if success then SUCCESS_DURATION else ERROR_DURATION, dismiss)
+	end
+
+	-- Other UI modules (e.g. the Cross-Server page: staff chat, global
+	-- notifications) raise toasts through NotificationCenter.Push.
+	pushExternal = function(success: boolean, message: string)
+		if not mutedToasts then
+			showToast(success, message)
+		end
+		pushHistory({ Timestamp = os.time(), Success = success, Message = message })
 	end
 
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")

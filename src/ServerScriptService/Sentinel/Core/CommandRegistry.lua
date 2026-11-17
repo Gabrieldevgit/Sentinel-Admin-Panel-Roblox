@@ -265,51 +265,9 @@ local function checkAndSetCooldown(executor: Player, def: CommandDefinition): bo
 	return true
 end
 
---[[
-	Dispatch validates permission + cooldown, executes the command, logs the
-	result, and publishes lifecycle events. This is the ONLY path that should
-	ever call def.Execute — never call a command's Execute directly.
---]]
-function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx: CommandContext): CommandResult
-	EventBus.Publish("Command.BeforeExecute", def, executor, ctx)
-
-	-- Public commands (e.g. ;confirm, which only replays the player's own
-	-- pending, fully re-checked command) skip the node check.
-	if not (def :: any).Public and not PermissionSystem.Has(executor, def.Permission) then
-		local result: CommandResult = { Success = false, Message = "You do not have permission to do that." }
-		EventBus.Publish("Command.Denied", def, executor, ctx)
-		Logger.Write({
-			Executor = tostring(executor.UserId),
-			ExecutorName = executor.Name,
-			Command = def.Name,
-			Arguments = ctx.Arguments,
-			Result = "Denied",
-			Severity = "Warning",
-			Message = "Permission denied: " .. def.Permission,
-		})
-		return result
-	end
-
-	-- Owner-only commands: refused for anyone without the Owner rank, no
-	-- matter which permission nodes they hold.
-	if CommandPolicy.IsOwnerOnly(def) and not table.find(PermissionSystem.GetRoles(executor), "Owner") then
-		EventBus.Publish("Command.Denied", def, executor, ctx)
-		Logger.Write({
-			Executor = tostring(executor.UserId),
-			ExecutorName = executor.Name,
-			Command = def.Name,
-			Arguments = ctx.Arguments,
-			Result = "Denied",
-			Severity = "Warning",
-			Message = "Owner-only command",
-		})
-		return { Success = false, Message = ("%s is restricted to the Owner."):format(def.Name) }
-	end
-
-	if not checkAndSetCooldown(executor, def) then
-		return { Success = false, Message = "That command is on cooldown." }
-	end
-
+-- Hooks, middleware, Execute, timing, logging. Shared by Dispatch (local
+-- executor, already permission-checked) and DispatchRemote.
+local function run(def: CommandDefinition, executor: Player, ctx: CommandContext, remoteOrigin: string?): CommandResult
 	-- Cancellation support for long-running commands.
 	local ctxAny = ctx :: any
 	local cancelledFlag = false
@@ -371,7 +329,7 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 		end
 		Logger.Write({
 			Executor = tostring(executor.UserId),
-			ExecutorName = executor.Name,
+			ExecutorName = if remoteOrigin then ("%s @%s"):format(executor.Name, remoteOrigin) else executor.Name,
 			Command = def.Name,
 			Arguments = ctx.Arguments,
 			Target = table.concat(targetNames, ","),
@@ -391,6 +349,68 @@ function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx:
 
 	EventBus.Publish("Command.AfterExecute", def, executor, ctx, result)
 	return result
+end
+
+--[[
+	Dispatch validates permission + cooldown, executes the command, logs the
+	result, and publishes lifecycle events. This is the ONLY path that should
+	ever call def.Execute — never call a command's Execute directly.
+--]]
+function CommandRegistry.Dispatch(def: CommandDefinition, executor: Player, ctx: CommandContext): CommandResult
+	EventBus.Publish("Command.BeforeExecute", def, executor, ctx)
+
+	-- Public commands (e.g. ;confirm, which only replays the player's own
+	-- pending, fully re-checked command) skip the node check.
+	if not (def :: any).Public and not PermissionSystem.Has(executor, def.Permission) then
+		local result: CommandResult = { Success = false, Message = "You do not have permission to do that." }
+		EventBus.Publish("Command.Denied", def, executor, ctx)
+		Logger.Write({
+			Executor = tostring(executor.UserId),
+			ExecutorName = executor.Name,
+			Command = def.Name,
+			Arguments = ctx.Arguments,
+			Result = "Denied",
+			Severity = "Warning",
+			Message = "Permission denied: " .. def.Permission,
+		})
+		return result
+	end
+
+	-- Owner-only commands: refused for anyone without the Owner rank, no
+	-- matter which permission nodes they hold.
+	if CommandPolicy.IsOwnerOnly(def) and not table.find(PermissionSystem.GetRoles(executor), "Owner") then
+		EventBus.Publish("Command.Denied", def, executor, ctx)
+		Logger.Write({
+			Executor = tostring(executor.UserId),
+			ExecutorName = executor.Name,
+			Command = def.Name,
+			Arguments = ctx.Arguments,
+			Result = "Denied",
+			Severity = "Warning",
+			Message = "Owner-only command",
+		})
+		return { Success = false, Message = ("%s is restricted to the Owner."):format(def.Name) }
+	end
+
+	if not checkAndSetCooldown(executor, def) then
+		return { Success = false, Message = "That command is on cooldown." }
+	end
+
+	return run(def, executor, ctx, nil)
+end
+
+--[[
+	DispatchRemote runs a command on behalf of a staff member who is on
+	ANOTHER server (;global, see Systems/CrossServerActions). The origin
+	server already checked the actor's permission through Dispatch; here the
+	command still goes through hooks, middleware, timing and logging (the
+	log line names the origin server). `actor` is a Player when the staff
+	member happens to be in this server, otherwise a plain
+	{ UserId, Name, DisplayName } table - so only commands that
+	CommandPolicy.IsGlobalSafe allows may be run this way.
+--]]
+function CommandRegistry.DispatchRemote(def: CommandDefinition, actor: any, ctx: CommandContext, origin: string): CommandResult
+	return run(def, actor, ctx, origin)
 end
 
 return CommandRegistry

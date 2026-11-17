@@ -48,6 +48,7 @@ local NAV_ITEMS = {
 	{ Id = "Library", Label = "Library", Icon = "📚" },
 	{ Id = "Economy", Label = "Economy", Icon = "💰" },
 	{ Id = "Server", Label = "Server", Icon = "🌎" },
+	{ Id = "CrossServer", Label = "Cross-Server", Icon = "🌐" },
 	{ Id = "Analytics", Label = "Analytics", Icon = "📈" },
 	{ Id = "Developer", Label = "Developer", Icon = "🔧" },
 	{ Id = "Notifications", Label = "Notifications", Icon = "🔔" },

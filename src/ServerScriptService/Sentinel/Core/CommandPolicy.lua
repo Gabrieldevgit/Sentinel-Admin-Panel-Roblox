@@ -24,6 +24,7 @@
 	Public API:
 		CommandPolicy.GetRisk(def): "low" | "medium" | "high" | "critical"
 		CommandPolicy.IsOwnerOnly(def): boolean
+		CommandPolicy.IsGlobalSafe(def): boolean  -- may ;global run it on every server?
 		CommandPolicy.NeedsConfirmation(def, targetCount, executor?): (boolean, string?)
 		CommandPolicy.BULK_THRESHOLD
 --]]
@@ -39,6 +40,10 @@ local RISK: { [string]: string } = {
 	datastoreset = "critical",
 	resetranks = "critical",
 	whitelistmode = "critical",
+	lockdown = "critical",
+	gshutdown = "critical",
+	gupdate = "critical",
+	migrateserver = "critical",
 
 	-- high: destructive or hard to undo
 	ban = "high",
@@ -51,6 +56,8 @@ local RISK: { [string]: string } = {
 	deleterank = "high",
 	lockserver = "high",
 	maintenancemode = "high",
+	gban = "high",
+	global = "high",
 
 	-- medium: disruptive to the targets (confirm when bulk)
 	kick = "medium",
@@ -75,6 +82,26 @@ local OWNER_ONLY: { [string]: boolean } = {
 	resetranks = true,
 }
 
+-- Commands ;global may run on every server. They take no player target and
+-- only use the executor's UserId / Name / DisplayName, so they work when the
+-- staff member who typed them is on another server. A definition can opt in
+-- or out with `Global = true/false`.
+local GLOBAL_SAFE: { [string]: boolean } = {
+	weather = true,
+	daynight = true,
+	timefreeze = true,
+	fog = true,
+	lightingpreset = true,
+	slowmode = true,
+	announce = true,
+	countdown = true,
+	hint = true,
+	message = true,
+	lockserver = true,
+	unlockserver = true,
+	maintenancemode = true,
+}
+
 local ORDER = { low = 1, medium = 2, high = 3, critical = 4 }
 
 function CommandPolicy.GetRisk(def: any): string
@@ -89,8 +116,26 @@ function CommandPolicy.IsOwnerOnly(def: any): boolean
 	return OWNER_ONLY[def.Name] == true
 end
 
+function CommandPolicy.IsGlobalSafe(def: any): boolean
+	if def.RequiresTarget then
+		return false
+	end
+	if def.Global ~= nil then
+		return def.Global == true
+	end
+	return GLOBAL_SAFE[def.Name] == true
+end
+
 -- Returns whether a confirmation is required and a human explanation.
-function CommandPolicy.NeedsConfirmation(def: any, targetCount: number): (boolean, string?)
+-- A definition may narrow it with `ConfirmWhen = function(arguments) -> boolean`
+-- (e.g. ;lockdown only asks for "on", not for "status" or "off").
+function CommandPolicy.NeedsConfirmation(def: any, targetCount: number, arguments: { string }?): (boolean, string?)
+	if type(def.ConfirmWhen) == "function" then
+		local ok, wanted = pcall(def.ConfirmWhen, arguments or {})
+		if ok and wanted == false then
+			return false, nil
+		end
+	end
 	local risk = CommandPolicy.GetRisk(def)
 	if risk == "critical" or risk == "high" then
 		local scope = if def.RequiresTarget then (" on %d player(s)"):format(targetCount) else ""

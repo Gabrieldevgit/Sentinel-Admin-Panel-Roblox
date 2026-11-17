@@ -549,6 +549,7 @@ if sentinelUIFolder then
 		{ Name = "ConfirmDialog" },
 		{ Name = "LibraryPage" },
 		{ Name = "CommandBuilder" },
+		{ Name = "CrossServerPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -588,6 +589,7 @@ if sentinelUIFolder then
 	local confirmDialogModule = loadedModules.ConfirmDialog
 	local libraryPageModule = loadedModules.LibraryPage
 	local commandBuilderModule = loadedModules.CommandBuilder
+	local crossServerPageModule = loadedModules.CrossServerPage
 
 	local canOpenPanelRemote = SentinelShared:WaitForChild("CanOpenPanelRemote", 15) :: RemoteFunction?
 
@@ -629,10 +631,14 @@ if sentinelUIFolder then
 		LibraryPage.Build(Shell.RegisterPage("Library", "Library", "📚"), CommandPalette, CommandBuilder)
 		EconomyPage.Build(Shell.RegisterPage("Economy", "Economy", "🪙"))
 		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
+		local crossServerContainer = Shell.RegisterPage("CrossServer", "Cross-Server", "🌐")
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
+		-- Built after the Notification Center so staff chat and global
+		-- notifications can raise toasts.
+		require(crossServerPageModule).Build(crossServerContainer, NotificationCenter)
 		RankManagementPage.Build(Shell.RegisterPage("Ranks", "Ranks", "👑"), Shell.GetPageIds())
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
 

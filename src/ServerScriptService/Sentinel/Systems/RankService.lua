@@ -133,6 +133,9 @@ local MODERATOR_NODES = {
 	"utility.view",
 	"utility.pm",
 	"server.hint",
+	-- Cross-server: see the server list, find players, talk to other staff.
+	"crossserver.view",
+	"crossserver.staffchat",
 }
 
 local ADMIN_NODES = {
@@ -151,6 +154,14 @@ local ADMIN_NODES = {
 	"developer.console",
 	"developer.remotemonitor",
 	"developer.datastore.read",
+	-- Cross-server moderation. Lockdown, shutdown, migration and ;global
+	-- stay with SuperAdmin and above.
+	"crossserver.join",
+	"crossserver.bring",
+	"crossserver.kick",
+	"crossserver.warn",
+	"crossserver.ban",
+	"crossserver.announce",
 }
 
 local function defaultState(): State
@@ -179,7 +190,7 @@ local function defaultState(): State
 				Color = { 255, 50, 50 },
 				Icon = "⚡",
 				Description = "Everything Admin has, plus managing lower ranks.",
-				Nodes = { "ranks.*" },
+				Nodes = { "ranks.*", "crossserver.*" },
 				Inherits = { "Admin" },
 			},
 			Admin = {
@@ -1072,6 +1083,24 @@ local PRESETS: { [string]: { Description: string, Nodes: { string } } } = {
 	},
 	Economy = { Description = "Currency, XP, badges and items", Nodes = { "economy.*", "inventory.*" } },
 	Server = { Description = "Announcements, lock, maintenance, environment", Nodes = { "server.*", "environment.*" } },
+	CrossServerStaff = {
+		Description = "Server list, find players, cross-server staff chat",
+		Nodes = { "crossserver.view", "crossserver.staffchat", "crossserver.join" },
+	},
+	CrossServerModeration = {
+		Description = "Global kick, warn, ban, bring and announcements",
+		Nodes = {
+			"crossserver.view",
+			"crossserver.staffchat",
+			"crossserver.join",
+			"crossserver.bring",
+			"crossserver.kick",
+			"crossserver.warn",
+			"crossserver.ban",
+			"crossserver.announce",
+		},
+	},
+	CrossServerOperations = { Description = "Everything cross-server incl. lockdown, shutdown, migration", Nodes = { "crossserver.*" } },
 	DevReadOnly = {
 		Description = "Read-only developer tools",
 		Nodes = { "developer.stats", "developer.console", "developer.remotemonitor", "developer.datastore.read" },

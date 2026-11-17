@@ -158,6 +158,9 @@ local LIMITS: { [string]: { number } } = {
 	GetCommandHistoryRemote = { 6, 2 },
 	GetCommandLibraryRemote = { 4, 1 },
 	UpdateCommandLibraryRemote = { 6, 1 },
+	GetCrossServerSnapshotRemote = { 6, 1.5 },
+	GetCrossServerServerRemote = { 6, 2 },
+	CrossServerFindRemote = { 4, 1 }, -- may call Roblox's user lookup
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -750,6 +753,159 @@ bindInvoke(updateCommandLibraryRemote, function(player: Player, action: any, pay
 	end
 	local ok, message = CommandLibraryService.Apply(player, action, payload)
 	return { Success = ok, Message = message }
+end)
+
+-- ---------------------------------------------------------------------------
+-- Cross-Server page (W18). Read-only: every action the page takes is a
+-- normal command through ExecuteCommandRemote. Live updates (operations,
+-- staff chat, notifications) are pushed on CrossServerEventRemote by
+-- CrossServerService.
+-- ---------------------------------------------------------------------------
+local CrossServerService = require(Sentinel:WaitForChild("Systems"):WaitForChild("CrossServerService"))
+local BanCommand = require(Sentinel:WaitForChild("Commands"):WaitForChild("Moderation"):WaitForChild("Ban"))
+local getCrossServerSnapshotRemote = getOrCreate("GetCrossServerSnapshotRemote", "RemoteFunction") :: RemoteFunction
+local getCrossServerServerRemote = getOrCreate("GetCrossServerServerRemote", "RemoteFunction") :: RemoteFunction
+local crossServerFindRemote = getOrCreate("CrossServerFindRemote", "RemoteFunction") :: RemoteFunction
+
+local function canViewCrossServer(player: Player): boolean
+	return isStaff(player) and PermissionSystem.Has(player, "crossserver.view")
+end
+
+local CROSS_SERVER_NODES = { "join", "bring", "kick", "warn", "ban", "announce", "lockdown", "shutdown", "migrate", "staffchat", "execute" }
+
+-- A registry record without its player list (that is fetched per server).
+local function publicServer(record: any): any
+	return {
+		Id = record.Id,
+		Short = CrossServerService.ShortId(record.Id),
+		IsThis = record.Id == CrossServerService.ServerId,
+		Place = record.Place,
+		Version = record.Ver,
+		Players = record.N,
+		MaxPlayers = record.Max,
+		StartedAt = record.Start,
+		Heartbeat = record.HB,
+		Fps = record.Fps,
+		Ping = record.Ping,
+		MemoryMb = record.Mem,
+		Staff = record.Staff,
+		Locked = record.Locked == true,
+		Maintenance = record.Maint == true,
+		Private = record.Priv == true,
+		Studio = record.Studio == true,
+		Health = record.Health,
+	}
+end
+
+bindInvoke(getCrossServerSnapshotRemote, function(player: Player, options: any)
+	if not canViewCrossServer(player) then
+		return nil
+	end
+	local want = if type(options) == "table" then options else {}
+	local servers, totals = CrossServerService.ListServers(want.Refresh == true)
+	local list = {}
+	for i, record in ipairs(servers) do
+		if i > 200 then
+			break
+		end
+		table.insert(list, publicServer(record))
+	end
+	local can = {}
+	for _, node in ipairs(CROSS_SERVER_NODES) do
+		can[node] = PermissionSystem.Has(player, "crossserver." .. node)
+	end
+	local snapshot: any = {
+		ServerId = CrossServerService.ServerId,
+		Now = os.time(),
+		Servers = list,
+		Totals = totals,
+		Stats = CrossServerService.GetStats(),
+		GlobalState = CrossServerService.GetGlobalState(),
+		Can = can,
+		Operations = CrossServerService.GetOperations(40),
+	}
+	if want.Chat == true and can.staffchat then
+		snapshot.Chat = CrossServerService.GetStaffChat()
+	end
+	if want.History == true then
+		snapshot.History = CrossServerService.GetHistory(want.Refresh == true)
+	end
+	return snapshot
+end)
+
+bindInvoke(getCrossServerServerRemote, function(player: Player, serverId: any)
+	if not canViewCrossServer(player) or type(serverId) ~= "string" or #serverId > 64 then
+		return nil
+	end
+	local record = CrossServerService.GetServer(serverId)
+	if not record then
+		return nil
+	end
+	local info = publicServer(record)
+	info.PlayerList = {}
+	for i, entry in ipairs(if type(record.P) == "table" then record.P else {}) do
+		if i > 150 then
+			break
+		end
+		table.insert(info.PlayerList, { UserId = entry[1], Name = entry[2] })
+	end
+	return info
+end)
+
+-- Find a player in any server; an exact username / UserId that is nowhere
+-- online is looked up through Roblox and reported with its ban status.
+bindInvoke(crossServerFindRemote, function(player: Player, query: any)
+	if not canViewCrossServer(player) or type(query) ~= "string" then
+		return nil
+	end
+	query = query:gsub("^%s+", ""):gsub("%s+$", "")
+	if #query < 2 or #query > 40 then
+		return { Online = {}, Message = "Type at least 2 characters." }
+	end
+	local online = {}
+	for _, match in ipairs(CrossServerService.FindPlayers(query, 25)) do
+		table.insert(online, {
+			UserId = match.UserId,
+			Name = match.Name,
+			ServerId = match.ServerId,
+			Short = CrossServerService.ShortId(match.ServerId),
+			IsThis = match.ServerId == CrossServerService.ServerId,
+			Private = match.Priv,
+		})
+	end
+	local result: any = { Online = online }
+	local exact = false
+	for _, match in ipairs(online) do
+		if match.Name:lower() == query:lower() or tostring(match.UserId) == query then
+			exact = true
+		end
+	end
+	if not exact then
+		local userId = tonumber(query)
+		local name: string? = nil
+		if userId and validUserId(userId) then
+			local ok, found = pcall(Players.GetNameFromUserIdAsync, Players, userId)
+			name = if ok and type(found) == "string" then found else nil
+		elseif not userId and query:match("^[%w_]+$") and #query <= 20 then
+			local ok, found = pcall(Players.GetUserIdFromNameAsync, Players, query)
+			userId = if ok and type(found) == "number" then found else nil
+			name = query
+		else
+			userId = nil
+		end
+		if userId and name then
+			local ban = BanCommand.GetActiveBan(userId)
+			result.Offline = {
+				UserId = userId,
+				Name = name,
+				Banned = ban ~= nil,
+				BanReason = if ban then ban.Reason else nil,
+				BanPermanent = if ban then ban.ExpiresAt == math.huge else nil,
+				BanExpiresAt = if ban and ban.ExpiresAt ~= math.huge then ban.ExpiresAt else nil,
+			}
+		end
+	end
+	return result
 end)
 
 return true

@@ -275,11 +275,11 @@ Player actions
 - ✅ Unspin.
 - Fling.
 Advanced management
-- Offline player lookup.
+- ✅ Offline player lookup.
 - Offline player profiles.
 - Offline moderation history.
 - Find player across servers.
-- See whether a player is banned.
+- ✅ See whether a player is banned.
 - View previous usernames when supported.
 - Bulk player actions.
 - Select all players.
@@ -308,8 +308,8 @@ Punishment management
 - Temporary ban.
 - Permanent ban.
 - Unban.
-- Offline ban.
-- Offline unban.
+- ✅ Offline ban.
+- ✅ Offline unban.
 - ✅ Warning.
 - Warning removal.
 - ✅ Mute.
@@ -407,7 +407,7 @@ Server controls
 - Manage private-server restrictions.
 Announcements
 - ✅ Server announcement.
-- Global announcement.
+- ✅ Global announcement.
 - Staff-only announcement.
 - Targeted announcement.
 - Announcement scheduling.
@@ -417,13 +417,13 @@ Announcements
 - Announcement history.
 - Notification banner.
 Advanced server management
-- Live server list.
-- Server health overview.
+- ✅ Live server list.
+- ✅ Server health overview.
 - Switch between servers.
 - Join a specific server.
-- Find a player in another server.
-- Execute cross-server actions.
-- Global lockdown.
+- ✅ Find a player in another server.
+- ✅ Execute cross-server actions.
+- ✅ Global lockdown.
 - Global shutdown.
 - Global notifications.
 - Server update countdown.
@@ -442,30 +442,30 @@ This deserves its own page rather than being hidden inside Server Management.
 ortcloud.space
 
 
-- List all running game servers.
-- Display JobIds.
-- Live player counts per server.
-- Server uptime.
-- Server health.
-- Server version.
-- Online staff per server.
+- ✅ List all running game servers.
+- ✅ Display JobIds.
+- ✅ Live player counts per server.
+- ✅ Server uptime.
+- ✅ Server health.
+- ✅ Server version.
+- ✅ Online staff per server.
 - Search servers.
-- Find players across servers.
+- ✅ Find players across servers.
 - Join another server.
 - Teleport to a player in another server.
 - Bring players across servers.
 - Global kick.
-- Global ban.
-- Global unban.
-- Global warn.
-- Global announcement.
-- Global lockdown.
+- ✅ Global ban.
+- ✅ Global unban.
+- ✅ Global warn.
+- ✅ Global announcement.
+- ✅ Global lockdown.
 - Global event activation.
-- Cross-server staff chat.
-- Cross-server moderation history.
+- ✅ Cross-server staff chat.
+- ✅ Cross-server moderation history.
 - Cross-server analytics.
-- Server-to-server action acknowledgements.
-- Cross-server operation status.
+- ✅ Server-to-server action acknowledgements.
+- ✅ Cross-server operation status.
 This should use Roblox's cloud services appropriately: DataStoreService for persistent records, MemoryStoreService for frequently changing temporary data, and MessagingService for live server communication. 
 Documentation - Roblox Creator Hub+1
 

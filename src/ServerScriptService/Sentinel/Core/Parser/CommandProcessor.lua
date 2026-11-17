@@ -154,7 +154,7 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 		local allowed = PermissionSystem.Has(executor, def.Permission)
 			and (not CommandPolicy.IsOwnerOnly(def) or table.find(PermissionSystem.GetRoles(executor), "Owner") ~= nil)
 		if not confirmed and allowed then
-			local needs, why = CommandPolicy.NeedsConfirmation(def, #targets)
+			local needs, why = CommandPolicy.NeedsConfirmation(def, #targets, if def.RequiresTarget then current.Arguments else current.PlainArguments)
 			if needs then
 				local id = HttpService:GenerateGUID(false):sub(1, 6):lower()
 				pendingConfirmations[executor.UserId] = {
@@ -252,7 +252,7 @@ function CommandProcessor.Preview(executor: Player, rawInput: string): { any }
 			table.insert(entry.Targets, { Name = p.Name, DisplayName = p.DisplayName, UserId = p.UserId })
 		end
 		entry.TargetCount = #targets
-		local needs, why = CommandPolicy.NeedsConfirmation(def, #targets)
+		local needs, why = CommandPolicy.NeedsConfirmation(def, #targets, if def.RequiresTarget then current.Arguments else current.PlainArguments)
 		entry.NeedsConfirmation = needs
 		entry.Reason = why
 		table.insert(previews, entry)

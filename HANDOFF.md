@@ -4,9 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-16 (W07 session) — W07 command framework built and
-verified in Play; **not committed yet** (user commits on request). Start
-with §6 "Next session"._
+_Last updated: 2026-11-16 (cross-server session) — Cross-Server Management
+(schedule W17-W21, done out of order at the user's request) built and
+verified in Play; **not committed yet** (user commits on request). W08-W16
+are still open. Start with §6 "Next session"._
 
 ---
 
@@ -113,7 +114,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework, 57 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server, 72 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -206,6 +207,50 @@ Control" UI, all driven by one command grammar
     Build. Palette empty state: recent (seeded from the persisted Recent
     list), presets, starred favorites first. The sidebar is now a
     ScrollingFrame (12 pages).
+- **Cross-server (W17-W21):**
+  - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
+    under MessagingService's 1 kB, broadcast / direct, acknowledgements,
+    operations with status pending / complete / partial / no response /
+    failed, duplicate + expiry drops, registry helpers `Summarize`,
+    `FindPlayers`, `Health`). `CrossServer.spec` runs several nodes on a
+    fake bus = how multi-server behaviour is tested without live servers.
+  - `Systems/CrossServerService` wires one node to MessagingService (topics
+    `SentinelXS1` and `SentinelXS1.<serverId>`), writes this server's
+    heartbeat record to the MemoryStore sorted map `SentinelServers_v1`
+    every 25 s (expiry 90 s; also 3 s after a join/leave), keeps global
+    state / history / peak in DataStore `Sentinel_CrossServer_v1` (keys
+    `GlobalState`, `History`, `Stats`), staff chat backlog in MemoryStore
+    `SentinelStaffChat_v1`, and pushes live updates to staff on
+    `CrossServerEventRemote` (kinds op / chat / notify / state / history).
+    Studio has no JobId, so a Studio session is `studio-<8 hex>`.
+  - `Systems/CrossServerActions` = what a server does on arrival (kick, ban,
+    warn, bring, announce, notify, lockdown, shutdown, migrate, chat, cmd,
+    ping). The envelope carries the actor's rank priority and every handler
+    that touches a player re-checks the hierarchy locally ("protected by
+    rank" ack; `;gban` then rolls its record back).
+  - `Commands/CrossServer/CrossServer.lua` (category "Cross-Server", nodes
+    `crossserver.*`): `;servers`, `;findplayer`, `;joinserver`, `;follow`,
+    `;xping`, `;xstatus`, `;gkick`, `;gban`, `;gunban`, `;gwarn`, `;gbring`,
+    `;gannounce`, `;gnotify`, `;lockdown on|off|status`, `;gshutdown`,
+    `;gupdate`, `;migrateserver`, `;global <command>`, `;staffchat`. They
+    take a username / UserId (not the target grammar, which only sees this
+    server) and wait up to 2.5 s for acknowledgements before reporting.
+  - `;global` only runs commands `CommandPolicy.IsGlobalSafe` allows
+    (target-less + listed, or `Global = true` on the def); other servers run
+    them through `CommandRegistry.DispatchRemote` (hooks, middleware,
+    logging; executor may be a plain `{UserId, Name, DisplayName}` table).
+  - New def field `ConfirmWhen = function(arguments) -> boolean` narrows
+    risk confirmation (`;lockdown` only asks for "on").
+  - `BanCommand.SetBan`, `PunishmentService.AddWarningOffline`,
+    `NotificationCenter.Push(success, message)` were added for this.
+  - UI: `CrossServerPage.lua` (sidebar "Cross-Server": Servers / Players /
+    Global / Staff Chat / Operations / History). Remotes
+    `GetCrossServerSnapshotRemote`, `GetCrossServerServerRemote`,
+    `CrossServerFindRemote` (all need `crossserver.view`).
+  - Default ranks: Moderator gets view + staffchat, Admin the moderation
+    nodes, SuperAdmin `crossserver.*`. **Saved rank data is not migrated** -
+    on an existing place grant them with `;rankpreset <rank> CrossServerStaff
+    | CrossServerModeration | CrossServerOperations` (Owner has `*`).
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -307,6 +352,20 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **Cross-server, not verified (needs the published place with 2+
+  servers; Studio can't teleport):** join server, follow, bring, real
+  global kick of a player in another server, global shutdown, update
+  countdown + migration (reserved-server bounce in
+  `CrossServerService.StartMigration`), staff toasts for `;gnotify` / staff
+  chat (events arrive; toast not looked at), server search box, lockdown
+  being applied by a server that starts later. Not built: global event
+  activation (needs W24 events; `;global` is the hook), cross-server
+  analytics beyond the overview cards, cross-server audit log (W10).
+  Offline `;gwarn` stores the warning but escalation only runs while the
+  player is online. Rank protection for offline targets only knows the
+  creator and UserId bindings (group ranks are checked by the server the
+  player is in). Testing-place leftovers: test entries in the Cross-Server
+  History tab and staff chat backlog (expires after 6 h).
 - **Test account warnings:** the Studio test account (`gabrielethangame`)
   has 4 stored warnings (`Sentinel_Warnings_v1`). One more `;warn` on
   yourself triggers the 5-warning auto-ban (happened once in W07 through
@@ -380,13 +439,14 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **57/57**
-  (new `Framework.spec`: hooks, middleware, cancel, undo/redo, templates,
-  prefixes).
-- **W01-W07 are done** (pulled forward, built 2026-11-15/16), except the
-  unverified items in §5. W01-W06 are committed and pushed; **W07 is
-  uncommitted** in the working tree (ask the user before committing).
-- **Schedule position:** next is **W08 - Settings integration** (themes,
+- Sentinel server and client boot cleanly in Play. Unit tests **72/72**
+  (new `CrossServer.spec`, 15 cases).
+- **W01-W07 are done and committed** (`b5c6620`). **Cross-server
+  (W17-W21) was built out of order** on 2026-11-16 because the user asked
+  for the biggest task in `Docs/Planned`; it is **uncommitted** in the
+  working tree (ask the user before committing). W22 (server management
+  leftovers + live two-server test) is still open.
+- **Schedule position:** next undone row is **W08 - Settings integration** (themes,
   keybinds, admin config through `ConfigService`, per-admin prefs
   `Sentinel_Prefs_v1`, load `InGameSettingsPage.lua`). About 7 weekends
   ahead of the dates in
@@ -396,7 +456,13 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **162 bullets ✅**: W07 17 (configurable prefixes,
+- Feature blueprint: **189 bullets ✅**: cross-server 27 (server list,
+  JobIds, player counts, uptime, health, version, staff per server, find
+  players across servers, global ban / unban / warn / announcement /
+  lockdown, staff chat, moderation history, acknowledgements, operation
+  status, live server list, health overview, find a player in another
+  server, execute cross-server actions, offline ban / unban / lookup, is
+  banned), W07 17 (configurable prefixes,
   categories + subcategories, cancellation, undo/redo, result history,
   duration measurement, interactive command builder, templates, saved
   presets, favorites, recently used, searchable history, before/after
@@ -405,7 +471,9 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit W07** if the user agrees.
+1. **Commit the cross-server work** if the user agrees. Then **publish
+   and test with two live servers** (§5 cross-server list) and ✅ the
+   remaining §6 blueprint bullets.
 2. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
    is redundant and logs `unknown role 'Owner'` at boot. Ask before
    touching it.
@@ -418,6 +486,22 @@ Rules that keep it sound:
 6. Then start **W08**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-16 (cross-server, W17-W21 out of order)** - User asked for the
+  biggest task in `Docs/Planned`. Built `Core/CrossServerNode`,
+  `Systems/CrossServerService` + `CrossServerActions`, 19 commands in
+  `Commands/CrossServer`, UIBridge remotes, `CrossServerPage`, and
+  `DispatchRemote` / `IsGlobalSafe` / `ConfirmWhen`. Checked first that
+  MessagingService, MemoryStore and DataStore work in Studio Play (they
+  do; `math.huge` also round-trips through the DataStore). Tests 72/72.
+  Verified in Play by remote, mouse and keyboard: server list with a
+  second (previous-session) registry record, ping reporting 1/2 answers,
+  find online + offline, gban / gunban / gwarn on an offline account,
+  announcement, lockdown through the ConfirmDialog, `;global weather`,
+  staff chat with backlog from the earlier session, operations and
+  persisted history; and with hand-made messages from a fake server:
+  acknowledgements, rank protection, remote command execution, logging.
+  ✅ 27 bullets. Not committed.
 
 - **2026-11-16 (W07)** - Command framework: hooks, middleware,
   cancellation and timing in `CommandRegistry`; `Core/CommandHistory`

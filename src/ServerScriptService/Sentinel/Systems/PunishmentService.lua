@@ -23,6 +23,7 @@
 
 	Public API:
 		PunishmentService.AddWarning(target, issuer, reason): {WarningRecord}
+		PunishmentService.AddWarningOffline(userId, issuer, reason): number?
 		PunishmentService.GetWarnings(userId): {WarningRecord}
 		PunishmentService.ClearWarnings(userId): ()
 		PunishmentService.RegisterEscalationRule(threshold, action): ()
@@ -93,7 +94,9 @@ local function persist(userId: number, warnings: { WarningRecord })
 	end
 end
 
-function PunishmentService.AddWarning(target: Player, issuer: Player, reason: string): { WarningRecord }
+-- `issuer` only needs UserId and Name: a Player, or the identity of a staff
+-- member on another server (cross-server ;gwarn).
+function PunishmentService.AddWarning(target: Player, issuer: any, reason: string): { WarningRecord }
 	local warnings = PunishmentService.GetWarnings(target.UserId)
 	local record: WarningRecord = {
 		IssuedBy = issuer.UserId,
@@ -125,6 +128,33 @@ function PunishmentService.AddWarning(target: Player, issuer: Player, reason: st
 	end
 
 	return warnings
+end
+
+-- Warning for a player who is not in ANY server (cross-server ;gwarn). The
+-- record is appended atomically; escalation rules need a Player object, so
+-- they run on the next warning the player receives while online. Returns
+-- the new warning count, or nil when the DataStore write failed.
+function PunishmentService.AddWarningOffline(userId: number, issuer: any, reason: string): number?
+	local count: number? = nil
+	local ok, err = pcall(function()
+		WarningStore:UpdateAsync(tostring(userId), function(old)
+			local warnings = if type(old) == "table" then old else {}
+			table.insert(warnings, {
+				IssuedBy = issuer.UserId,
+				IssuedByName = issuer.Name,
+				Reason = reason,
+				Timestamp = os.time(),
+			})
+			count = #warnings
+			return warnings
+		end)
+	end)
+	if not ok then
+		warn(("[Sentinel.PunishmentService] offline warning for %d failed: %s"):format(userId, tostring(err)))
+		return nil
+	end
+	cache[userId] = nil
+	return count
 end
 
 function PunishmentService.ClearWarnings(userId: number)
