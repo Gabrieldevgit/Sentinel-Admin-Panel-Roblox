@@ -162,6 +162,32 @@ end
 -- "allow", "deny" (explicitly denied and nothing allows it) or nil.
 -- Across separately-assigned roles any allow wins, so a low rank's deny
 -- (e.g. on VIP) can never cripple a staff rank the same player holds.
+-- W08 "default permissions": nodes every player has (admin config
+-- DefaultPermissions). Consulted only when no rank has an opinion.
+local defaultNodes: { string } = {}
+
+function PermissionSystem.SetDefaultNodes(nodes: { string }?)
+	defaultNodes = if type(nodes) == "table" then table.clone(nodes) else {}
+end
+
+function PermissionSystem.GetDefaultNodes(): { string }
+	return table.clone(defaultNodes)
+end
+
+local function evaluateDefaults(node: string): string?
+	local allowed = false
+	for _, granted in ipairs(defaultNodes) do
+		if granted:sub(1, 1) == "!" then
+			if nodeMatches(granted:sub(2), node) then
+				return "deny"
+			end
+		elseif nodeMatches(granted, node) then
+			allowed = true
+		end
+	end
+	return if allowed then "allow" else nil
+end
+
 function PermissionSystem.Evaluate(player: Player, node: string): string?
 	-- Temporary grants first (cheap check, self-expiring).
 	local temp = temporaryGrants[player.UserId]
@@ -173,20 +199,21 @@ function PermissionSystem.Evaluate(player: Player, node: string): string?
 	end
 
 	local assigned = playerRoles[player.UserId]
-	if not assigned then
-		return nil
-	end
-
 	local denied = false
-	for roleName in pairs(assigned) do
-		local verdict = evaluateRole(roleName, node, {})
-		if verdict == "allow" then
-			return "allow"
-		elseif verdict == "deny" then
-			denied = true
+	if assigned then
+		for roleName in pairs(assigned) do
+			local verdict = evaluateRole(roleName, node, {})
+			if verdict == "allow" then
+				return "allow"
+			elseif verdict == "deny" then
+				denied = true
+			end
 		end
 	end
-	return if denied then "deny" else nil
+	if denied then
+		return "deny"
+	end
+	return evaluateDefaults(node)
 end
 
 function PermissionSystem.Has(player: Player, node: string): boolean

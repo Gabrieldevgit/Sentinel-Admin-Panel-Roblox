@@ -838,19 +838,19 @@ softpedia.com
 
 Appearance
 - ✅ Dark theme.
-- Light theme.
+- ✅ Light theme.
 - ✅ Midnight theme.
 - ✅ Ocean theme.
-- Custom themes.
+- ✅ Custom themes.
 - ✅ Accent color.
-- Custom color palette.
-- Theme import.
-- Theme export.
-- Font preferences.
+- ✅ Custom color palette.
+- ✅ Theme import.
+- ✅ Theme export.
+- ✅ Font preferences.
 - UI scaling.
 - Animation settings.
 - Reduced motion.
-- High-contrast mode.
+- ✅ High-contrast mode.
 Interface
 - Sidebar customization.
 - Dashboard customization.
@@ -862,25 +862,25 @@ Interface
 - Compact mode.
 - Mobile layout.
 Keyboard shortcuts
-- Open panel.
-- Close panel.
-- Open command palette.
+- ✅ Open panel.
+- ✅ Close panel.
+- ✅ Open command palette.
 - ✅ Open command bar.
-- Quick Fly.
-- Quick Noclip.
-- Quick God Mode.
-- Next page.
-- Previous page.
-- Custom keybindings.
+- ✅ Quick Fly.
+- ✅ Quick Noclip.
+- ✅ Quick God Mode.
+- ✅ Next page.
+- ✅ Previous page.
+- ✅ Custom keybindings.
 Administration configuration
 - Command prefix.
-- Command cooldowns.
+- ✅ Command cooldowns.
 - Default ban duration.
-- Maximum punishment duration.
+- ✅ Maximum punishment duration.
 - Warning escalation.
-- Required reason settings.
+- ✅ Required reason settings.
 - Log retention.
-- Notification preferences.
+- ✅ Notification preferences.
 - Default permissions.
 - Server configuration.
 14. Scheduling & Automation

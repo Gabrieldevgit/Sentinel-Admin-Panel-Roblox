@@ -252,8 +252,28 @@ local function cooldownKey(userId: number, commandName: string): string
 	return tostring(userId) .. ":" .. commandName
 end
 
+-- W08: admin config can rescale or override cooldowns. The resolver gets
+-- the definition and returns the cooldown in seconds to use.
+local cooldownResolver: ((CommandDefinition) -> number?)? = nil
+
+function CommandRegistry.SetCooldownResolver(fn: ((CommandDefinition) -> number?)?)
+	cooldownResolver = fn
+end
+
+function CommandRegistry.GetCooldown(def: CommandDefinition): number
+	local seconds = def.Cooldown or 0
+	if cooldownResolver then
+		local ok, value = pcall(cooldownResolver, def)
+		if ok and type(value) == "number" and value == value then
+			seconds = value
+		end
+	end
+	return math.max(0, seconds)
+end
+
 local function checkAndSetCooldown(executor: Player, def: CommandDefinition): boolean
-	if not def.Cooldown or def.Cooldown <= 0 then
+	local seconds = CommandRegistry.GetCooldown(def)
+	if seconds <= 0 then
 		return true
 	end
 	local key = cooldownKey(executor.UserId, def.Name)
@@ -261,7 +281,7 @@ local function checkAndSetCooldown(executor: Player, def: CommandDefinition): bo
 	if expiry and expiry > os.clock() then
 		return false
 	end
-	cooldowns[key] = os.clock() + def.Cooldown
+	cooldowns[key] = os.clock() + seconds
 	return true
 end
 

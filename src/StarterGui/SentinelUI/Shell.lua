@@ -102,6 +102,8 @@ local SECTIONS = {
 		Pages = {
 			{ Id = "Settings", Label = "Settings", Icon = "⚙" },
 			{ Id = "Appearance", Label = "Appearance", Icon = "🎨" },
+			{ Id = "Keybinds", Label = "Keybinds", Icon = "⌨" },
+			{ Id = "Administration", Label = "Administration", Icon = "🛠" },
 			{ Id = "Notifications", Label = "Notifications", Icon = "🔔" },
 		},
 	},
@@ -208,6 +210,27 @@ function Shell.ShowPage(id: string)
 	page.Position = UDim2.new(0, 0, 0, 14)
 	Theme.tween(page, Theme.Motion.Normal, { Position = UDim2.new(0, 0, 0, 0) })
 	refreshNav()
+end
+
+-- Next / previous page (keyboard shortcuts), in navigation order, skipping
+-- hidden and unregistered pages. Wraps around.
+function Shell.Cycle(direction: number)
+	local ids = {}
+	for _, id in ipairs(Shell.GetPageIds()) do
+		if pages[id] and not hiddenPages[id] then
+			table.insert(ids, id)
+		end
+	end
+	if #ids == 0 then
+		return
+	end
+	local index = (currentPageId and table.find(ids, currentPageId)) or 0
+	local nextIndex = ((index - 1 + direction) % #ids) + 1
+	Shell.ShowPage(ids[nextIndex])
+end
+
+function Shell.GetCurrentPage(): string?
+	return currentPageId
 end
 
 function Shell.RegisterPage(id: string, _displayName: string, _icon: string): Frame

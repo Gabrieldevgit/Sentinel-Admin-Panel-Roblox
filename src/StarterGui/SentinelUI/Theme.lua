@@ -68,25 +68,67 @@ local TweenService = game:GetService("TweenService")
 local UIPrefs = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("UIPrefs"))
 
 Theme.Animations = true
+Theme.ReducedMotion = false
+Theme.AnimationSpeed = 1
+Theme.IsLight = false
 
--- Sets the palette from panel prefs ({ Theme, Accent, Animations }).
--- Returns the previous colours (for Retint).
-function Theme.Apply(panel: any): { [string]: Color3 }
+local BASE_MOTION = {
+	Fast = { 0.15, Enum.EasingStyle.Quad },
+	Normal = { 0.2, Enum.EasingStyle.Quad },
+	Spring = { 0.3, Enum.EasingStyle.Back },
+}
+
+local FONT_KEYS = { "Regular", "Medium", "Bold", "Black" }
+
+local function fontFamily(name: any): { Enum.Font }?
+	local names = UIPrefs.FONTS[name]
+	if not names then
+		return nil
+	end
+	local out = {}
+	for i, fontName in ipairs(names) do
+		local ok, font = pcall(function()
+			return (Enum.Font :: any)[fontName]
+		end)
+		if not ok or not font then
+			return nil
+		end
+		out[i] = font
+	end
+	return out
+end
+
+-- Sets palette, fonts and motion from panel prefs. Returns the previous
+-- colours and fonts (for Retint).
+function Theme.Apply(panel: any): ({ [string]: Color3 }, { [string]: Enum.Font })
 	local previous = table.clone(Theme.Colors)
-	local set = UIPrefs.THEMES[panel and panel.Theme] or UIPrefs.THEMES[UIPrefs.BUILTIN.Panel.Theme]
-	for key, color in pairs(set) do
+	local previousFonts = table.clone(Theme.Font)
+	local palette = UIPrefs.ResolvePalette(panel)
+	for key, color in pairs(palette) do
 		(Theme.Colors :: any)[key] = color
 	end
-	Theme.Colors.Accent = UIPrefs.ACCENTS[panel and panel.Accent] or UIPrefs.ACCENTS[UIPrefs.BUILTIN.Panel.Accent]
+	Theme.IsLight = UIPrefs.IsLight(palette)
+	local family = fontFamily(panel and panel.Font) or fontFamily("Gotham")
+	if family then
+		for i, key in ipairs(FONT_KEYS) do
+			(Theme.Font :: any)[key] = family[i]
+		end
+	end
 	Theme.Animations = not (panel and panel.Animations == false)
-	return previous
+	Theme.ReducedMotion = panel ~= nil and panel.ReducedMotion == true
+	Theme.AnimationSpeed = if panel and type(panel.AnimationSpeed) == "number" then math.clamp(panel.AnimationSpeed, 0.25, 4) else 1
+	for name, base in pairs(BASE_MOTION) do
+		(Theme.Motion :: any)[name] = TweenInfo.new(base[1] / Theme.AnimationSpeed, base[2], Enum.EasingDirection.Out)
+	end
+	return previous, previousFonts
 end
 
 local COLOR_PROPS = { "BackgroundColor3", "TextColor3", "ImageColor3", "PlaceholderColor3", "ScrollBarImageColor3", "BorderColor3" }
 
 -- Recolours existing UI: any colour equal to an old palette colour becomes
--- the matching new one. Colours that were never palette colours stay.
-function Theme.Retint(root: Instance, previous: { [string]: Color3 })
+-- the matching new one. Colours that were never palette colours stay. Fonts
+-- work the same way when previousFonts is given.
+function Theme.Retint(root: Instance, previous: { [string]: Color3 }, previousFonts: { [string]: Enum.Font }?)
 	local map: { { Color3 } } = {}
 	for key, old in pairs(previous) do
 		local new = (Theme.Colors :: any)[key]
@@ -94,7 +136,18 @@ function Theme.Retint(root: Instance, previous: { [string]: Color3 })
 			table.insert(map, { old, new })
 		end
 	end
-	if #map == 0 then
+	local fontMap: { [Enum.Font]: Enum.Font } = {}
+	local fontChanges = 0
+	if previousFonts then
+		for _, key in ipairs(FONT_KEYS) do
+			local old, new = previousFonts[key], (Theme.Font :: any)[key]
+			if old and new and old ~= new and fontMap[old] == nil then
+				fontMap[old] = new
+				fontChanges += 1
+			end
+		end
+	end
+	if #map == 0 and fontChanges == 0 then
 		return
 	end
 	local function swap(inst: any, prop: string)
@@ -113,8 +166,16 @@ function Theme.Retint(root: Instance, previous: { [string]: Color3 })
 	local count = 0
 	for _, inst in ipairs(root:GetDescendants()) do
 		if inst:IsA("GuiObject") then
-			for _, prop in ipairs(COLOR_PROPS) do
-				swap(inst, prop)
+			if #map > 0 then
+				for _, prop in ipairs(COLOR_PROPS) do
+					swap(inst, prop)
+				end
+			end
+			if fontChanges > 0 and (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then
+				local newFont = fontMap[(inst :: any).Font]
+				if newFont then
+					(inst :: any).Font = newFont
+				end
 			end
 		elseif inst:IsA("UIStroke") then
 			swap(inst, "Color")
@@ -126,13 +187,31 @@ function Theme.Retint(root: Instance, previous: { [string]: Color3 })
 	end
 end
 
--- Tween that respects the Animations preference (jumps to the goal when off).
+-- Properties that move or resize things: reduced motion sets them at once.
+local MOTION_PROPS = { Position = true, Size = true, Scale = true, Rotation = true, AnchorPoint = true, CanvasPosition = true }
+
+-- Tween that respects the Animations, AnimationSpeed and ReducedMotion
+-- preferences (jumps to the goal when animations are off).
 function Theme.tween(inst: Instance, info: TweenInfo, goal: { [string]: any }): Tween?
 	if not Theme.Animations then
 		for prop, value in pairs(goal) do
 			(inst :: any)[prop] = value
 		end
 		return nil
+	end
+	if Theme.ReducedMotion then
+		local rest = {}
+		for prop, value in pairs(goal) do
+			if MOTION_PROPS[prop] then
+				(inst :: any)[prop] = value
+			else
+				rest[prop] = value
+			end
+		end
+		if next(rest) == nil then
+			return nil
+		end
+		goal = rest
 	end
 	local tween = TweenService:Create(inst, info, goal)
 	tween:Play()

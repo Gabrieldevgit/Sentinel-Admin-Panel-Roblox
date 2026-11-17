@@ -31,12 +31,19 @@ local UIPrefs = require(SentinelShared:WaitForChild("UIPrefs"))
 
 local AppearancePage = {}
 
-local SECTION_TITLES = { Panel = "Panel", CommandBar = "Command bar" }
+local SECTION_TITLES = { Panel = "Panel", CommandBar = "Command bar", Notifications = "Notifications" }
 local FIELD_LABELS = {
 	Theme = "Theme",
 	Accent = "Accent colour",
 	Animations = "Animations",
 	Scale = "Panel size",
+	Font = "Font",
+	AnimationSpeed = "Animation speed",
+	ReducedMotion = "Reduced motion",
+	HighContrast = "High contrast",
+	Toasts = "Pop-ups",
+	Sound = "Sound",
+	Duration = "Duration",
 	Preset = "Look",
 	Position = "Position",
 	Width = "Width",
@@ -191,6 +198,140 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 		Theme.corner(dot, UDim.new(1, 0))
 	end
 
+	-- Custom theme: 7 hex colours, plus theme code export / import.
+	local function buildCustomTheme(order: number)
+		local effective = snapshot.Effective.Panel
+		local current = UIPrefs.ResolvePalette(effective)
+		local start = {}
+		for _, key in ipairs(UIPrefs.PALETTE_KEYS) do
+			start[key] = if type(effective.Custom) == "table" and effective.Custom[key]
+				then effective.Custom[key]
+				else UIPrefs.ColorToHex(current[key])
+		end
+		local block = make("Frame", {
+			Name = "CustomTheme",
+			LayoutOrder = order,
+			BackgroundColor3 = Theme.Colors.Surface,
+			Size = UDim2.new(1, -8, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		}, body)
+		Theme.corner(block, Theme.Radius.S)
+		Theme.padding(block, 10)
+		make("UIListLayout", { Padding = UDim.new(0, 6) }, block)
+		make("TextLabel", {
+			Name = "Title",
+			LayoutOrder = 1,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 18),
+			Font = Theme.Font.Medium,
+			TextSize = 13,
+			TextColor3 = Theme.Colors.Text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = "CUSTOM THEME - IMPORT / EXPORT",
+		}, block)
+		local grid = make("Frame", {
+			Name = "Colours",
+			LayoutOrder = 2,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		}, block)
+		local gridLayout = Instance.new("UIGridLayout")
+		gridLayout.CellSize = UDim2.new(0, 196, 0, 28)
+		gridLayout.CellPadding = UDim2.new(0, 6, 0, 6)
+		gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		gridLayout.Parent = grid
+		local boxes: { [string]: TextBox } = {}
+		for i, key in ipairs(UIPrefs.PALETTE_KEYS) do
+			local cell = make("Frame", { Name = "Colour_" .. key, LayoutOrder = i, BackgroundTransparency = 1 }, grid)
+			local dot = make("Frame", {
+				Name = "Swatch",
+				BackgroundColor3 = UIPrefs.HexToColor(start[key]) or Color3.new(),
+				Position = UDim2.new(0, 0, 0.5, -9),
+				Size = UDim2.new(0, 18, 0, 18),
+			}, cell)
+			Theme.corner(dot, UDim.new(1, 0))
+			Theme.stroke(dot, Theme.Colors.Border, 1)
+			make("TextLabel", {
+				Name = "Name",
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0, 24, 0, 0),
+				Size = UDim2.new(0, 94, 1, 0),
+				Font = Theme.Font.Regular,
+				TextSize = 11,
+				TextColor3 = Theme.Colors.TextSecondary,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = key,
+			}, cell)
+			local box = make("TextBox", {
+				Name = "Hex",
+				BackgroundColor3 = Theme.Colors.SurfaceRaised,
+				Position = UDim2.new(0, 120, 0, 0),
+				Size = UDim2.new(0, 72, 1, 0),
+				Font = Theme.Font.Mono,
+				TextSize = 12,
+				TextColor3 = Theme.Colors.Text,
+				ClearTextOnFocus = false,
+				Text = start[key],
+			}, cell)
+			Theme.corner(box, Theme.Radius.S)
+			box:GetPropertyChangedSignal("Text"):Connect(function()
+				local c = UIPrefs.HexToColor(box.Text)
+				if c then
+					dot.BackgroundColor3 = c
+				end
+			end)
+			boxes[key] = box
+		end
+		local actions = make("Frame", { Name = "Actions", LayoutOrder = 3, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 28) }, block)
+		make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, actions)
+		local codeBox: TextBox = make("TextBox", {
+			Name = "Code",
+			LayoutOrder = 4,
+			BackgroundColor3 = Theme.Colors.SurfaceRaised,
+			Size = UDim2.new(1, 0, 0, 28),
+			Font = Theme.Font.Mono,
+			TextSize = 12,
+			TextColor3 = Theme.Colors.Text,
+			PlaceholderColor3 = Theme.Colors.TextSecondary,
+			PlaceholderText = "Theme code: SNTL1-...",
+			ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = "",
+		}, block)
+		Theme.corner(codeBox, Theme.Radius.S)
+		local codePad = Instance.new("UIPadding")
+		codePad.PaddingLeft = UDim.new(0, 8)
+		codePad.Parent = codeBox
+
+		local apply = button(actions, "UseCustom", "Use these colours", 140, 1)
+		apply.BackgroundColor3 = Theme.Colors.Accent
+		apply.MouseButton1Click:Connect(function()
+			local custom = {}
+			for _, key in ipairs(UIPrefs.PALETTE_KEYS) do
+				local c = UIPrefs.HexToColor(boxes[key].Text)
+				if not c then
+					say(("%s is not a hex colour like 1A2B3C."):format(key), false)
+					return
+				end
+				custom[key] = UIPrefs.ColorToHex(c)
+			end
+			request("personal", { Panel = { Theme = "Custom", Custom = custom } })
+		end)
+		button(actions, "Export", "Export current", 120, 2).MouseButton1Click:Connect(function()
+			codeBox.Text = UIPrefs.EncodeTheme(UIPrefs.ResolvePalette(snapshot.Effective.Panel))
+			say("Theme code ready: select it and copy (Ctrl+C).", true)
+		end)
+		button(actions, "Import", "Import code", 110, 3).MouseButton1Click:Connect(function()
+			local custom, err = UIPrefs.DecodeTheme(codeBox.Text)
+			if not custom then
+				say("Import failed: " .. tostring(err) .. ".", false)
+				return
+			end
+			request("personal", { Panel = { Theme = "Custom", Custom = custom } })
+		end)
+	end
+
 	render = function()
 		local scroll = body.CanvasPosition
 		for _, child in ipairs(body:GetChildren()) do
@@ -202,7 +343,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 			return
 		end
 		local order = 0
-		for _, section in ipairs({ "Panel", "CommandBar" }) do
+		for _, section in ipairs({ "Panel", "CommandBar", "Notifications" }) do
 			order += 1
 			make("TextLabel", {
 				Name = "Section_" .. section,
@@ -220,6 +361,9 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 				order += 1
 				local spec = UIPrefs.SPEC[section][field]
 				local value = snapshot.Effective[section][field]
+				if value == nil then
+					value = UIPrefs.BUILTIN[section][field]
+				end
 				local personal = snapshot.Personal[section] ~= nil and snapshot.Personal[section][field] ~= nil
 				local row = make("Frame", {
 					Name = ("Row_%s_%s"):format(section, field),
@@ -280,7 +424,10 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 						if field == "Accent" then
 							swatch(chip, UIPrefs.ACCENTS[option])
 						elseif field == "Theme" then
-							swatch(chip, UIPrefs.THEMES[option].SurfaceRaised)
+							local set = UIPrefs.THEMES[option]
+							local custom = snapshot.Effective.Panel.Custom
+							local customColor = if type(custom) == "table" then UIPrefs.HexToColor(custom.SurfaceRaised) else nil
+							swatch(chip, if set then set.SurfaceRaised else (customColor or Theme.Colors.SurfaceRaised))
 						end
 						chip.MouseButton1Click:Connect(function()
 							set(section, field, option)
@@ -306,7 +453,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 					button(controls, "Minus", "-", 32, 1).MouseButton1Click:Connect(function()
 						step(-1)
 					end)
-					local shown = if spec.Integer then tostring(value) elseif spec.Max <= 1.5 then ("%d%%"):format(value * 100 + 0.5) else tostring(value)
+					local shown = if spec.Integer then tostring(value) elseif spec.Max <= 1.5 then ("%d%%"):format(value * 100 + 0.5) else tostring(value) .. "x"
 					make("TextLabel", {
 						Name = "Value",
 						LayoutOrder = 2,
@@ -321,6 +468,10 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 						step(1)
 					end)
 				end
+			end
+			if section == "Panel" then
+				order += 1
+				buildCustomTheme(order)
 			end
 		end
 		body.CanvasPosition = scroll

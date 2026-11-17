@@ -4,11 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-16 (UI redesign session) — cross-server work is
-committed and pushed (`87bc1b7`). The **UI redesign** (new shell, terminal
-command bar, themes, per-staff preferences) is built and verified in Play;
-**not committed yet** (user commits on request). W08-W16 are still open.
-Start with §6 "Next session"._
+_Last updated: 2026-11-17 (W08 session) — the UI redesign is committed
+(`6812a92`), cross-server too (`87bc1b7`). **W08 settings integration** is
+built and verified in Play, **not committed yet** (user commits on
+request). Next undone row: W09. Start with §6 "Next session"._
 
 ---
 
@@ -115,7 +114,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server, 72 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings, 82 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -125,8 +124,10 @@ Control" UI, all driven by one command grammar
     `Autocomplete.spec` in W06; the harness lived in the session scratchpad,
     rewrite it if needed — ~80 lines).
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
-- Open the panel in Play with **F6**; command bar **F2** (key is a
-  preference); command palette **Ctrl+Shift+P**; chat prefix `;`.
+- Open the panel in Play with **F6**; command bar **F2**; command palette
+  **Ctrl+K** (all keybind preferences since W08); chat prefix `;`.
+  **Never bind Shift+P**: it toggles Roblox's developer Freecam, which hides
+  every ScreenGui (`UIPrefs.ParseKey` refuses it).
   - Studio MCP: wait ~0.5 s between `textInput` and `keyPress Return`, or
     Return can arrive before the text. Text boxes take `textInput` reliably
     only with an `instance_path`.
@@ -249,6 +250,51 @@ Control" UI, all driven by one command grammar
     those ranks.
   - `AppearancePage.lua` (gear > Appearance): rows generated from UIPrefs;
     Owner gets "Make this the server default" / "Reset server default".
+- **W08 settings integration:**
+  - `Shared/UIPrefs` sections: Panel (Theme incl. **Light** and **Custom**,
+    Accent, Font = Gotham/Builder/Roboto/SourceSans/Arial, Animations,
+    AnimationSpeed, ReducedMotion, HighContrast, Scale, Custom palette),
+    CommandBar, **Keys** (Panel F6, ClosePanel, Palette Ctrl+K, QuickFly /
+    QuickNoclip / QuickGod, NextPage Ctrl+PageDown, PrevPage Ctrl+PageUp,
+    Custom = up to 10 `{Key, Command}`), **Notifications** (Toasts, Sound,
+    Duration, Position). Keys are `[Ctrl+][Shift+][Alt+]<KeyCode>` or
+    `None`. Theme codes `SNTL1-` + 7 hex colours (`EncodeTheme` /
+    `DecodeTheme`); `ResolvePalette(panel)` = theme + accent + custom + high
+    contrast. `Enum.Font.Montserrat*` are aliases of Gotham - don't offer it.
+  - `Theme.Apply` returns previous colours **and fonts**; `Theme.Retint(gui,
+    prevColors, prevFonts)` also swaps fonts. `Theme.tween` honours
+    AnimationSpeed (Theme.Motion rebuilt) and ReducedMotion (position / size
+    / scale jump, colours still fade).
+  - init.client has one key dispatcher for all shortcuts (Ctrl/Alt chords
+    also work while typing). Quick actions send `fly|unfly me` etc. based on
+    the player's `SentinelFlying` / `SentinelNoclip` / `SentinelGod`
+    attribute; custom binds send their command with `{ Source = "keybind" }`.
+    The palette's own Ctrl+Shift+P handler is gone (`CommandPalette.Toggle`).
+    `Shell.Cycle(dir)` = next / previous page. `NotificationCenter.
+    ApplyPrefs` (toasts, sound, duration, corner).
+  - `Systems/AdminConfig`: admin config on top of ConfigService (new
+    `ConfigService.Define/Reset/GetDefault`; a value loaded before Define is
+    kept). Keys: prefixes, cooldownscale, cooldowns (overrides), defaultban,
+    maxduration, escalation (`3:kick 5:ban:1d`), requirereason, logretention,
+    defaultperms. Applies: `CommandRegistry.SetCooldownResolver`, a Before
+    hook (`AdminConfig.CheckCommand`: required reasons, default ban
+    duration, max ban / mute duration for everyone), `PunishmentService.
+    SetPolicyProvider` + `RegisterEscalationAction` (Warn.lua registers kick
+    / mute / ban; the old hard-coded 3/5 rules are gone),
+    `PermissionSystem.SetDefaultNodes` (fallback when no rank decides; no
+    `*`, config, ranks, developer, panel, crossserver nodes),
+    `Logger.SetRetentionDays` (in-memory prune; W10 should reuse it).
+  - Commands: `;config [setting] [value]` (cfg, settings; view = panel.open,
+    change = `config.edit`), `;theme export|import <code>`, `;keybind`
+    (keybinds, shortcut; `add <key> <command>`, `remove <key>`),
+    `;notifyprefs` (toasts).
+  - UI: System section now Settings / Appearance / **Keybinds**
+    (`KeybindsPage.lua`, click + press to record, clash warnings, custom
+    shortcut form) / **Administration** (`InGameSettingsPage.lua` rewritten,
+    rows from `GetAdminConfigRemote`, Save / Reset send `;config`) /
+    Notifications. Appearance page gained the new Panel rows, a Custom theme
+    block (7 hex boxes, Use / Export / Import) and the Notifications section.
+    `SetUIPrefsRemote("reset", "Keys")` resets one section.
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -437,13 +483,19 @@ Rules that keep it sound:
   shortcut + ghost text) was rebuilt in W05 and Ctrl+Shift+P works with
   Studio MCP input; **not yet tried on a real keyboard** (Studio itself may
   grab the chord — if so, add a fallback key in W08 keybinds).
-- **Panel closes on its own (intermittent, predates W06):** during palette
-  tests `SentinelShell.Enabled` sometimes flips to false with no Sentinel
-  code on the stack. Also, opening the palette was seen enabling the old
-  V4.3 GUIs (`AdminPanelV43`, `NotificationGui`, `Interface`) — the old
-  panel binds **P** without checking modifiers, so Ctrl+Shift+P can reach
-  it. Not reproduced reliably; investigate with the old panel's key
-  handling, or move the palette shortcut in W08 keybinds.
+- **Panel closing on its own: solved in W08.** Ctrl+Shift+P also toggled
+  Roblox's developer Freecam (Shift+P, `PlayerGui.Freecam`), which hides
+  every ScreenGui. Palette is now Ctrl+K and Shift+P can't be bound.
+- **W08 not verified live (so not ✅):** warning escalation from config
+  (the test account has 4 warnings - don't warn yourself), default ban
+  duration actually applied to a ban (unit-tested only), default
+  permissions on an unranked player (needs a second player), log
+  retention (no persistent log until W10), `;config prefixes` through the
+  new page, UI scaling / animation speed / reduced motion by eye, the
+  "Use these colours" button (import path was used), notification sound
+  (can't hear it via MCP). Theme row chips (7) nearly fill the row; a
+  narrower panel may overlap the label. A command cancelled by a Before
+  hook (e.g. max duration) still starts its cooldown (pre-existing order).
 - W06 leftovers: the dry-run preview can't show what "random" will pick
   (re-rolled each preview); the highlighted copy is hidden when the input
   overflows horizontally.
@@ -454,8 +506,8 @@ Rules that keep it sound:
 - Resize handle was rewritten with the drag fix but **not re-tested by hand**.
 - The old panel's `AdminPanelClient` also binds **F** to its own fly; its
   `AdminPanelV43` / `NotificationGui` duplicate in PlayerGui on each respawn.
-- Modules not wired up yet: `BanPromptSystem`, `InGameSettingsPage`
-  (W08), `PlayerControlsSystem` (W09). `Config.lua` ranks are now only
+- Modules not wired up yet: `BanPromptSystem`
+  (W09), `PlayerControlsSystem` (W09). `Config.lua` ranks are now only
   reference; RankService owns ranks.
 - Harmless console noise from the game's assets: sound
   `118939739460633` (no permission), asset `203785492` (wrong type).
@@ -491,16 +543,20 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **72/72**.
-- **UI redesign** (user request, 2026-11-16) is built and **uncommitted**:
-  see §3. Testing-place prefs and server default were reset to built-in.
+- Sentinel server and client boot cleanly in Play. Unit tests **82/82**
+  (new `Settings.spec`).
+- **W08 settings integration** is built and verified in Play, **not
+  committed** (see §3). Testing-place admin config is back to defaults and
+  the test account's personal prefs were reset.
+- **UI redesign** committed as `6812a92`.
 - **W01-W07 are done and committed** (`b5c6620`). **Cross-server
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** next undone row is **W08 - Settings integration** (themes,
-  keybinds, admin config through `ConfigService`, per-admin prefs
-  `Sentinel_Prefs_v1`, load `InGameSettingsPage.lua`). About 7 weekends
+- **Schedule position:** next undone row is **W09 - Responsive UI pass**
+  (ServerPage wrap, reflow, resize retest, compact mode, mobile layout,
+  sidebar customization, favorite pages, live status bar, wire
+  `PlayerControlsSystem` / `BanPromptSystem`). About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -508,7 +564,11 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **195 bullets ✅**: UI redesign 6 (command bar, open
+- Feature blueprint: **215 bullets ✅**: W08 20 (light theme, custom themes,
+  custom palette, theme import / export, font, high contrast, open / close
+  panel, palette, quick fly / noclip / god, next / previous page, custom
+  keybindings, command cooldowns, maximum punishment, required reasons,
+  notification preferences), UI redesign 6 (command bar, open
   command bar key, dark / midnight / ocean themes, accent colour), cross-server 27 (server list,
   JobIds, player counts, uptime, health, version, staff per server, find
   players across servers, global ban / unban / warn / announcement /
@@ -524,9 +584,9 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit the UI redesign** if the user agrees. Then **publish
-   and test with two live servers** (§5 cross-server list) and ✅ the
-   remaining §6 blueprint bullets.
+1. **Commit W08** if the user agrees. Then **publish and test with two
+   live servers** (§5 cross-server list) and ✅ the remaining §6 blueprint
+   bullets.
 2. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
    is redundant and logs `unknown role 'Owner'` at boot. Ask before
    touching it.
@@ -536,9 +596,24 @@ Rules that keep it sound:
    denied feedback, multi-player targeting, Staff Online count.
 4. **Live-server check**: text censoring (Studio doesn't filter text).
 5. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
-6. Then start **W08**.
+6. Then start **W09**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-17 (W08)** - Settings integration: UIPrefs Keys /
+  Notifications sections, Light + Custom themes, fonts, animation speed,
+  reduced motion, high contrast, theme codes; `Systems/AdminConfig` +
+  `ConfigService.Define`; `;config`, `;theme export|import`, `;keybind`,
+  `;notifyprefs`; Keybinds and Administration pages; one key dispatcher in
+  init.client. Found the cause of "panel closes on its own": Ctrl+Shift+P
+  also toggled Roblox Freecam; palette moved to Ctrl+K. Swapped Montserrat
+  (an alias of Gotham) for Roboto. Tests 82/82. Verified in Play by remote,
+  keyboard and mouse: config set / validate / reset (page + command),
+  required reason, max duration, cooldown scale, quick fly / noclip / god,
+  custom Ctrl+H bind, F6 / End / Ctrl+K / Ctrl+PageUp/Down, key recording,
+  theme export / import, Light, Builder font refont, high contrast,
+  notification corner, prefs persisting across restart. ✅ 20 bullets.
+  Not committed.
 
 - **2026-11-16 (UI redesign)** - User asked for a clean redesign before
   any other W: terminal-style command bar (customisable per staff / VIP,

@@ -3,7 +3,7 @@
 	CommandPalette.lua
 
 	Purpose:
-		The floating command launcher (Ctrl+Shift+P, or the panel's search
+		The floating command launcher (Ctrl+K by default, or the panel's search
 		button). Executes through ExecuteCommandRemote, the same
 		CommandProcessor path as chat, so permissions, cooldowns, risk
 		confirmation and logging behave identically.
@@ -1065,25 +1065,8 @@ function CommandPalette.Init()
 		end
 	end)
 
-	-- Global toggle: Ctrl+Shift+P. Checked on the P key-down so the
-	-- modifiers can be pressed in any order; gameProcessed is ignored so it
-	-- also works while a text box (including the palette's) has focus.
-	UserInputService.InputBegan:Connect(function(input)
-		if input.KeyCode ~= Enum.KeyCode.P then
-			return
-		end
-		local ctrl = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-			or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
-		local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-			or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
-		if ctrl and shift then
-			if screenGui.Enabled then
-				CommandPalette.Close()
-			else
-				CommandPalette.Open()
-			end
-		end
-	end)
+	-- The open key (default Ctrl+K) is a W08 keybind preference,
+	-- handled with the other shortcuts in init.client -> CommandPalette.Toggle.
 
 	CommandPalette._refresh = refresh
 	CommandPalette._resetDocs = function()
@@ -1091,6 +1074,14 @@ function CommandPalette.Init()
 	end
 	CommandPalette._accept = accept
 	CommandPalette._setText = setText
+end
+
+function CommandPalette.Toggle()
+	if CommandPalette.IsOpen() then
+		CommandPalette.Close()
+	else
+		CommandPalette.Open()
+	end
 end
 
 function CommandPalette.Open(initialText: string?)
@@ -1102,7 +1093,7 @@ function CommandPalette.Open(initialText: string?)
 	CommandPalette._resetDocs()
 	CommandPalette._setText(initialText or "")
 	CommandPalette.inputBox:CaptureFocus()
-	-- A Ctrl+Shift+P that opened us can leave a "P" in the box.
+	-- A shortcut that opened us can leave a "P" in the box.
 	task.defer(function()
 		local box = CommandPalette.inputBox
 		if box.Text ~= (initialText or "") then

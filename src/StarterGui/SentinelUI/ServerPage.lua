@@ -254,7 +254,7 @@ function ServerPage.Build(container: Frame)
 	broadcastNote.TextSize = 12
 	broadcastNote.TextColor3 = Theme.Colors.TextSecondary
 	broadcastNote.TextXAlignment = Enum.TextXAlignment.Left
-	broadcastNote.Text = "Use the Command Palette (Ctrl+Shift+P) for /announce and /countdown."
+	broadcastNote.Text = "Use the Command Palette (Ctrl+K) for /announce and /countdown."
 	broadcastNote.Parent = scrollFrame
 
 	-- ------------------------------------------------------------------

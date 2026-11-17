@@ -18,6 +18,11 @@
 		ConfigService.GetPrefixes() -> { string }
 		ConfigService.MatchPrefix(text) -> (prefixLength?)  -- 1-char prefixes
 		ConfigService.ALLOWED_PREFIXES
+		ConfigService.Define(key, default, validator?)   -- W08: other systems
+			(Systems/AdminConfig) add their own keys; a value loaded from the
+			DataStore before Define is kept and applied when it passes.
+		ConfigService.Reset(key, actor?) -> (ok, err?)
+		ConfigService.GetDefault(key) -> value
 
 	Outside a running game (unit tests) the DataStore and MessagingService
 	are never touched.
@@ -50,6 +55,7 @@ local DEFAULTS: { [string]: any } = {
 }
 
 local values: { [string]: any } = table.clone(DEFAULTS)
+local loadedRaw: { [string]: any }? = nil -- last DataStore read (for late Define)
 local live = RunService:IsRunning() and RunService:IsServer()
 local store = if live then DataStoreService:GetDataStore(STORE_NAME) else nil
 local serverId = HttpService:GenerateGUID(false)
@@ -95,6 +101,7 @@ if store then
 			return (store :: DataStore):GetAsync(KEY)
 		end)
 		if ok and type(data) == "table" then
+			loadedRaw = data
 			for key, value in pairs(data) do
 				local check = VALIDATORS[key]
 				if DEFAULTS[key] ~= nil and (not check or check(value)) then
@@ -118,6 +125,28 @@ if store then
 			end)
 		end)
 	end)
+end
+
+function ConfigService.Define(key: string, default: any, validator: ((any) -> boolean)?)
+	DEFAULTS[key] = deepCopy(default)
+	VALIDATORS[key] = validator :: any
+	local stored = loadedRaw and (loadedRaw :: any)[key]
+	if stored ~= nil and (not validator or validator(stored)) then
+		apply(key, stored)
+	elseif values[key] == nil then
+		values[key] = deepCopy(default)
+	end
+end
+
+function ConfigService.GetDefault(key: string): any
+	return deepCopy(DEFAULTS[key])
+end
+
+function ConfigService.Reset(key: string, actor: Player?): (boolean, string?)
+	if DEFAULTS[key] == nil then
+		return false, "unknown setting " .. key
+	end
+	return ConfigService.Set(key, deepCopy(DEFAULTS[key]), actor)
 end
 
 function ConfigService.Get(key: string): any

@@ -98,6 +98,34 @@ function Logger.Write(partial: {
 	end
 end
 
+-- W08 admin config "LogRetentionDays": entries older than this are dropped
+-- from the in-memory log. W10's persistent audit store reads the same value.
+local retentionSeconds: number? = nil
+
+function Logger.SetRetentionDays(days: number?)
+	retentionSeconds = if type(days) == "number" and days > 0 then days * 86400 else nil
+end
+
+function Logger.GetRetentionDays(): number?
+	return if retentionSeconds then retentionSeconds / 86400 else nil
+end
+
+function Logger.Prune(now: number?)
+	if not retentionSeconds then
+		return
+	end
+	local cutoff = (now or os.time()) - retentionSeconds
+	local first = 1
+	while recent[first] and recent[first].Timestamp < cutoff do
+		first += 1
+	end
+	if first > 1 then
+		local kept = table.move(recent, first, #recent, 1, {})
+		table.clear(recent)
+		table.move(kept, 1, #kept, 1, recent)
+	end
+end
+
 function Logger.RegisterSink(fn: (entries: { LogEntry }) -> ())
 	table.insert(sinks, fn)
 end
@@ -165,6 +193,7 @@ if RunService:IsRunning() then
 		while true do
 			task.wait(FLUSH_INTERVAL_SECONDS)
 			Logger.Flush()
+			Logger.Prune()
 		end
 	end)
 end

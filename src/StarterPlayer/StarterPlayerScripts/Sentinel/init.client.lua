@@ -552,6 +552,8 @@ if sentinelUIFolder then
 		{ Name = "CrossServerPage" },
 		{ Name = "CommandBar" },
 		{ Name = "AppearancePage" },
+		{ Name = "KeybindsPage" },
+		{ Name = "InGameSettingsPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -611,6 +613,7 @@ if sentinelUIFolder then
 	-- -----------------------------------------------------------------------
 	local Theme = require(themeModule)
 	local CommandBar: any = nil
+	local NotificationCenterRef: any = nil
 	local effectivePrefs: any = nil
 	local uiPrefsRemote = SentinelShared:WaitForChild("GetUIPrefsRemote", 15) :: RemoteFunction?
 	local prefsChangedRemote = SentinelShared:WaitForChild("UIPrefsChangedRemote", 15) :: RemoteEvent?
@@ -620,15 +623,18 @@ if sentinelUIFolder then
 			return
 		end
 		effectivePrefs = newPrefs
-		local previous = Theme.Apply(newPrefs.Panel)
-		-- Recolour what already exists (the command bar rebuilds itself).
+		local previous, previousFonts = Theme.Apply(newPrefs.Panel)
+		-- Recolour / refont what already exists (the command bar rebuilds itself).
 		for _, gui in ipairs(playerGui:GetChildren()) do
 			if gui:IsA("ScreenGui") and gui.Name:sub(1, 8) == "Sentinel" and gui.Name ~= "SentinelCommandBar" and gui.Name ~= "SentinelOverlay" then
-				Theme.Retint(gui, previous)
+				Theme.Retint(gui, previous, previousFonts)
 			end
 		end
 		if uiBuilt and Shell then
 			Shell.ApplyPrefs(newPrefs.Panel)
+		end
+		if uiBuilt and NotificationCenterRef and type(newPrefs.Notifications) == "table" then
+			NotificationCenterRef.ApplyPrefs(newPrefs.Notifications)
 		end
 		if CommandBar then
 			CommandBar.ApplyPrefs(newPrefs)
@@ -703,6 +709,10 @@ if sentinelUIFolder then
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		NotificationCenter.Init()
+		NotificationCenterRef = NotificationCenter
+		if effectivePrefs and type(effectivePrefs.Notifications) == "table" then
+			NotificationCenter.ApplyPrefs(effectivePrefs.Notifications)
+		end
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
 		-- Built after the Notification Center so staff chat and global
 		-- notifications can raise toasts.
@@ -710,6 +720,8 @@ if sentinelUIFolder then
 		RankManagementPage.Build(Shell.RegisterPage("Ranks", "Ranks", "👑"), Shell.GetPageIds())
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
 		require(loadedModules.AppearancePage).Build(Shell.RegisterPage("Appearance", "Appearance", "🎨"), CommandBar)
+		require(loadedModules.KeybindsPage).Build(Shell.RegisterPage("Keybinds", "Keybinds", "⌨"))
+		require(loadedModules.InGameSettingsPage).Build(Shell.RegisterPage("Administration", "Administration", "🛠"))
 
 		-- Page visibility permissions: hide pages the player's ranks
 		-- explicitly deny ("!page.<id>"). Visible by default.
@@ -763,7 +775,7 @@ if sentinelUIFolder then
 
 		uiBuilt = true
 		Shell.Toggle() -- open immediately on first successful build, since this call came from an explicit F6 press
-		print("[Sentinel] UI shell built and opened — Ctrl+Shift+P for the command palette.")
+		print("[Sentinel] UI shell built and opened — Ctrl+K for the command palette.")
 	end
 
 	-- Re-checks permission every time until the UI is actually built, so a
@@ -790,16 +802,92 @@ if sentinelUIFolder then
 
 	-- F6 toggles the main Sentinel panel. NOT "P" — this game's other admin
 	-- panel (AdminPanelClient) already binds P for its own UI, so reusing it
-	-- here would collide. Ctrl+Shift+P is reserved solely for the Command
-	-- Palette (wired up inside CommandPalette.Init, which only runs after
-	-- access is confirmed), so it does nothing for non-staff either.
+	-- here would collide. The palette is Ctrl+K: Ctrl+Shift+P also toggled
+	-- Roblox's developer Freecam (Shift+P), which hides every ScreenGui.
+	--
+	-- W08: every shortcut is a preference (Shared/UIPrefs "Keys"): panel,
+	-- close panel, palette, quick fly / noclip / god, next / previous page and
+	-- custom key -> command binds. Quick actions and custom binds are normal
+	-- commands, so the server still checks every permission.
+	local UIPrefs = require(SentinelShared:WaitForChild("UIPrefs"))
+	local keyExecuteRemote = SentinelShared:WaitForChild("ExecuteCommandRemote", 15) :: RemoteEvent?
+
+	local function runCommand(text: string)
+		if keyExecuteRemote then
+			keyExecuteRemote:FireServer(text, { Source = "keybind" })
+		end
+	end
+
+	local function quickToggle(attribute: string, onCommand: string, offCommand: string)
+		if localPlayer:GetAttribute(attribute) == true then
+			runCommand(offCommand .. " me")
+		else
+			runCommand(onCommand .. " me")
+		end
+	end
+
+	local function isDown(a: Enum.KeyCode, b: Enum.KeyCode): boolean
+		return UserInputService:IsKeyDown(a) or UserInputService:IsKeyDown(b)
+	end
+
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if input.UserInputType ~= Enum.UserInputType.Keyboard then
+			return
+		end
+		-- The Keybinds page is recording a new key: that press is not a shortcut.
+		if uiBuilt and require(loadedModules.KeybindsPage).IsCapturing() then
+			return
+		end
+		local ctrl = isDown(Enum.KeyCode.LeftControl, Enum.KeyCode.RightControl)
+		local shift = isDown(Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift)
+		local alt = isDown(Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt)
+		-- While typing (a text box has focus) only Ctrl / Alt chords count,
+		-- so plain letter shortcuts never fire mid-sentence.
+		if gameProcessed and not (ctrl or alt) then
+			return
+		end
+		local keys = (effectivePrefs and effectivePrefs.Keys) or UIPrefs.BUILTIN.Keys
+		local name = input.KeyCode.Name
+		local function is(field: string): boolean
+			return UIPrefs.MatchKey(keys[field] or UIPrefs.BUILTIN.Keys[field], name, ctrl, shift, alt)
+		end
+
+		if is("Panel") then
+			tryOpenPanel()
+		elseif is("ClosePanel") then
+			if uiBuilt and Shell.IsOpen() then
+				Shell.Close()
+			end
+		elseif is("Palette") then
+			if uiBuilt and CommandPalette then
+				CommandPalette.Toggle()
+			end
+		elseif is("NextPage") or is("PrevPage") then
+			if uiBuilt and Shell.IsOpen() then
+				Shell.Cycle(if is("NextPage") then 1 else -1)
+			end
+		elseif is("QuickFly") then
+			quickToggle("SentinelFlying", "fly", "unfly")
+		elseif is("QuickNoclip") then
+			quickToggle("SentinelNoclip", "noclip", "clip")
+		elseif is("QuickGod") then
+			quickToggle("SentinelGod", "god", "ungod")
+		else
+			local custom = keys.Custom
+			if type(custom) == "table" then
+				for _, bind in ipairs(custom) do
+					if type(bind) == "table" and UIPrefs.MatchKey(bind.Key, name, ctrl, shift, alt) and type(bind.Command) == "string" then
+						runCommand(bind.Command)
+						break
+					end
+				end
+			end
+		end
+
 		if gameProcessed then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.F6 then
-			tryOpenPanel()
-		elseif input.KeyCode == Enum.KeyCode.F2 and not CommandBar then
+		if input.KeyCode == Enum.KeyCode.F2 and not CommandBar then
 			-- Not built yet (no access at join): ask again, then open.
 			task.spawn(function()
 				if ensureCommandBar() and CommandBar and effectivePrefs.CommandBar.Key == "F2" then

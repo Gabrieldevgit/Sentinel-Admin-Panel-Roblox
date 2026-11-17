@@ -701,7 +701,8 @@ executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: any
 	if ConfigService.MatchPrefix(rawText) then
 		rawText = rawText:sub(2)
 	end
-	local results = CommandProcessor.Process(player, rawText, { Confirmed = confirmed, Source = "panel" })
+	local source = if type(options) == "table" and options.Source == "keybind" then "keybind" else "panel"
+	local results = CommandProcessor.Process(player, rawText, { Confirmed = confirmed, Source = source })
 	if isStaff(player) and results[1] and not (results[1].Message or ""):find("^Unknown command") then
 		CommandLibraryService.NoteRecent(player, rawText)
 	end
@@ -943,7 +944,9 @@ bindInvoke(setUIPrefsRemote, function(player: Player, scope: any, prefs: any)
 	if scope == "personal" then
 		ok, message = PrefsService.SetPersonal(player, prefs)
 	elseif scope == "reset" then
-		ok, message = PrefsService.ResetPersonal(player, nil)
+		-- prefs may name one section ("Keys") to reset only that one.
+		local section = if type(prefs) == "string" and table.find({ "Panel", "CommandBar", "Keys", "Notifications" }, prefs) then prefs else nil
+		ok, message = PrefsService.ResetPersonal(player, section)
 	elseif scope == "default" or scope == "resetdefault" then
 		if not PermissionSystem.Has(player, "config.ui") then
 			return { Success = false, Message = "Only ranks with config.ui (Owner) can change the server default." }
@@ -965,6 +968,24 @@ bindInvoke(setUIPrefsRemote, function(player: Player, scope: any, prefs: any)
 		return { Success = false, Message = "Unknown request." }
 	end
 	return { Success = ok, Message = message }
+end)
+
+-- ---------------------------------------------------------------------------
+-- Administration configuration (W08). Read here; every change is a normal
+-- ;config command sent through ExecuteCommandRemote (config.edit, logged).
+-- ---------------------------------------------------------------------------
+local AdminConfig = require(Sentinel:WaitForChild("Systems"):WaitForChild("AdminConfig"))
+local getAdminConfigRemote = getOrCreate("GetAdminConfigRemote", "RemoteFunction") :: RemoteFunction
+
+bindInvoke(getAdminConfigRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
+	return {
+		Entries = AdminConfig.Entries(),
+		CanEdit = PermissionSystem.Has(player, "config.edit"),
+		CanSetUIDefaults = PermissionSystem.Has(player, "config.ui"),
+	}
 end)
 
 return true

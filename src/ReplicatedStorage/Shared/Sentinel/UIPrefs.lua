@@ -1,11 +1,11 @@
 --!strict
 --[[
-	UIPrefs.lua (UI redesign)
+	UIPrefs.lua (UI redesign, extended in W08)
 
 	Purpose:
 		One definition of every UI customisation setting, shared by the server
 		(Systems/PrefsService validates and stores them) and the client
-		(Theme, Shell, CommandBar, AppearancePage read them).
+		(Theme, Shell, CommandBar, AppearancePage, KeybindsPage read them).
 
 		Three layers, later ones win:
 			BUILTIN            Sentinel's own look
@@ -13,17 +13,33 @@
 			personal           each staff member / VIP (Sentinel_Prefs_v1)
 
 	Sections:
-		Panel       Theme, Accent, Animations, Scale
-		CommandBar  Preset, Position, Width, Opacity, FontSize, MaxLines,
-		            Rows, Key
+		Panel          Theme, Accent, Font, Animations, AnimationSpeed,
+		               ReducedMotion, HighContrast, Scale, Custom (palette)
+		CommandBar     Preset, Position, Width, Opacity, FontSize, MaxLines,
+		               Rows, Key
+		Keys (W08)     Panel, ClosePanel, Palette, QuickFly, QuickNoclip,
+		               QuickGod, NextPage, PrevPage, Custom (key -> command)
+		Notifications  Toasts, Sound, Duration, Position (W08)
+
+	Keys are "[Ctrl+][Shift+][Alt+]<KeyCode name>" or "None".
+	Theme codes (export / import): "SNTL1-" + 7 hex colours (Background,
+	Surface, SurfaceRaised, Border, Text, TextSecondary, Accent).
 
 	Public API:
-		UIPrefs.BUILTIN, .THEMES, .ACCENTS, .BAR_PRESETS, .SPEC, .ORDER
+		UIPrefs.BUILTIN, .THEMES, .ACCENTS, .FONTS, .BAR_PRESETS, .SPEC,
+		.ORDER, .SECTIONS, .KEYS, .PALETTE_KEYS
 		UIPrefs.Sanitize(any) -> prefs with only valid fields
 		UIPrefs.Merge(...) -> prefs (later arguments win)
 		UIPrefs.Parse(section, field, text) -> (value?, err?)
 		UIPrefs.Find(name) -> (section?, field?)   -- "width", "bar.width", ...
 		UIPrefs.Describe(section, field) -> string
+		UIPrefs.ResolvePalette(panel) -> { [colour]: Color3 }  (theme +
+			accent + custom + high contrast)
+		UIPrefs.EncodeTheme(palette) -> code
+		UIPrefs.DecodeTheme(code) -> (custom?, err?)
+		UIPrefs.ParseKey(text) -> normalised key?
+		UIPrefs.MatchKey(key, keyCodeName, ctrl, shift, alt) -> boolean
+		UIPrefs.HexToColor(hex) -> Color3?, UIPrefs.ColorToHex(color) -> hex
 --]]
 
 local UIPrefs = {}
@@ -74,8 +90,20 @@ UIPrefs.THEMES = {
 		Text = rgb(248, 238, 234),
 		TextSecondary = rgb(180, 150, 144),
 	},
+	Light = {
+		Background = rgb(236, 239, 245),
+		Surface = rgb(250, 251, 253),
+		SurfaceRaised = rgb(222, 227, 237),
+		Border = rgb(196, 203, 217),
+		Text = rgb(24, 27, 38),
+		TextSecondary = rgb(88, 95, 114),
+	},
 }
-UIPrefs.THEME_ORDER = { "Nebula", "Midnight", "Ocean", "Graphite", "Ember" }
+-- "Custom" uses Panel.Custom (falls back to Nebula until one is saved).
+UIPrefs.THEME_ORDER = { "Nebula", "Midnight", "Ocean", "Graphite", "Ember", "Light", "Custom" }
+
+-- Colours a custom theme / theme code holds, in code order.
+UIPrefs.PALETTE_KEYS = { "Background", "Surface", "SurfaceRaised", "Border", "Text", "TextSecondary", "Accent" }
 
 UIPrefs.ACCENTS = {
 	Violet = rgb(139, 108, 255),
@@ -86,6 +114,17 @@ UIPrefs.ACCENTS = {
 	Rose = rgb(240, 96, 128),
 }
 UIPrefs.ACCENT_ORDER = { "Violet", "Blue", "Cyan", "Green", "Amber", "Rose" }
+
+-- Font families: Enum.Font names for Regular / Medium / Bold / Black.
+UIPrefs.FONTS = {
+	Gotham = { "Gotham", "GothamMedium", "GothamBold", "GothamBlack" },
+	Builder = { "BuilderSans", "BuilderSansMedium", "BuilderSansBold", "BuilderSansExtraBold" },
+	-- Enum.Font.Montserrat* are aliases of Gotham, so Montserrat is not offered.
+	Roboto = { "Roboto", "Roboto", "Roboto", "Roboto" },
+	SourceSans = { "SourceSans", "SourceSansSemibold", "SourceSansBold", "SourceSansBold" },
+	Arial = { "Arial", "Arial", "ArialBold", "ArialBold" },
+}
+UIPrefs.FONT_ORDER = { "Gotham", "Builder", "Roboto", "SourceSans", "Arial" }
 
 -- Command bar looks.
 UIPrefs.BAR_PRESETS = {
@@ -125,19 +164,163 @@ UIPrefs.BAR_PRESETS = {
 }
 UIPrefs.BAR_PRESET_ORDER = { "Classic", "Sentinel", "Carbon", "Frost" }
 
+-- ---------------------------------------------------------------------------
+-- Keys
+-- ---------------------------------------------------------------------------
+-- Keys a shortcut may use (KeyCode names). Escape, Tab, Return and Space
+-- are left out: Roblox and text boxes need them.
+UIPrefs.KEYS = {}
+do
+	for c = string.byte("A"), string.byte("Z") do
+		table.insert(UIPrefs.KEYS, string.char(c))
+	end
+	for _, n in ipairs({ "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine" }) do
+		table.insert(UIPrefs.KEYS, n)
+	end
+	for i = 1, 12 do
+		table.insert(UIPrefs.KEYS, "F" .. i)
+	end
+	for _, k in ipairs({
+		"Semicolon", "Quote", "Backquote", "BackSlash", "Comma", "Period", "Slash", "Minus", "Equals",
+		"LeftBracket", "RightBracket", "Insert", "Delete", "Home", "End", "PageUp", "PageDown",
+		"Up", "Down", "Left", "Right",
+		"KeypadZero", "KeypadOne", "KeypadTwo", "KeypadThree", "KeypadFour", "KeypadFive",
+		"KeypadSix", "KeypadSeven", "KeypadEight", "KeypadNine",
+	}) do
+		table.insert(UIPrefs.KEYS, k)
+	end
+end
+
+local KEY_LOOKUP: { [string]: string } = {}
+for _, k in ipairs(UIPrefs.KEYS) do
+	KEY_LOOKUP[k:lower()] = k
+end
+do -- friendlier spellings
+	local aliases = {
+		["0"] = "Zero", ["1"] = "One", ["2"] = "Two", ["3"] = "Three", ["4"] = "Four",
+		["5"] = "Five", ["6"] = "Six", ["7"] = "Seven", ["8"] = "Eight", ["9"] = "Nine",
+		[";"] = "Semicolon", ["`"] = "Backquote", [","] = "Comma", ["."] = "Period",
+		["/"] = "Slash", ["-"] = "Minus", ["="] = "Equals", ["["] = "LeftBracket", ["]"] = "RightBracket",
+		pgup = "PageUp", pgdn = "PageDown", del = "Delete",
+	}
+	aliases[string.char(39)] = "Quote" -- '
+	aliases[string.char(92)] = "BackSlash" -- \
+	for alias, k in pairs(aliases) do
+		KEY_LOOKUP[alias] = k
+	end
+end
+
+UIPrefs.MAX_CUSTOM_BINDS = 10
+UIPrefs.MAX_BIND_COMMAND = 200
+
+-- "ctrl+shift+p", "Ctrl + K", "f6", "none" -> "Ctrl+Shift+P" / "F6" / "None".
+function UIPrefs.ParseKey(text: any): string?
+	if type(text) ~= "string" or #text > 40 then
+		return nil
+	end
+	local lower = text:lower():gsub("%s", "")
+	if lower == "none" or lower == "off" or lower == "" then
+		return "None"
+	end
+	local ctrl, shift, alt = false, false, false
+	local parts = string.split(lower, "+")
+	local keyPart = parts[#parts]
+	for i = 1, #parts - 1 do
+		local m = parts[i]
+		if m == "ctrl" or m == "control" then
+			ctrl = true
+		elseif m == "shift" then
+			shift = true
+		elseif m == "alt" then
+			alt = true
+		else
+			return nil
+		end
+	end
+	local key = KEY_LOOKUP[keyPart]
+	if not key then
+		return nil
+	end
+	-- Shift+P (with any other modifier) toggles Roblox's developer Freecam,
+	-- which hides every ScreenGui - it closed the panel "on its own".
+	if shift and key == "P" then
+		return nil
+	end
+	return (if ctrl then "Ctrl+" else "") .. (if shift then "Shift+" else "") .. (if alt then "Alt+" else "") .. key
+end
+
+-- Does a key press match a stored key? Modifiers must match exactly.
+function UIPrefs.MatchKey(stored: string?, keyName: string, ctrl: boolean, shift: boolean, alt: boolean): boolean
+	if not stored or stored == "None" then
+		return false
+	end
+	local parts = string.split(stored, "+")
+	if parts[#parts] ~= keyName then
+		return false
+	end
+	local wantCtrl, wantShift, wantAlt = false, false, false
+	for i = 1, #parts - 1 do
+		if parts[i] == "Ctrl" then
+			wantCtrl = true
+		elseif parts[i] == "Shift" then
+			wantShift = true
+		elseif parts[i] == "Alt" then
+			wantAlt = true
+		end
+	end
+	return wantCtrl == ctrl and wantShift == shift and wantAlt == alt
+end
+
+-- ---------------------------------------------------------------------------
+-- Colours
+-- ---------------------------------------------------------------------------
+function UIPrefs.HexToColor(hex: any): Color3?
+	if type(hex) ~= "string" then
+		return nil
+	end
+	local h = hex:gsub("^#", "")
+	if not h:match("^%x%x%x%x%x%x$") then
+		return nil
+	end
+	return Color3.fromRGB(
+		tonumber(h:sub(1, 2), 16) :: number,
+		tonumber(h:sub(3, 4), 16) :: number,
+		tonumber(h:sub(5, 6), 16) :: number
+	)
+end
+
+function UIPrefs.ColorToHex(c: Color3): string
+	return ("%02X%02X%02X"):format(
+		math.floor(c.R * 255 + 0.5),
+		math.floor(c.G * 255 + 0.5),
+		math.floor(c.B * 255 + 0.5)
+	)
+end
+
+-- ---------------------------------------------------------------------------
+-- Settings
+-- ---------------------------------------------------------------------------
 local function choice(list: { string }, description: string)
 	return { Kind = "choice", Choices = list, Description = description }
 end
 local function number(min: number, max: number, step: number, description: string, integer: boolean?)
 	return { Kind = "number", Min = min, Max = max, Step = step, Integer = integer == true, Description = description }
 end
+local function key(description: string)
+	return { Kind = "key", Description = description }
+end
 
 UIPrefs.SPEC = {
 	Panel = {
 		Theme = choice(UIPrefs.THEME_ORDER, "Panel colour theme"),
 		Accent = choice(UIPrefs.ACCENT_ORDER, "Accent colour (buttons, active tab)"),
+		Font = choice(UIPrefs.FONT_ORDER, "Panel font"),
 		Animations = { Kind = "boolean", Description = "Open / close and page animations" },
-		Scale = number(0.8, 1.2, 0.05, "Panel size"),
+		AnimationSpeed = number(0.5, 2, 0.25, "Animation speed (higher is faster)"),
+		ReducedMotion = { Kind = "boolean", Description = "No sliding or zooming; colours still fade" },
+		HighContrast = { Kind = "boolean", Description = "Stronger text and borders" },
+		Scale = number(0.7, 1.3, 0.05, "Panel size (UI scaling)"),
+		Custom = { Kind = "palette", Description = "Colours of the Custom theme" },
 	},
 	CommandBar = {
 		Preset = choice(UIPrefs.BAR_PRESET_ORDER, "Command bar look"),
@@ -149,16 +332,47 @@ UIPrefs.SPEC = {
 		Rows = number(4, 12, 1, "Suggestions shown at once", true),
 		Key = choice({ "F2", "F4", "Semicolon", "Quote", "Backquote", "BackSlash" }, "Key that opens the command bar"),
 	},
+	Keys = {
+		Panel = key("Open / close the panel"),
+		ClosePanel = key("Close the panel only"),
+		Palette = key("Open the command palette"),
+		QuickFly = key("Toggle fly on yourself"),
+		QuickNoclip = key("Toggle noclip on yourself"),
+		QuickGod = key("Toggle god mode on yourself"),
+		NextPage = key("Next panel page"),
+		PrevPage = key("Previous panel page"),
+		Custom = { Kind = "binds", Description = "Your own key -> command shortcuts" },
+	},
+	Notifications = {
+		Toasts = { Kind = "boolean", Description = "Show pop-up notifications" },
+		Sound = { Kind = "boolean", Description = "Play a sound with each notification" },
+		Duration = number(2, 15, 1, "Seconds a notification stays", true),
+		Position = choice({ "BottomRight", "TopRight", "BottomLeft", "TopLeft" }, "Where notifications appear"),
+	},
 }
 
--- Display order for settings screens and ;commandbar / ;theme listings.
+UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications" }
+
+-- Display order for settings screens and ;commandbar / ;theme / ;keybind
+-- listings (Panel.Custom and Keys.Custom have their own editors).
 UIPrefs.ORDER = {
-	Panel = { "Theme", "Accent", "Animations", "Scale" },
+	Panel = { "Theme", "Accent", "Font", "Animations", "AnimationSpeed", "ReducedMotion", "HighContrast", "Scale" },
 	CommandBar = { "Preset", "Position", "Width", "Opacity", "FontSize", "MaxLines", "Rows", "Key" },
+	Keys = { "Panel", "ClosePanel", "Palette", "QuickFly", "QuickNoclip", "QuickGod", "NextPage", "PrevPage" },
+	Notifications = { "Toasts", "Sound", "Duration", "Position" },
 }
 
 UIPrefs.BUILTIN = {
-	Panel = { Theme = "Nebula", Accent = "Violet", Animations = true, Scale = 1 },
+	Panel = {
+		Theme = "Nebula",
+		Accent = "Violet",
+		Font = "Gotham",
+		Animations = true,
+		AnimationSpeed = 1,
+		ReducedMotion = false,
+		HighContrast = false,
+		Scale = 1,
+	},
 	CommandBar = {
 		Preset = "Classic",
 		Position = "top",
@@ -169,6 +383,18 @@ UIPrefs.BUILTIN = {
 		Rows = 8,
 		Key = "F2",
 	},
+	Keys = {
+		Panel = "F6",
+		ClosePanel = "None",
+		Palette = "Ctrl+K",
+		QuickFly = "None",
+		QuickNoclip = "None",
+		QuickGod = "None",
+		NextPage = "Ctrl+PageDown",
+		PrevPage = "Ctrl+PageUp",
+		Custom = {},
+	},
+	Notifications = { Toasts = true, Sound = false, Duration = 5, Position = "BottomRight" },
 }
 
 local function validValue(spec: any, value: any): any
@@ -195,6 +421,39 @@ local function validValue(spec: any, value: any): any
 			v = math.floor(v * 100 + 0.5) / 100
 		end
 		return v
+	elseif spec.Kind == "key" then
+		return UIPrefs.ParseKey(value)
+	elseif spec.Kind == "palette" then
+		if type(value) ~= "table" then
+			return nil
+		end
+		local out = {}
+		for _, name in ipairs(UIPrefs.PALETTE_KEYS) do
+			local c = UIPrefs.HexToColor(value[name])
+			if not c then
+				return nil -- a custom palette is all or nothing
+			end
+			out[name] = UIPrefs.ColorToHex(c)
+		end
+		return out
+	elseif spec.Kind == "binds" then
+		if type(value) ~= "table" then
+			return nil
+		end
+		local out = {}
+		for _, bind in ipairs(value) do
+			if #out >= UIPrefs.MAX_CUSTOM_BINDS then
+				break
+			end
+			if type(bind) == "table" and type(bind.Command) == "string" then
+				local k = UIPrefs.ParseKey(bind.Key)
+				local command = (bind.Command:gsub("%c", " "):match("^%s*(.-)%s*$")) :: string
+				if k and k ~= "None" and #command > 0 and #command <= UIPrefs.MAX_BIND_COMMAND then
+					table.insert(out, { Key = k, Command = command })
+				end
+			end
+		end
+		return out
 	end
 	return nil
 end
@@ -258,6 +517,14 @@ function UIPrefs.Parse(section: string, field: string, text: string): (any, stri
 		else
 			return nil, "use on or off"
 		end
+	elseif spec.Kind == "key" then
+		local k = UIPrefs.ParseKey(text)
+		if not k then
+			return nil, "use a key like F6, K, Ctrl+K or Ctrl+Alt+P (or none; Shift+P is Roblox Freecam)"
+		end
+		return k, nil
+	elseif spec.Kind == "palette" or spec.Kind == "binds" then
+		return nil, "this setting has its own editor"
 	elseif spec.Kind == "number" then
 		raw = tonumber(text)
 		if not raw then
@@ -274,17 +541,23 @@ function UIPrefs.Parse(section: string, field: string, text: string): (any, stri
 	return value, nil
 end
 
--- "width", "fontsize", "bar.width", "panel.theme" -> section, field
+-- "width", "fontsize", "bar.width", "panel.theme", "keys.quickfly"
+-- -> section, field
 function UIPrefs.Find(name: string, preferSection: string?): (string?, string?)
 	local wantedSection, wantedField = name:lower():match("^(%a+)%.(%a+)$")
-	local key = wantedField or name:lower()
-	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel" }
+	local wanted = wantedField or name:lower()
+	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel", "Keys", "Notifications" }
 	if wantedSection then
-		sections = if wantedSection == "panel" then { "Panel" } else { "CommandBar" }
+		sections = {}
+		for _, section in ipairs(UIPrefs.SECTIONS) do
+			if section:lower() == wantedSection or (wantedSection == "bar" and section == "CommandBar") then
+				table.insert(sections, section)
+			end
+		end
 	end
 	for _, section in ipairs(sections) do
-		for field in pairs(UIPrefs.SPEC[section]) do
-			if field:lower() == key then
+		for _, field in ipairs(UIPrefs.ORDER[section]) do
+			if field:lower() == wanted then
 				return section, field
 			end
 		end
@@ -298,8 +571,81 @@ function UIPrefs.Describe(section: string, field: string): string
 		return ("%s (%s)"):format(spec.Description, table.concat(spec.Choices, " | "))
 	elseif spec.Kind == "number" then
 		return ("%s (%s to %s)"):format(spec.Description, tostring(spec.Min), tostring(spec.Max))
+	elseif spec.Kind == "key" then
+		return spec.Description .. " (a key like F6, Ctrl+K, or none)"
+	elseif spec.Kind == "boolean" then
+		return spec.Description .. " (on | off)"
 	end
-	return spec.Description .. " (on | off)"
+	return spec.Description
+end
+
+local function luminance(c: Color3): number
+	return 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B
+end
+
+-- The colours a panel uses for these prefs.
+function UIPrefs.ResolvePalette(panel: any): { [string]: Color3 }
+	panel = if type(panel) == "table" then panel else {}
+	local out: { [string]: Color3 } = {}
+	local base = UIPrefs.THEMES[panel.Theme] or UIPrefs.THEMES[UIPrefs.BUILTIN.Panel.Theme]
+	for name, color in pairs(base) do
+		out[name] = color
+	end
+	out.Accent = UIPrefs.ACCENTS[panel.Accent] or UIPrefs.ACCENTS[UIPrefs.BUILTIN.Panel.Accent]
+	if panel.Theme == "Custom" and type(panel.Custom) == "table" then
+		for _, name in ipairs(UIPrefs.PALETTE_KEYS) do
+			local c = UIPrefs.HexToColor(panel.Custom[name])
+			if c then
+				out[name] = c
+			end
+		end
+	end
+	if panel.HighContrast == true then
+		local dark = luminance(out.Background) < 0.5
+		local strong = if dark then Color3.new(1, 1, 1) else Color3.new(0, 0, 0)
+		local deep = if dark then Color3.new(0, 0, 0) else Color3.new(1, 1, 1)
+		out.Text = strong
+		out.TextSecondary = out.TextSecondary:Lerp(strong, 0.6)
+		out.Border = out.Border:Lerp(strong, 0.45)
+		out.Background = out.Background:Lerp(deep, 0.5)
+	end
+	return out
+end
+
+function UIPrefs.IsLight(palette: { [string]: Color3 }): boolean
+	return luminance(palette.Background) >= 0.5
+end
+
+function UIPrefs.EncodeTheme(palette: { [string]: Color3 }): string
+	local parts = {}
+	for _, name in ipairs(UIPrefs.PALETTE_KEYS) do
+		table.insert(parts, UIPrefs.ColorToHex(palette[name] or Color3.new()))
+	end
+	return "SNTL1-" .. table.concat(parts, "-")
+end
+
+-- Theme code -> a Custom palette table (hex strings), or nil + reason.
+function UIPrefs.DecodeTheme(code: any): (any, string?)
+	if type(code) ~= "string" or #code > 120 then
+		return nil, "not a theme code"
+	end
+	local body = (code:gsub("%s", "")):match("^[Ss][Nn][Tt][Ll]1%-(.+)$")
+	if not body then
+		return nil, "theme codes start with SNTL1-"
+	end
+	local parts = string.split(body, "-")
+	if #parts ~= #UIPrefs.PALETTE_KEYS then
+		return nil, ("a theme code has %d colours"):format(#UIPrefs.PALETTE_KEYS)
+	end
+	local out = {}
+	for i, name in ipairs(UIPrefs.PALETTE_KEYS) do
+		local c = UIPrefs.HexToColor(parts[i])
+		if not c then
+			return nil, ("colour %d (%s) is not a hex colour"):format(i, name)
+		end
+		out[name] = UIPrefs.ColorToHex(c)
+	end
+	return out, nil
 end
 
 return UIPrefs

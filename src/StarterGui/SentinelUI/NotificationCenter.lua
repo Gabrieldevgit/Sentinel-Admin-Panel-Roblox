@@ -72,6 +72,57 @@ local initialized = false
 local mutedToasts = false
 local reducedMotion = false
 
+-- W08 notification preferences (UIPrefs "Notifications", personal or the
+-- Owner's server default): toasts on/off, sound, duration, corner.
+local soundEnabled = false
+local toastDuration: number? = nil
+local toastPosition = "BottomRight"
+local toastStack: Frame? = nil
+local NOTIFY_SOUND = "rbxasset://sounds/electronicpingshort.wav"
+
+local function placeStack()
+	local stack = toastStack
+	if not stack then
+		return
+	end
+	local right = toastPosition:find("Right") ~= nil
+	local bottom = toastPosition:find("Bottom") ~= nil
+	stack.AnchorPoint = Vector2.new(if right then 1 else 0, if bottom then 1 else 0)
+	stack.Position = UDim2.new(if right then 1 else 0, if right then -16 else 16, if bottom then 1 else 0, if bottom then -16 else 60)
+	local layout = stack:FindFirstChildOfClass("UIListLayout")
+	if layout then
+		layout.VerticalAlignment = if bottom then Enum.VerticalAlignment.Bottom else Enum.VerticalAlignment.Top
+	end
+end
+
+function NotificationCenter.ApplyPrefs(prefs: any)
+	if type(prefs) ~= "table" then
+		return
+	end
+	if type(prefs.Toasts) == "boolean" then
+		mutedToasts = not prefs.Toasts
+	end
+	soundEnabled = prefs.Sound == true
+	toastDuration = if type(prefs.Duration) == "number" then math.clamp(prefs.Duration, 1, 30) else nil
+	if type(prefs.Position) == "string" then
+		toastPosition = prefs.Position
+	end
+	placeStack()
+end
+
+local function playSound()
+	if not soundEnabled then
+		return
+	end
+	local sound = Instance.new("Sound")
+	sound.SoundId = NOTIFY_SOUND
+	sound.Volume = 0.5
+	game:GetService("SoundService"):PlayLocalSound(sound)
+	task.delay(2, function()
+		sound:Destroy()
+	end)
+end
+
 function NotificationCenter.SetMuted(muted: boolean)
 	mutedToasts = muted
 end
@@ -140,6 +191,8 @@ function NotificationCenter.Init()
 	stackLayout.Padding = UDim.new(0, 8)
 	stackLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	stackLayout.Parent = stack
+	toastStack = stack
+	placeStack()
 
 	local toastOrder = 0
 
@@ -250,7 +303,11 @@ function NotificationCenter.Init()
 			end
 		end
 
-		task.delay(if success then SUCCESS_DURATION else ERROR_DURATION, dismiss)
+		playSound()
+		local duration = if toastDuration then (if success then toastDuration else toastDuration + 2)
+			elseif success then SUCCESS_DURATION
+			else ERROR_DURATION
+		task.delay(duration, dismiss)
 	end
 
 	-- Other UI modules (e.g. the Cross-Server page: staff chat, global

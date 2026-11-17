@@ -4,10 +4,8 @@
 
 	Purpose:
 		Registers "/warn" and "/warnings". Delegates the actual ledger and
-		escalation logic to PunishmentService, and defines the default
-		escalation policy (3 warnings -> kick, 5 warnings -> 1-day ban) as
-		data passed into PunishmentService.RegisterEscalationRule — change
-		the numbers here to retune the policy; nothing else needs to change.
+		escalation logic to PunishmentService and registers the escalation
+		actions (kick, mute, ban). The thresholds are admin config (W08).
 
 	Dependencies:
 		Types.lua (Shared)
@@ -25,23 +23,43 @@ local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Syst
 local PunishmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PunishmentService"))
 
 -- ---------------------------------------------------------------------------
--- Default escalation policy. Tune here.
+-- Escalation actions (W08). WHEN they run is admin config
+-- ("WarningEscalation", default 3 -> kick, 5 -> 1-day ban; see
+-- Systems/AdminConfig and ;config escalation). These are the actions a step
+-- may name.
 -- ---------------------------------------------------------------------------
-PunishmentService.RegisterEscalationRule(3, function(target: Player, warnings: { PunishmentService.WarningRecord })
-	local lastReason = warnings[#warnings] and warnings[#warnings].Reason or "unspecified"
-	target:Kick(("Automatically kicked: 3 warnings reached (latest: %s)."):format(lastReason))
+local Core = Sentinel:WaitForChild("Core")
+local DurationParser = require(Core:WaitForChild("Parser"):WaitForChild("DurationParser"))
+local ChatModerationService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ChatModerationService"))
+
+local function latest(warnings: { PunishmentService.WarningRecord }): string
+	return warnings[#warnings] and warnings[#warnings].Reason or "unspecified"
+end
+
+PunishmentService.RegisterEscalationAction("kick", function(target, warnings, step)
+	target:Kick(("Automatically kicked: %d warnings reached (latest: %s)."):format(step.Count, latest(warnings)))
 end)
 
-PunishmentService.RegisterEscalationRule(5, function(target: Player, warnings: { PunishmentService.WarningRecord })
+PunishmentService.RegisterEscalationAction("mute", function(target, _warnings, step)
+	local duration = DurationParser.Parse(step.Duration or "1h")
+	if duration then
+		ChatModerationService.Mute(target, duration.Seconds, duration.IsPermanent)
+	end
+end)
+
+PunishmentService.RegisterEscalationAction("ban", function(target, warnings, step)
 	local reasonSummary = {}
 	for _, w in ipairs(warnings) do
 		table.insert(reasonSummary, w.Reason)
 	end
+	local duration = DurationParser.Parse(step.Duration or "1d")
+	local permanent = duration == nil or duration.IsPermanent
+	local issuedAt = os.time()
 	local record = {
 		BannedBy = 0, -- SYSTEM
-		Reason = ("Automatically banned: 5 warnings reached (%s)."):format(table.concat(reasonSummary, "; ")),
-		IssuedAt = os.time(),
-		ExpiresAt = os.time() + 86400, -- 1 day
+		Reason = ("Automatically banned: %d warnings reached (%s)."):format(step.Count, table.concat(reasonSummary, "; ")),
+		IssuedAt = issuedAt,
+		ExpiresAt = if permanent then math.huge else issuedAt + (duration :: any).Seconds,
 	}
 	local DataStoreService = game:GetService("DataStoreService")
 	local ok, err = pcall(function()
@@ -50,7 +68,7 @@ PunishmentService.RegisterEscalationRule(5, function(target: Player, warnings: {
 	if not ok then
 		warn(("[Sentinel.Warn] failed to persist auto-ban: %s"):format(tostring(err)))
 	end
-	target:Kick("Banned: Automatically banned, 5 warnings reached.")
+	target:Kick(("Banned: Automatically banned, %d warnings reached."):format(step.Count))
 end)
 
 CommandRegistry.Register({

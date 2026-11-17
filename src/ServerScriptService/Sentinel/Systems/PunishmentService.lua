@@ -70,6 +70,21 @@ function PunishmentService.RegisterEscalationRule(threshold: number, action: (Pl
 	end)
 end
 
+-- W08: data-driven escalation (admin config "WarningEscalation"). The
+-- provider returns { { Count, Action, Duration? } }; actions are looked up
+-- by name (registered by Commands/Moderation/Warn.lua: kick, ban, mute).
+export type EscalationStep = { Count: number, Action: string, Duration: string? }
+local policyProvider: (() -> { EscalationStep })? = nil
+local escalationActions: { [string]: (Player, { WarningRecord }, EscalationStep) -> () } = {}
+
+function PunishmentService.SetPolicyProvider(fn: (() -> { EscalationStep })?)
+	policyProvider = fn
+end
+
+function PunishmentService.RegisterEscalationAction(name: string, fn: (Player, { WarningRecord }, EscalationStep) -> ())
+	escalationActions[name] = fn
+end
+
 function PunishmentService.GetWarnings(userId: number): { WarningRecord }
 	if cache[userId] then
 		return cache[userId]
@@ -124,6 +139,27 @@ function PunishmentService.AddWarning(target: Player, issuer: any, reason: strin
 				Message = ("Escalation threshold %d reached for %s"):format(rule.Threshold, target.Name),
 			})
 			task.spawn(rule.Action, target, warnings)
+		end
+	end
+
+	if policyProvider then
+		local ok, steps = pcall(policyProvider)
+		if ok and type(steps) == "table" then
+			for _, step in ipairs(steps) do
+				local action = escalationActions[step.Action]
+				if step.Count == #warnings and action then
+					Logger.Write({
+						Executor = "SYSTEM",
+						ExecutorName = "SYSTEM",
+						Command = "auto-escalation",
+						Target = target.Name,
+						Result = "Success",
+						Severity = "Warning",
+						Message = ("Escalation %s at %d warnings for %s"):format(step.Action, step.Count, target.Name),
+					})
+					task.spawn(action, target, warnings, step)
+				end
+			end
 		end
 	end
 

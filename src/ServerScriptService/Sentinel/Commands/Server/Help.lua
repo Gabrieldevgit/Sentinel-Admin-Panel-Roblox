@@ -54,7 +54,7 @@ CommandRegistry.Register({
 			end
 			return {
 				Success = true,
-				Message = ("You can use %d commands. Try ;help <command>, or press Ctrl+Shift+P for the palette."):format(count),
+				Message = ("You can use %d commands. Try ;help <command>, or press Ctrl+K for the palette."):format(count),
 			}
 		end
 

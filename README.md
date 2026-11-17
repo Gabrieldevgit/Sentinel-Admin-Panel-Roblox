@@ -38,7 +38,7 @@ what's built versus still coming.
 | DeveloperService | `Systems/DeveloperService.lua` | Server stats, ping tracking, error console capture, remote-call monitor, DataStore get/set/list, arbitrary module execution |
 | Phase 5 commands | `Commands/Developer/Diagnostics.lua` | `/serverstats /pingview /errorconsole /remotelog /datastoreget /datastoreset /datastorelist /execute` — the latter two are deliberately Owner-only (not in Admin's wildcards) since they can corrupt data or run arbitrary code |
 | UIBridge | `Systems/UIBridge.lua` | The only place the Phase 7 UI talks to the server — every remote either stays open (harmless metadata) or is gated behind `isStaff()`; command execution always goes through `CommandProcessor` → `CommandRegistry.Dispatch`, identical to chat |
-| Phase 7 UI shell | `StarterGui/SentinelUI/Theme.lua`, `Shell.lua`, `CommandPalette.lua` | Design tokens; resizable/draggable/minimizable sidebar shell; Ctrl+Shift+P fuzzy-search command palette |
+| Phase 7 UI shell | `StarterGui/SentinelUI/Theme.lua`, `Shell.lua`, `CommandPalette.lua` | Design tokens; resizable/draggable/minimizable sidebar shell; Ctrl+K fuzzy-search command palette |
 | Phase 7 pages | `StarterGui/SentinelUI/DashboardPage.lua`, `PlayersPage.lua`, `ModerationPage.lua`, `ServerPage.lua`, `EconomyPage.lua`, `DeveloperPage.lua`, `NotificationCenter.lua`, `SettingsPage.lua` | Dashboard (summary cards + Quick Actions), Player Explorer (searchable table + 7-tab detail panel: Overview/Inventory/Statistics/Moderation History/Permissions/Session/Notes), Moderation Queue (live actions feed), Server controls (lock/maintenance/slowmode/weather/lighting), Economy (currency/XP/level/badge grant forms), Developer Tools (Performance/Console/Remotes/DataStores tabs), Notification Center (toast overlay + persistent log page), Settings (read-only Permissions viewer + real prefs) |
 
 ## Try it
@@ -186,7 +186,7 @@ No switch statement, no registry edits, no core changes required.
 ## Phase 7 progress (in this drop)
 
 **Built:** Core UI Shell (top bar, sidebar nav, status bar, page container,
-now resizable/minimizable/closable), Command Palette (Ctrl+Shift+P), a
+now resizable/minimizable/closable), Command Palette (Ctrl+K), a
 Dashboard page (summary cards + Quick Actions panel), a Player Explorer
 page (searchable table, scrollable detail panel, Kick button + Freeze/
 Jail/Mute toggle switches), a Moderation Queue page (live recent-actions
@@ -437,7 +437,7 @@ blank list whenever the query is empty.
 
 - **Open the panel:** press **F6** (not "P" — deliberately avoided, since
   this game's separate AdminPanelClient already binds P for its own UI).
-- **Command Palette:** **Ctrl+Shift+P** anywhere, or click the search bar
+- **Command Palette:** **Ctrl+K** anywhere (a keybind preference since W08), or click the search bar
   in the panel's top bar.
 - New server-side bridge: `Systems/UIBridge.lua` has grown alongside each
   Phase 7 page — `GetCommandListRemote`/`GetServerStatsRemote` stay open
