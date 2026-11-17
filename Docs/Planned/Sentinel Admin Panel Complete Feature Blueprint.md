@@ -852,14 +852,14 @@ Appearance
 - Reduced motion.
 - ✅ High-contrast mode.
 Interface
-- Sidebar customization.
+- ✅ Sidebar customization.
 - Dashboard customization.
 - Dockable windows.
-- Resizable windows.
+- ✅ Resizable windows.
 - Saved workspace layouts.
 - Custom navigation.
-- Favorite pages.
-- Compact mode.
+- ✅ Favorite pages.
+- ✅ Compact mode.
 - Mobile layout.
 Keyboard shortcuts
 - ✅ Open panel.

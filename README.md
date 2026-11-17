@@ -5,10 +5,11 @@ moderation, developer tools, analytics, cross-server coordination, and
 player controls, unified under one command grammar.
 
 Phases 1–5 are complete and battle-tested in Studio. Phase 6 (Analytics &
-Audit) is intentionally deferred until after Phase 7. **Phase 7 (UI/UX)
-is in progress** — a dark "Mission Control"-style dockable panel — and is
-the current focus. See the Roadmap status section below for exactly
-what's built versus still coming.
+Audit) comes next. **Phase 7 (UI/UX) is complete** (W09) — a themed
+"Mission Control" panel with section tabs, a terminal command bar,
+compact / mobile layouts and per-staff customisation. Cross-server
+management (Phase 8) was built early. See the Roadmap status section
+below for exactly what's built versus still coming.
 
 ## What's implemented
 
@@ -107,7 +108,7 @@ No switch statement, no registry edits, no core changes required.
 - [x] **4. Player & Server Systems** — currency/XP/level/badges, inventory (give/remove/duplicate/save/restore), server lock/maintenance/slowmode/shutdown, announcements/countdown, weather/day-night/timefreeze/fog/lighting presets
 - [x] **5. Developer Suite** — server stats, ping viewer, error console, remote call monitor, DataStore get/set/list, module execution
 - [ ] **6. Analytics & Audit** — dashboards, full searchable log UI, cross-server insights (deferred — Phase 7 first)
-- [ ] **7. UI/UX** — IN PROGRESS. Built so far: core Shell, Command Palette (now with Favorites + a default History view), Dashboard, Player Explorer (all seven tabs), Moderation Queue, Server page, Economy page, Developer Tools page, Notification Center, and Settings (7A–7G). Still to come: an end-of-phase resize/reflow fix pass and the remaining batch of bugs found during 7A–7D testing — see `/reference/PHASE7-KNOWN-ISSUES.md`. Building against `/reference/UI-UX-design-docs/`.
+- [x] **7. UI/UX** — Shell with section tabs, sub menu and live status bar (FPS / ping / memory), Command Palette, terminal command bar, every page (Dashboard, Players, Moderation, Ranks, Commands, Library, Server, Cross-Server, Economy, Analytics, Developer, Settings, Appearance, Keybinds, Administration, Notifications), themes and keybinds (W08), and the W09 responsive pass: content reflow when resizing, compact mode, mobile layout (full-screen window, sub menu strip), section tab order / visibility, pinned favorite pages, themed ban prompt. Still open: a check on a real phone and the two-player items in `HANDOFF.md`.
 - [ ] **8. Cross-Server Management** (rescoped) — manage multiple running game servers from one panel (list servers, health status, switch context, remote actions). Automation/plugin loading was dropped from this phase's original scope.
 - [ ] **9. Enterprise Features** (trimmed scope) — rollback tool, collaborative moderation, AI-assisted command generation
 - [ ] **10. Player Controls** (new, added from the old Admin Panel extraction) — fly, noclip, god mode, ragdoll, visual effects (neon/gold/silver/diamond/fire/smoke), appearance changes, ported into Sentinel's permission/logging/undo architecture rather than copied as-is. Reference source saved at `/reference/OldAdminPanel/`.

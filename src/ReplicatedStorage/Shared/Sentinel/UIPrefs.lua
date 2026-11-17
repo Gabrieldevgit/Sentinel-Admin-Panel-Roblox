@@ -20,6 +20,8 @@
 		Keys (W08)     Panel, ClosePanel, Palette, QuickFly, QuickNoclip,
 		               QuickGod, NextPage, PrevPage, Custom (key -> command)
 		Notifications  Toasts, Sound, Duration, Position (W08)
+		Layout (W09)   Mode (Auto/Desktop/Mobile), Compact, StatusBar, Labels,
+		               Tabs (order + which section tabs show), Pinned (pages)
 
 	Keys are "[Ctrl+][Shift+][Alt+]<KeyCode name>" or "None".
 	Theme codes (export / import): "SNTL1-" + 7 hex colours (Background,
@@ -298,6 +300,36 @@ function UIPrefs.ColorToHex(c: Color3): string
 end
 
 -- ---------------------------------------------------------------------------
+-- Navigation (W09): the panel's section tabs and page ids. Shell.lua owns
+-- the icons / labels; these lists are what prefs may name.
+-- ---------------------------------------------------------------------------
+UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Insights" }
+UIPrefs.PAGE_IDS = {
+	"Dashboard", "Players", "Moderation", "Ranks", "Commands", "Library", "Server", "CrossServer",
+	"Economy", "Analytics", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
+}
+UIPrefs.MAX_PINNED = 8
+
+local function canonical(list: { string }, value: any): string?
+	if type(value) ~= "string" then
+		return nil
+	end
+	local lower = value:lower():gsub("[%s%-_]", "")
+	for _, item in ipairs(list) do
+		if item:lower() == lower then
+			return item
+		end
+	end
+	return nil
+end
+function UIPrefs.FindSection(name: any): string?
+	return canonical(UIPrefs.NAV_SECTIONS, name)
+end
+function UIPrefs.FindPage(name: any): string?
+	return canonical(UIPrefs.PAGE_IDS, name)
+end
+
+-- ---------------------------------------------------------------------------
 -- Settings
 -- ---------------------------------------------------------------------------
 local function choice(list: { string }, description: string)
@@ -349,9 +381,17 @@ UIPrefs.SPEC = {
 		Duration = number(2, 15, 1, "Seconds a notification stays", true),
 		Position = choice({ "BottomRight", "TopRight", "BottomLeft", "TopLeft" }, "Where notifications appear"),
 	},
+	Layout = {
+		Mode = choice({ "Auto", "Desktop", "Mobile" }, "Window layout (Auto = Mobile on touch screens and small screens)"),
+		Compact = { Kind = "boolean", Description = "Compact mode: thinner bars and tighter spacing" },
+		StatusBar = { Kind = "boolean", Description = "Live status bar (players, uptime, memory, ping, FPS)" },
+		Labels = choice({ "Auto", "Full", "Icons" }, "Section tab labels (Auto = icons only when the panel is narrow)"),
+		Tabs = { Kind = "sections", Description = "Section tabs, in order (missing ones are hidden)" },
+		Pinned = { Kind = "pages", Description = "Favorite pages pinned to the navigation" },
+	},
 }
 
-UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications" }
+UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications", "Layout" }
 
 -- Display order for settings screens and ;commandbar / ;theme / ;keybind
 -- listings (Panel.Custom and Keys.Custom have their own editors).
@@ -360,6 +400,7 @@ UIPrefs.ORDER = {
 	CommandBar = { "Preset", "Position", "Width", "Opacity", "FontSize", "MaxLines", "Rows", "Key" },
 	Keys = { "Panel", "ClosePanel", "Palette", "QuickFly", "QuickNoclip", "QuickGod", "NextPage", "PrevPage" },
 	Notifications = { "Toasts", "Sound", "Duration", "Position" },
+	Layout = { "Mode", "Compact", "StatusBar", "Labels" },
 }
 
 UIPrefs.BUILTIN = {
@@ -395,6 +436,14 @@ UIPrefs.BUILTIN = {
 		Custom = {},
 	},
 	Notifications = { Toasts = true, Sound = false, Duration = 5, Position = "BottomRight" },
+	Layout = {
+		Mode = "Auto",
+		Compact = false,
+		StatusBar = true,
+		Labels = "Auto",
+		Tabs = table.clone(UIPrefs.NAV_SECTIONS),
+		Pinned = {},
+	},
 }
 
 local function validValue(spec: any, value: any): any
@@ -452,6 +501,24 @@ local function validValue(spec: any, value: any): any
 					table.insert(out, { Key = k, Command = command })
 				end
 			end
+		end
+		return out
+	elseif spec.Kind == "sections" or spec.Kind == "pages" then
+		if type(value) ~= "table" then
+			return nil
+		end
+		local out, seen = {}, {}
+		local limit = if spec.Kind == "pages" then UIPrefs.MAX_PINNED else #UIPrefs.NAV_SECTIONS
+		for _, item in ipairs(value) do
+			local id = if spec.Kind == "pages" then UIPrefs.FindPage(item) else UIPrefs.FindSection(item)
+			if id and not seen[id] and #out < limit then
+				seen[id] = true
+				table.insert(out, id)
+			end
+		end
+		-- At least one section tab must stay, or the panel has no navigation.
+		if spec.Kind == "sections" and #out == 0 then
+			return nil
 		end
 		return out
 	end
@@ -523,7 +590,7 @@ function UIPrefs.Parse(section: string, field: string, text: string): (any, stri
 			return nil, "use a key like F6, K, Ctrl+K or Ctrl+Alt+P (or none; Shift+P is Roblox Freecam)"
 		end
 		return k, nil
-	elseif spec.Kind == "palette" or spec.Kind == "binds" then
+	elseif spec.Kind == "palette" or spec.Kind == "binds" or spec.Kind == "sections" or spec.Kind == "pages" then
 		return nil, "this setting has its own editor"
 	elseif spec.Kind == "number" then
 		raw = tonumber(text)
@@ -546,7 +613,7 @@ end
 function UIPrefs.Find(name: string, preferSection: string?): (string?, string?)
 	local wantedSection, wantedField = name:lower():match("^(%a+)%.(%a+)$")
 	local wanted = wantedField or name:lower()
-	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel", "Keys", "Notifications" }
+	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel", "Keys", "Notifications", "Layout" }
 	if wantedSection then
 		sections = {}
 		for _, section in ipairs(UIPrefs.SECTIONS) do

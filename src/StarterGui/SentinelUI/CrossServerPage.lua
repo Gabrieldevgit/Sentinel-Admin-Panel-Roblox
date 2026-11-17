@@ -215,11 +215,17 @@ function CrossServerPage.Build(container: Frame, notificationCenter: any?)
 		label(card, "Caption", def[2], { Position = UDim2.new(0, 8, 0, 27), Size = UDim2.new(1, -12, 0, 14), TextSize = 10 })
 	end
 
-	local tabBar = make("Frame", {
+	-- W09: scrolls sideways when the panel is too narrow for six tabs.
+	local tabBar = make("ScrollingFrame", {
 		Name = "Tabs",
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 106),
 		Size = UDim2.new(1, 0, 0, 28),
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 0,
 	}, container)
 	make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, tabBar)
 	local tabButtons: { [string]: TextButton } = {}

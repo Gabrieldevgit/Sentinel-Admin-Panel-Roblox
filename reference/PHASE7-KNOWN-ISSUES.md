@@ -6,7 +6,7 @@ address all of them at once.
 
 ## 1. Resize only resizes the outer window frame, not its contents
 
-**Status:** Partially fixed in this drop; one more candidate found, not yet fixed.
+**Status:** Fixed in W09 (2026-11-17): ServerPage preset rows wrap; the Shell reflows (icon-only tabs and sub menu, smaller search / user chip) down to a 560 px minimum; Players page split, Library status, Cross-Server tabs and Appearance toolbar fixed after an overflow sweep of all 16 pages at 620 px. Earlier notes below kept for history.
 
 Dashboard cards, Quick Action cards, and other page content use hardcoded
 pixel widths rather than scale-relative/reflowing layouts. Narrowing the

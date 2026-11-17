@@ -192,7 +192,10 @@ function ServerPage.Build(container: Frame)
 	local function makePresetRow(layoutOrder: number, label: string, presets: { string }, commandPrefix: string)
 		local row = Instance.new("Frame")
 		row.LayoutOrder = layoutOrder
-		row.Size = UDim2.new(1, 0, 0, 60)
+		-- W09 (known issue #1): the buttons wrap onto more lines when the
+		-- panel is narrow, and the row grows to fit them.
+		row.Size = UDim2.new(1, 0, 0, 0)
+		row.AutomaticSize = Enum.AutomaticSize.Y
 		row.BackgroundColor3 = Theme.Colors.Surface
 		row.BorderSizePixel = 0
 		row.Parent = scrollFrame
@@ -211,19 +214,22 @@ function ServerPage.Build(container: Frame)
 
 		local buttonRow = Instance.new("Frame")
 		buttonRow.Position = UDim2.new(0, 0, 0, 22)
-		buttonRow.Size = UDim2.new(1, 0, 0, 28)
+		buttonRow.Size = UDim2.new(1, 0, 0, 0)
+		buttonRow.AutomaticSize = Enum.AutomaticSize.Y
 		buttonRow.BackgroundTransparency = 1
 		buttonRow.Parent = row
 
 		local buttonLayout = Instance.new("UIListLayout")
 		buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+		buttonLayout.Wraps = true
+		buttonLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		buttonLayout.Padding = UDim.new(0, 6)
 		buttonLayout.Parent = buttonRow
 
 		for i, preset in ipairs(presets) do
 			local button = Instance.new("TextButton")
 			button.LayoutOrder = i
-			button.Size = UDim2.new(0, 80, 1, 0)
+			button.Size = UDim2.new(0, 80, 0, 28)
 			button.BackgroundColor3 = Theme.Colors.SurfaceRaised
 			button.Font = Theme.Font.Regular
 			button.TextSize = 12

@@ -4,10 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-17 (W08 session) — the UI redesign is committed
-(`6812a92`), cross-server too (`87bc1b7`). **W08 settings integration** is
-built and verified in Play, **not committed yet** (user commits on
-request). Next undone row: W09. Start with §6 "Next session"._
+_Last updated: 2026-11-17 (W09 session) — W08 is committed + pushed
+(`0d24484`). **W09 responsive UI pass** is built and verified in Play,
+**not committed yet** (user commits on request). Next undone row: W10.
+Start with §6 "Next session"._
 
 ---
 
@@ -114,7 +114,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings, 82 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings, 84 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -295,6 +295,36 @@ Control" UI, all driven by one command grammar
     Notifications. Appearance page gained the new Panel rows, a Custom theme
     block (7 hex boxes, Use / Export / Import) and the Notifications section.
     `SetUIPrefsRemote("reset", "Keys")` resets one section.
+- **W09 responsive UI:**
+  - `Shared/UIPrefs` section **Layout**: Mode (Auto / Desktop / Mobile; Auto
+    = mobile on touch-only devices or a screen < 760 px), Compact,
+    StatusBar, Labels (Auto / Full / Icons), Tabs (ordered visible section
+    ids, `UIPrefs.NAV_SECTIONS`; at least one), Pinned (page ids,
+    `UIPrefs.PAGE_IDS`, max 8). `UIPrefs.FindPage / FindSection`.
+  - `Shell.lua`: `relayout()` runs on prefs / page / window / screen
+    changes. METRICS Normal vs Compact (bar heights, sub menu width, icon
+    buttons). Reflow by unscaled width: < 900 search + user chip become
+    icons; tabs drop to icons when their labels don't fit (TextService);
+    < 760 the sub menu shows icons only; resize minimum 560 x 360. Mobile =
+    window fills the screen below Roblox's top bar, no drag / resize, sub
+    menu becomes a horizontal strip; leaving mobile restores the desktop
+    size. Pinned pages = `Root.SubNav.PinnedHeader` + `Pin_<id>` at the top
+    of the sub menu (shown on every page); the star `NavBar.Right.PinButton`
+    sends `;pin` / `;unpin`. Minimize keeps the title bar in place.
+    `Shell.ApplyPrefs(panel, layout)`.
+  - Commands (`Commands/Server/Appearance.lua`): `;layout [setting] [value]`
+    (+ `pin|unpin|tabs|hide|show|move`), `;pin <page>` / `;unpin <page>`
+    (undoable via Inverse).
+  - Appearance page: Layout rows + a Navigation block
+    (`Body.Navigation.Tabs.Tab_<Section>.Controls.{Up,Down,Toggle}`,
+    `Body.Navigation.Pages.Page_<Id>`).
+  - `BanPromptSystem.lua` rewritten (themed modal: temporary / permanent,
+    duration chips + custom, reason, live command preview) and opened by
+    the Players page **Ban** button; it only sends `ban <name>:<dur> <reason>`.
+  - Reflow fixes: ServerPage preset rows wrap; Players page split goes
+    36 / 64 below 760 px; Library status label, Cross-Server tabs and
+    Appearance toolbar no longer run off a narrow panel. Players page now
+    shows the Overview tab for the first selected player (was blank).
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -503,12 +533,19 @@ Rules that keep it sound:
   (team names with spaces) and once the input scrolls horizontally; the
   value being typed isn't validated until you move past it; the
   "Recent" rows are session-only (persisted history = W06/W08).
-- Resize handle was rewritten with the drag fix but **not re-tested by hand**.
 - The old panel's `AdminPanelClient` also binds **F** to its own fly; its
   `AdminPanelV43` / `NotificationGui` duplicate in PlayerGui on each respawn.
-- Modules not wired up yet: `BanPromptSystem`
-  (W09), `PlayerControlsSystem` (W09). `Config.lua` ranks are now only
-  reference; RankService owns ranks.
+- `StarterGui/SentinelUI/PlayerControlsSystem.lua` (V4.3 port) is **not
+  wired and shouldn't be**: fly / noclip / god / effects already run
+  server-side with quick keys (W08), and it binds its own keys + uses
+  `Config.KEYBINDS`. Ask the user whether to delete it. `Config.lua` ranks
+  are only reference; RankService owns ranks.
+- **W09 not verified, so not ✅:** "Mobile layout" - tested only as forced
+  Mobile mode on a desktop screen (no touch device / phone-size emulator
+  through Studio MCP); pages were swept at 620 px, not at phone width
+  (~380 px). The Ban prompt's final send was not clicked (only one test
+  account: it would ban itself). Appearance rows keep fixed label widths,
+  so choice chips can overlap labels in a very narrow panel.
 - Harmless console noise from the game's assets: sound
   `118939739460633` (no permission), asset `203785492` (wrong type).
 - `;give` needs tools in `ServerStorage.SentinelTools` (none exist yet).
@@ -543,20 +580,21 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **82/82**
-  (new `Settings.spec`).
-- **W08 settings integration** is built and verified in Play, **not
-  committed** (see §3). Testing-place admin config is back to defaults and
+- Sentinel server and client boot cleanly in Play. Unit tests **84/84**.
+- **W09 responsive UI pass** is built and verified in Play, **not
+  committed** (see §3). The test account's Layout prefs were reset.
+  README roadmap now marks Phase 7 done.
+- **W08 settings integration** is committed (`0d24484`). Testing-place admin config is back to defaults and
   the test account's personal prefs were reset.
 - **UI redesign** committed as `6812a92`.
 - **W01-W07 are done and committed** (`b5c6620`). **Cross-server
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** next undone row is **W09 - Responsive UI pass**
-  (ServerPage wrap, reflow, resize retest, compact mode, mobile layout,
-  sidebar customization, favorite pages, live status bar, wire
-  `PlayerControlsSystem` / `BanPromptSystem`). About 8 weekends
+- **Schedule position:** next undone row is **W10 - Persistent audit**
+  (`Systems/AuditService` on top of `Core/Logger`, every blueprint field,
+  before/after values, failed actions, retention via
+  `Logger.SetRetentionDays`, paged storage). About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -564,7 +602,8 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **215 bullets ✅**: W08 20 (light theme, custom themes,
+- Feature blueprint: **219 bullets ✅**: W09 4 (sidebar customization,
+  resizable windows, favorite pages, compact mode), W08 20 (light theme, custom themes,
   custom palette, theme import / export, font, high contrast, open / close
   panel, palette, quick fly / noclip / god, next / previous page, custom
   keybindings, command cooldowns, maximum punishment, required reasons,
@@ -584,21 +623,38 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit W08** if the user agrees. Then **publish and test with two
+1. **Commit W09** if the user agrees. Ask whether to delete
+   `PlayerControlsSystem.lua` (see §5).
+2. **Publish and test with two
    live servers** (§5 cross-server list) and ✅ the remaining §6 blueprint
    bullets.
-2. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
+3. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
    is redundant and logs `unknown role 'Owner'` at boot. Ask before
    touching it.
-3. **Two-player test session** (Studio *Test > Clients and Servers*, 2
+4. **Two-player test session** (Studio *Test > Clients and Servers*, 2
    clients, one with a lower rank): rank protection, hidden pages,
    view-only Ranks page, Owner-only refusal, bulk confirmation, permission-
    denied feedback, multi-player targeting, Staff Online count.
-4. **Live-server check**: text censoring (Studio doesn't filter text).
-5. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
-6. Then start **W09**.
+5. **Live-server check**: text censoring (Studio doesn't filter text).
+6. Phone check of the mobile layout (Studio device emulator by hand).
+7. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
+8. Then start **W10**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-17 (W09)** - Responsive UI pass: UIPrefs Layout section,
+  Shell `relayout` (compact metrics, mobile window, width reflow, tab
+  order / visibility, icon labels, pinned pages, status bar toggle,
+  minimize keeps the title bar), `;layout` / `;pin` / `;unpin`, Appearance
+  Layout rows + Navigation editor, themed `BanPromptSystem` + Players Ban
+  button, reflow fixes (ServerPage, Players, Library, Cross-Server,
+  Appearance). Fixed: Players detail panel blank until a tab was clicked.
+  Tests 84/84. Verified in Play by mouse / keyboard / remote: star pin,
+  compact, tab move / hide, icon labels, mobile + back to desktop, 600 px
+  reflow, drag-resize, minimize / restore, status bar off, overflow sweep
+  of 16 pages at 620 px, ban prompt (7d / custom / permanent / cancel),
+  navigation editor show + unpin, prefs persisting across restart. ✅ 4
+  bullets. `PlayerControlsSystem` left unwired (superseded). Not committed.
 
 - **2026-11-17 (W08)** - Settings integration: UIPrefs Keys /
   Notifications sections, Light + Custom themes, fonts, animation speed,
@@ -613,7 +669,7 @@ Rules that keep it sound:
   custom Ctrl+H bind, F6 / End / Ctrl+K / Ctrl+PageUp/Down, key recording,
   theme export / import, Light, Builder font refont, high contrast,
   notification corner, prefs persisting across restart. ✅ 20 bullets.
-  Not committed.
+  Committed + pushed as `0d24484`.
 
 - **2026-11-16 (UI redesign)** - User asked for a clean redesign before
   any other W: terminal-style command bar (customisable per staff / VIP,

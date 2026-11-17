@@ -150,4 +150,44 @@ return function(t)
 			error(err, 0)
 		end
 	end)
+
+	-- W09 layout prefs
+	t.test("layout: sanitize mode, tabs and pinned pages", function()
+		local clean = UIPrefs.Sanitize({
+			Layout = {
+				Mode = "mobile",
+				Compact = true,
+				StatusBar = "yes", -- not a boolean: dropped
+				Tabs = { "server", "Players", "server", "Nope" },
+				Pinned = { "ranks", "cross-server", "Ranks", "Missing" },
+			},
+		})
+		t.eq(clean.Layout.Mode, "Mobile")
+		t.eq(clean.Layout.Compact, true)
+		t.eq(clean.Layout.StatusBar, nil)
+		t.eq(table.concat(clean.Layout.Tabs, ","), "Server,Players")
+		t.eq(table.concat(clean.Layout.Pinned, ","), "Ranks,CrossServer")
+		-- no section tabs at all is refused (the panel needs navigation)
+		t.eq(UIPrefs.Sanitize({ Layout = { Tabs = {} } }).Layout, nil)
+		-- pinned pages are capped
+		local many = {}
+		for _, id in ipairs(UIPrefs.PAGE_IDS) do
+			table.insert(many, id)
+		end
+		t.eq(#UIPrefs.Sanitize({ Layout = { Pinned = many } }).Layout.Pinned, UIPrefs.MAX_PINNED)
+	end)
+
+	t.test("layout: lookups and parsing", function()
+		t.eq(UIPrefs.FindPage("crossserver"), "CrossServer")
+		t.eq(UIPrefs.FindSection("INSIGHTS"), "Insights")
+		t.eq(UIPrefs.FindSection("Ranks"), nil) -- a page, not a section tab
+		local s, f = UIPrefs.Find("compact")
+		t.eq(s, "Layout")
+		t.eq(f, "Compact")
+		t.eq((UIPrefs.Parse("Layout", "Mode", "desktop")), "Desktop")
+		t.eq((UIPrefs.Parse("Layout", "Tabs", "x")), nil) -- own editor
+		local merged = UIPrefs.Merge(UIPrefs.BUILTIN, { Layout = { Compact = true } })
+		t.eq(merged.Layout.Compact, true)
+		t.eq(#merged.Layout.Tabs, #UIPrefs.NAV_SECTIONS)
+	end)
 end

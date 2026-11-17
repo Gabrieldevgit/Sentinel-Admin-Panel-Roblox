@@ -24,6 +24,13 @@
 
 	;notifyprefs [setting] [value]      toasts, sound, duration, position
 
+	;layout [setting] [value]           mode (auto|desktop|mobile), compact,
+	                                    statusbar, labels (W09)
+	;layout pin <page> / unpin <page>   favorite pages (also ;pin / ;unpin)
+	;layout tabs <s1,s2,...>            section tabs in this order
+	;layout hide|show <section>         one section tab
+	;layout move <section> <position>
+
 	The command bar works for ranks with "commandbar.use" (VIP by default)
 	as well as staff, so these commands are how a VIP - who has no panel -
 	customises it. The Appearance page does the same through SetUIPrefsRemote.
@@ -61,6 +68,10 @@ local function listing(section: string, prefs: any, title: string): string
 		for _, bind in ipairs(binds) do
 			table.insert(lines, ("  %s -> %s"):format(bind.Key, bind.Command))
 		end
+	elseif section == "Layout" then
+		table.insert(lines, "tabs = " .. table.concat(prefs.Layout.Tabs or {}, ", ") .. "    ;layout tabs | hide | show | move")
+		local pinned = prefs.Layout.Pinned or {}
+		table.insert(lines, "pinned = " .. (if #pinned > 0 then table.concat(pinned, ", ") else "(none)") .. "    ;layout pin | unpin <page>")
 	end
 	return table.concat(lines, "\n")
 end
@@ -70,7 +81,125 @@ local function customBinds(ctx: Ctx): { any }
 	return PrefsService.GetEffective(ctx.Executor).Keys.Custom or {}
 end
 
+local function layoutList(ctx: Ctx, field: string): { string }
+	return table.clone(PrefsService.GetEffective(ctx.Executor).Layout[field] or {})
+end
+
+local function saveLayout(ctx: Ctx, field: string, list: { string }, message: string): Result
+	local ok, err = PrefsService.SetPersonal(ctx.Executor, { Layout = { [field] = list } })
+	return { Success = ok, Message = if ok then message else err }
+end
+
+local function pagesHint(): string
+	return "Pages: " .. table.concat(UIPrefs.PAGE_IDS, ", ")
+end
+local function sectionsHint(): string
+	return "Sections: " .. table.concat(UIPrefs.NAV_SECTIONS, ", ")
+end
+
+local function pin(ctx: Ctx, name: string?, on: boolean): Result
+	local page = UIPrefs.FindPage(name)
+	if not page then
+		return { Success = false, Message = "Unknown page. " .. pagesHint() }
+	end
+	local list = layoutList(ctx, "Pinned")
+	local index = table.find(list, page)
+	if on then
+		if index then
+			return { Success = true, Message = page .. " is already pinned." }
+		end
+		if #list >= UIPrefs.MAX_PINNED then
+			return { Success = false, Message = ("You can pin %d pages."):format(UIPrefs.MAX_PINNED) }
+		end
+		table.insert(list, page)
+		return saveLayout(ctx, "Pinned", list, "Pinned " .. page .. ".")
+	end
+	if not index then
+		return { Success = false, Message = page .. " is not pinned." }
+	end
+	table.remove(list, index)
+	return saveLayout(ctx, "Pinned", list, "Unpinned " .. page .. ".")
+end
+
+local function sectionArg(args: { string }): (string?, Result?)
+	local id = UIPrefs.FindSection(args[2])
+	if not id then
+		return nil, { Success = false, Message = "Unknown section. " .. sectionsHint() }
+	end
+	return id, nil
+end
+
 local extras: { [string]: { [string]: (Ctx, { string }) -> Result } } = {
+	Layout = {
+		pin = function(ctx: Ctx, args: { string }): Result
+			return pin(ctx, args[2], true)
+		end,
+		unpin = function(ctx: Ctx, args: { string }): Result
+			return pin(ctx, args[2], false)
+		end,
+		tabs = function(ctx: Ctx, args: { string }): Result
+			local list = {}
+			for _, part in ipairs(string.split(table.concat(args, ",", 2), ",")) do
+				local name = part:match("^%s*(.-)%s*$") :: string
+				if name ~= "" then
+					local id = UIPrefs.FindSection(name)
+					if not id then
+						return { Success = false, Message = ("Unknown section '%s'. %s"):format(name, sectionsHint()) }
+					end
+					if not table.find(list, id) then
+						table.insert(list, id)
+					end
+				end
+			end
+			if #list == 0 then
+				return { Success = false, Message = "Usage: ;layout tabs Dashboard,Players,Moderation  (" .. sectionsHint() .. ")" }
+			end
+			return saveLayout(ctx, "Tabs", list, "Section tabs: " .. table.concat(list, ", ") .. ".")
+		end,
+		hide = function(ctx: Ctx, args: { string }): Result
+			local id, failure = sectionArg(args)
+			if not id then
+				return failure :: Result
+			end
+			local list = layoutList(ctx, "Tabs")
+			local index = table.find(list, id)
+			if not index then
+				return { Success = true, Message = id .. " is already hidden." }
+			end
+			if #list == 1 then
+				return { Success = false, Message = "Keep at least one section tab." }
+			end
+			table.remove(list, index)
+			return saveLayout(ctx, "Tabs", list, "Hid the " .. id .. " tab.")
+		end,
+		show = function(ctx: Ctx, args: { string }): Result
+			local id, failure = sectionArg(args)
+			if not id then
+				return failure :: Result
+			end
+			local list = layoutList(ctx, "Tabs")
+			if table.find(list, id) then
+				return { Success = true, Message = id .. " is already shown." }
+			end
+			table.insert(list, id)
+			return saveLayout(ctx, "Tabs", list, "Showing the " .. id .. " tab.")
+		end,
+		move = function(ctx: Ctx, args: { string }): Result
+			local id = UIPrefs.FindSection(args[2])
+			local position = tonumber(args[3])
+			if not id or not position then
+				return { Success = false, Message = "Usage: ;layout move <section> <position>  (" .. sectionsHint() .. ")" }
+			end
+			local list = layoutList(ctx, "Tabs")
+			local index = table.find(list, id)
+			if not index then
+				return { Success = false, Message = id .. " is hidden; ;layout show " .. id .. " first." }
+			end
+			table.remove(list, index)
+			table.insert(list, math.clamp(math.floor(position), 1, #list + 1), id)
+			return saveLayout(ctx, "Tabs", list, "Section tabs: " .. table.concat(list, ", ") .. ".")
+		end,
+	},
 	Panel = {
 		export = function(ctx: Ctx, _args: { string }): Result
 			local palette = UIPrefs.ResolvePalette(PrefsService.GetEffective(ctx.Executor).Panel)
@@ -290,5 +419,59 @@ CommandRegistry.Register({
 		return run(ctx, "Notifications", "notifyprefs")
 	end,
 } :: any)
+
+local layoutChoices = settingNames("Layout")
+for _, extra in ipairs({ "pin", "unpin", "tabs", "hide", "show", "move" }) do
+	table.insert(layoutChoices, extra)
+end
+
+CommandRegistry.Register({
+	Name = "layout",
+	Aliases = { "panellayout" },
+	Description = "Shows or changes the panel layout: mobile / desktop, compact mode, status bar, section tabs and pinned pages.",
+	Usage = "/layout [setting] [value] [extra...]",
+	ArgHints = {
+		setting = { Type = "choice", Choices = layoutChoices, Description = "A setting, pin, unpin, tabs, hide, show, move, reset or default" },
+		value = { Type = "string", Description = "The new value, a page or a section" },
+		extra = { Type = "text", Description = "More values (move position, server default value)" },
+	},
+	Permission = "panel.open",
+	Public = true, -- checked in run()
+	Category = "Utility",
+	Subcategory = "Appearance",
+	Cooldown = 0.5,
+	Log = false,
+	Undoable = false,
+	RequiresTarget = false,
+	Examples = { "layout", "layout compact on", "layout mode mobile", "layout pin Ranks", "layout hide Insights", "layout move Server 2" },
+	Execute = function(ctx: Ctx): Result
+		return run(ctx, "Layout", "layout")
+	end,
+} :: any)
+
+local function pinCommand(name: string, aliases: { string }, on: boolean)
+	CommandRegistry.Register({
+		Name = name,
+		Aliases = aliases,
+		Description = if on then "Pins a panel page to your favorite pages." else "Removes a page from your favorite pages.",
+		Usage = "/" .. name .. " page",
+		ArgHints = { page = { Type = "choice", Choices = UIPrefs.PAGE_IDS, Description = "A panel page" } },
+		Permission = "panel.open",
+		Category = "Utility",
+		Subcategory = "Appearance",
+		Cooldown = 0.5,
+		Log = false,
+		Undoable = false,
+		RequiresTarget = false,
+		Inverse = if on then "unpin" else "pin",
+		InverseKeepsArguments = true,
+		Examples = { name .. " Ranks" },
+		Execute = function(ctx: Ctx): Result
+			return pin(ctx, ctx.Arguments[1], on)
+		end,
+	} :: any)
+end
+pinCommand("pin", { "favpage" }, true)
+pinCommand("unpin", { "unfavpage" }, false)
 
 return true

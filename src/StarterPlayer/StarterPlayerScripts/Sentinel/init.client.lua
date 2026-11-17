@@ -631,7 +631,7 @@ if sentinelUIFolder then
 			end
 		end
 		if uiBuilt and Shell then
-			Shell.ApplyPrefs(newPrefs.Panel)
+			Shell.ApplyPrefs(newPrefs.Panel, newPrefs.Layout)
 		end
 		if uiBuilt and NotificationCenterRef and type(newPrefs.Notifications) == "table" then
 			NotificationCenterRef.ApplyPrefs(newPrefs.Notifications)
@@ -691,7 +691,7 @@ if sentinelUIFolder then
 
 		Shell.Init()
 		if effectivePrefs then
-			Shell.ApplyPrefs(effectivePrefs.Panel)
+			Shell.ApplyPrefs(effectivePrefs.Panel, effectivePrefs.Layout)
 		end
 		CommandPalette.Init()
 		local CommandBuilder = require(commandBuilderModule)

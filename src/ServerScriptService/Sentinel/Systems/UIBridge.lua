@@ -945,7 +945,7 @@ bindInvoke(setUIPrefsRemote, function(player: Player, scope: any, prefs: any)
 		ok, message = PrefsService.SetPersonal(player, prefs)
 	elseif scope == "reset" then
 		-- prefs may name one section ("Keys") to reset only that one.
-		local section = if type(prefs) == "string" and table.find({ "Panel", "CommandBar", "Keys", "Notifications" }, prefs) then prefs else nil
+		local section = if type(prefs) == "string" and table.find({ "Panel", "CommandBar", "Keys", "Notifications", "Layout" }, prefs) then prefs else nil
 		ok, message = PrefsService.ResetPersonal(player, section)
 	elseif scope == "default" or scope == "resetdefault" then
 		if not PermissionSystem.Has(player, "config.ui") then

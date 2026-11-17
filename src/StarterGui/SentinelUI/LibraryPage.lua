@@ -142,7 +142,9 @@ function LibraryPage.Build(container: Frame, commandPalette: any, commandBuilder
 	local status = make("TextLabel", {
 		Name = "Status",
 		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 360, 1, 0),
+		-- W09: whatever is left after the four buttons (truncated), not a
+		-- fixed 360 px that ran past a narrow panel.
+		Size = UDim2.new(1, -446, 1, 0),
 		Font = Theme.Font.Regular,
 		TextSize = 11,
 		TextColor3 = Theme.Colors.TextSecondary,

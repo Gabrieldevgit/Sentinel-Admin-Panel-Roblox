@@ -40,6 +40,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local BanPromptSystem = require(script.Parent:WaitForChild("BanPromptSystem"))
 
 local PlayersPage = {}
 
@@ -131,6 +132,22 @@ function PlayersPage.Build(container: Frame)
 	detailPanel.Parent = container
 	Theme.corner(detailPanel, Theme.Radius.M)
 	Theme.padding(detailPanel, Theme.Spacing.S)
+
+	-- W09 reflow: in a narrow panel the detail side gets most of the width
+	-- (the list only needs names), and the search box fills its column.
+	local function reflow()
+		local width = container.AbsoluteSize.X
+		if width <= 0 then
+			return
+		end
+		local split = if width < 760 then 0.36 else 0.58
+		tableFrame.Size = UDim2.new(split, -8, 1, -82)
+		detailPanel.Position = UDim2.new(split, 8, 0, 82)
+		detailPanel.Size = UDim2.new(1 - split, -8, 1, -82)
+		searchBox.Size = UDim2.new(if width < 760 then split else 0.4, if width < 760 then -8 else 0, 0, 32)
+	end
+	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+	reflow()
 
 	local detailEmptyLabel = Instance.new("TextLabel")
 	detailEmptyLabel.Name = "EmptyState"
@@ -409,6 +426,12 @@ function PlayersPage.Build(container: Frame)
 		makeActionButton(actionsRow, 10, "Kick", function()
 			runQuickAction("kick " .. row.Name)
 		end)
+		-- W09: ban prompt (type, duration, reason) -> a normal ;ban command.
+		local banButton = makeActionButton(actionsRow, 11, "Ban", function()
+			BanPromptSystem.Show({ Name = row.Name, DisplayName = row.DisplayName })
+		end)
+		banButton.Name = "BanButton"
+		banButton.TextColor3 = Theme.Colors.Error
 
 		makeToggleRow(togglesFrame, 1, "❄ Freeze", row.IsFrozen, function(newValue: boolean)
 			runQuickAction((if newValue then "freeze " else "unfreeze ") .. row.Name)
@@ -749,6 +772,9 @@ function PlayersPage.Build(container: Frame)
 			selectTab(name)
 		end)
 	end
+	-- W09 fix: show + highlight the starting tab, otherwise the first
+	-- selected player had an empty detail panel until a tab was clicked.
+	selectTab(activeTab)
 
 	local function showDetail(row: PlayerRow)
 		latestRow = row

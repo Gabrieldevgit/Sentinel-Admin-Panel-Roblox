@@ -31,7 +31,7 @@ local UIPrefs = require(SentinelShared:WaitForChild("UIPrefs"))
 
 local AppearancePage = {}
 
-local SECTION_TITLES = { Panel = "Panel", CommandBar = "Command bar", Notifications = "Notifications" }
+local SECTION_TITLES = { Panel = "Panel", Layout = "Layout", CommandBar = "Command bar", Notifications = "Notifications" }
 local FIELD_LABELS = {
 	Theme = "Theme",
 	Accent = "Accent colour",
@@ -52,6 +52,10 @@ local FIELD_LABELS = {
 	MaxLines = "Output lines",
 	Rows = "Suggestions shown",
 	Key = "Open key",
+	Mode = "Window layout",
+	Compact = "Compact mode",
+	StatusBar = "Status bar",
+	Labels = "Tab labels",
 }
 
 local function make(className: string, props: { [string]: any }, parent: Instance?): any
@@ -116,11 +120,17 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 		Text = "Changes are saved for you straight away.",
 	}, container)
 
-	local toolbar = make("Frame", {
+	-- W09: scrolls sideways in a narrow panel.
+	local toolbar = make("ScrollingFrame", {
 		Name = "Toolbar",
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
 		Position = UDim2.new(0, 0, 0, 54),
 		Size = UDim2.new(1, 0, 0, 28),
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 0,
 	}, container)
 	make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6) }, toolbar)
 
@@ -332,6 +342,169 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 		end)
 	end
 
+	-- W09 sidebar customisation + favorite pages: section tab order and
+	-- visibility (Layout.Tabs) and pinned pages (Layout.Pinned).
+	-- Names: Body.Navigation.Tabs.Tab_<Section>.{Up, Down, Toggle},
+	-- Body.Navigation.Pages.Page_<PageId>.
+	local function buildNavigation(order: number)
+		local layoutPrefs = snapshot.Effective.Layout or {}
+		local tabsList: { string } = table.clone(layoutPrefs.Tabs or UIPrefs.NAV_SECTIONS)
+		local pinned: { string } = table.clone(layoutPrefs.Pinned or {})
+		local block = make("Frame", {
+			Name = "Navigation",
+			LayoutOrder = order,
+			BackgroundColor3 = Theme.Colors.Surface,
+			Size = UDim2.new(1, -8, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		}, body)
+		Theme.corner(block, Theme.Radius.S)
+		Theme.padding(block, 10)
+		make("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, block)
+		local function title(name: string, text: string, layoutOrder: number)
+			make("TextLabel", {
+				Name = name,
+				LayoutOrder = layoutOrder,
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 18),
+				Font = Theme.Font.Medium,
+				TextSize = 13,
+				TextColor3 = Theme.Colors.Text,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = text,
+			}, block)
+		end
+		local function saveLayout(field: string, list: { string })
+			if snapshot then
+				snapshot.Effective.Layout = snapshot.Effective.Layout or {}
+				snapshot.Effective.Layout[field] = list
+			end
+			request("personal", { Layout = { [field] = list } })
+			render()
+		end
+
+		title("TabsTitle", "SECTION TABS - order and visibility", 1)
+		local tabsFrame = make("Frame", {
+			Name = "Tabs",
+			LayoutOrder = 2,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		}, block)
+		make("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, tabsFrame)
+		local ordered = table.clone(tabsList)
+		for _, id in ipairs(UIPrefs.NAV_SECTIONS) do
+			if not table.find(ordered, id) then
+				table.insert(ordered, id)
+			end
+		end
+		for i, id in ipairs(ordered) do
+			local position = table.find(tabsList, id)
+			local line = make("Frame", {
+				Name = "Tab_" .. id,
+				LayoutOrder = i,
+				BackgroundColor3 = Theme.Colors.SurfaceRaised,
+				BackgroundTransparency = if position then 0 else 0.6,
+				Size = UDim2.new(1, 0, 0, 30),
+			}, tabsFrame)
+			Theme.corner(line, Theme.Radius.S)
+			make("TextLabel", {
+				Name = "Label",
+				BackgroundTransparency = 1,
+				Position = UDim2.new(0, 10, 0, 0),
+				Size = UDim2.new(1, -200, 1, 0),
+				Font = Theme.Font.Medium,
+				TextSize = 13,
+				TextColor3 = if position then Theme.Colors.Text else Theme.Colors.TextSecondary,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = (if position then ("%d.  "):format(position) else "-   ") .. id .. (if position then "" else "  (hidden)"),
+			}, line)
+			local controls = make("Frame", {
+				Name = "Controls",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -4, 0.5, 0),
+				Size = UDim2.new(0, 190, 0, 24),
+			}, line)
+			make("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Right,
+				Padding = UDim.new(0, 4),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}, controls)
+			if position then
+				local up = button(controls, "Up", "Up", 44, 1)
+				up.Size = UDim2.new(0, 44, 0, 24)
+				up.MouseButton1Click:Connect(function()
+					if position > 1 then
+						local list = table.clone(tabsList)
+						list[position], list[position - 1] = list[position - 1], list[position]
+						saveLayout("Tabs", list)
+					end
+				end)
+				local down = button(controls, "Down", "Down", 52, 2)
+				down.Size = UDim2.new(0, 52, 0, 24)
+				down.MouseButton1Click:Connect(function()
+					if position < #tabsList then
+						local list = table.clone(tabsList)
+						list[position], list[position + 1] = list[position + 1], list[position]
+						saveLayout("Tabs", list)
+					end
+				end)
+			end
+			local toggle = button(controls, "Toggle", if position then "Hide" else "Show", 56, 3)
+			toggle.Size = UDim2.new(0, 56, 0, 24)
+			if not position then
+				toggle.BackgroundColor3 = Theme.Colors.Accent
+			end
+			toggle.MouseButton1Click:Connect(function()
+				local list = table.clone(tabsList)
+				if position then
+					if #list <= 1 then
+						say("Keep at least one section tab.", false)
+						return
+					end
+					table.remove(list, position)
+				else
+					table.insert(list, id)
+				end
+				saveLayout("Tabs", list)
+			end)
+		end
+
+		title("PagesTitle", ("PINNED PAGES - favorites at the top of the menu (%d / %d)"):format(#pinned, UIPrefs.MAX_PINNED), 3)
+		local pagesFrame = make("Frame", {
+			Name = "Pages",
+			LayoutOrder = 4,
+			BackgroundTransparency = 1,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+		}, block)
+		make("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Wraps = true,
+			Padding = UDim.new(0, 4),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, pagesFrame)
+		for i, id in ipairs(UIPrefs.PAGE_IDS) do
+			local isPinned = table.find(pinned, id) ~= nil
+			local chip = button(pagesFrame, "Page_" .. id, (if isPinned then "* " else "") .. id, #id * 8 + 30, i)
+			chip.BackgroundColor3 = if isPinned then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+			chip.MouseButton1Click:Connect(function()
+				local list = table.clone(pinned)
+				local index = table.find(list, id)
+				if index then
+					table.remove(list, index)
+				elseif #list >= UIPrefs.MAX_PINNED then
+					say(("You can pin %d pages."):format(UIPrefs.MAX_PINNED), false)
+					return
+				else
+					table.insert(list, id)
+				end
+				saveLayout("Pinned", list)
+			end)
+		end
+	end
+
 	render = function()
 		local scroll = body.CanvasPosition
 		for _, child in ipairs(body:GetChildren()) do
@@ -343,7 +516,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 			return
 		end
 		local order = 0
-		for _, section in ipairs({ "Panel", "CommandBar", "Notifications" }) do
+		for _, section in ipairs({ "Panel", "Layout", "CommandBar", "Notifications" }) do
 			order += 1
 			make("TextLabel", {
 				Name = "Section_" .. section,
@@ -472,6 +645,9 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 			if section == "Panel" then
 				order += 1
 				buildCustomTheme(order)
+			elseif section == "Layout" then
+				order += 1
+				buildNavigation(order)
 			end
 		end
 		body.CanvasPosition = scroll
