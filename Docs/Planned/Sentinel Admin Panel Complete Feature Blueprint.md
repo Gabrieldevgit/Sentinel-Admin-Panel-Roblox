@@ -42,7 +42,7 @@ raycast.com
 Command execution
 - ✅ Chat commands with configurable prefixes (;, /, !, .).
 - ✅ Graphical command palette.
-- Command bar.
+- ✅ Command bar.
 - ✅ Command aliases and shortcuts.
 - ✅ Command chaining and sequential execution.
 - Multiple target selection.
@@ -837,12 +837,12 @@ softpedia.com
 
 
 Appearance
-- Dark theme.
+- ✅ Dark theme.
 - Light theme.
-- Midnight theme.
-- Ocean theme.
+- ✅ Midnight theme.
+- ✅ Ocean theme.
 - Custom themes.
-- Accent color.
+- ✅ Accent color.
 - Custom color palette.
 - Theme import.
 - Theme export.
@@ -865,7 +865,7 @@ Keyboard shortcuts
 - Open panel.
 - Close panel.
 - Open command palette.
-- Open command bar.
+- ✅ Open command bar.
 - Quick Fly.
 - Quick Noclip.
 - Quick God Mode.

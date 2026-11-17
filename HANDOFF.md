@@ -4,10 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-16 (cross-server session) — Cross-Server Management
-(schedule W17-W21, done out of order at the user's request) built and
-verified in Play; **not committed yet** (user commits on request). W08-W16
-are still open. Start with §6 "Next session"._
+_Last updated: 2026-11-16 (UI redesign session) — cross-server work is
+committed and pushed (`87bc1b7`). The **UI redesign** (new shell, terminal
+command bar, themes, per-staff preferences) is built and verified in Play;
+**not committed yet** (user commits on request). W08-W16 are still open.
+Start with §6 "Next session"._
 
 ---
 
@@ -124,8 +125,11 @@ Control" UI, all driven by one command grammar
     `Autocomplete.spec` in W06; the harness lived in the session scratchpad,
     rewrite it if needed — ~80 lines).
   - Save (`save_place`) after important Studio-only edits; Studio can crash.
-- Open the panel in Play with **F6**; command palette **Ctrl+Shift+P**;
-  chat prefix `;`.
+- Open the panel in Play with **F6**; command bar **F2** (key is a
+  preference); command palette **Ctrl+Shift+P**; chat prefix `;`.
+  - Studio MCP: wait ~0.5 s between `textInput` and `keyPress Return`, or
+    Return can arrive before the text. Text boxes take `textInput` reliably
+    only with an `instance_path`.
 
 ## 3. Architecture & conventions
 
@@ -207,6 +211,44 @@ Control" UI, all driven by one command grammar
     Build. Palette empty state: recent (seeded from the persisted Recent
     list), presets, starred favorites first. The sidebar is now a
     ScrollingFrame (12 pages).
+- **UI redesign (after W21, before W08):**
+  - `Shared/UIPrefs.lua` defines every customisation setting once (SPEC,
+    ORDER, THEMES, ACCENTS, BAR_PRESETS, `Sanitize`, `Merge`, `Parse`).
+    Layers: BUILTIN < server default (Owner; ConfigService key
+    `UIDefaults`) < personal (`Systems/PrefsService`, DataStore
+    `Sentinel_Prefs_v1`, key UserId). Add a setting there and the
+    Appearance page and the commands pick it up.
+  - Remotes `GetUIPrefsRemote`, `SetUIPrefsRemote(scope, prefs)` (scope
+    personal | reset | default | resetdefault; defaults need node
+    `config.ui`), push `UIPrefsChangedRemote(snapshot)`. Commands
+    `;commandbar [default] <setting> <value>` and `;theme ...` (both
+    `Public`, checked inside: staff or `commandbar.use`).
+  - `Theme.Apply(panelPrefs)` mutates `Theme.Colors` in place;
+    `Theme.Retint(gui, previousColors)` recolours existing UI by matching
+    old palette colours (so only palette colours follow a theme change);
+    `Theme.tween` respects the Animations preference. init.client's
+    `applyPrefs` runs them for every `Sentinel*` ScreenGui.
+  - `Shell.lua` rewritten: title bar (clock, brand, minimize, close), nav
+    bar with **section tabs** (Dashboard, Players, Moderation+Ranks,
+    Commands+Library, Server+Cross-Server+Economy, Insights = Analytics +
+    Developer) and Search / bell / gear / user, a **sub menu** for sections
+    with several pages, status bar. System section (Settings, Appearance,
+    Notifications) opens from the gear and bell. Instance paths:
+    `Root.NavBar.Tabs.<Section>Tab`, `Root.SubNav.<PageId>NavButton`,
+    `Root.NavBar.Right.{SearchButton,BellButton,GearButton}`. The panel has
+    a `UIScale` (`Root.Scale`): AbsoluteSize includes it, Size offsets don't.
+  - `CommandBar.lua`: terminal-style bar (top or bottom), prompt
+    `name@Sentinel$`, output log, autocomplete box under the typed word
+    (argument name: type, description, suggestions) built on
+    `UsageSpec.Analyze` + `ArgumentTypes.Suggest`. Tab accepts, Up/Down
+    select or walk history, Enter runs, Esc closes, `cls` clears. Rebuilt
+    on every preference change. Available to staff and to ranks with
+    `commandbar.use` (VIP default; **saved rank data is not migrated**, so
+    on an existing place run `;rankperm VIP +commandbar.use`).
+    `GetCommandListRemote` / `GetAutocompleteDataRemote` now also answer
+    those ranks.
+  - `AppearancePage.lua` (gear > Appearance): rows generated from UIPrefs;
+    Owner gets "Make this the server default" / "Reset server default".
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -352,6 +394,16 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **UI redesign leftovers:** pages still hard-code a few non-palette
+  colours and module-level colour tables (they keep the old colour until
+  rejoin after a theme change); Esc also opens Roblox's menu when it closes
+  the command bar; the command bar as a **VIP without the panel** was not
+  tried (needs a second account); Animations off, panel size, Frost /
+  Sentinel bar presets, bar width / opacity / rows / other keys and the
+  minimize + resize handle with the new shell were not clicked through.
+  No light panel theme and no custom colour picker yet (blueprint "Light
+  theme", "Custom themes", "Custom color palette", import / export stay
+  open). `SettingsPage`'s old preferences section is unchanged.
 - **Cross-server, not verified (needs the published place with 2+
   servers; Studio can't teleport):** join server, follow, bring, real
   global kick of a player in another server, global shutdown, update
@@ -439,12 +491,12 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **72/72**
-  (new `CrossServer.spec`, 15 cases).
+- Sentinel server and client boot cleanly in Play. Unit tests **72/72**.
+- **UI redesign** (user request, 2026-11-16) is built and **uncommitted**:
+  see §3. Testing-place prefs and server default were reset to built-in.
 - **W01-W07 are done and committed** (`b5c6620`). **Cross-server
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
-  for the biggest task in `Docs/Planned`; it is **uncommitted** in the
-  working tree (ask the user before committing). W22 (server management
+  for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
 - **Schedule position:** next undone row is **W08 - Settings integration** (themes,
   keybinds, admin config through `ConfigService`, per-admin prefs
@@ -456,7 +508,8 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **189 bullets ✅**: cross-server 27 (server list,
+- Feature blueprint: **195 bullets ✅**: UI redesign 6 (command bar, open
+  command bar key, dark / midnight / ocean themes, accent colour), cross-server 27 (server list,
   JobIds, player counts, uptime, health, version, staff per server, find
   players across servers, global ban / unban / warn / announcement /
   lockdown, staff chat, moderation history, acknowledgements, operation
@@ -471,7 +524,7 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit the cross-server work** if the user agrees. Then **publish
+1. **Commit the UI redesign** if the user agrees. Then **publish
    and test with two live servers** (§5 cross-server list) and ✅ the
    remaining §6 blueprint bullets.
 2. **`GrantScript`**: Studio-only `Workspace.SentinelWorkspace.GrantScript`
@@ -486,6 +539,21 @@ Rules that keep it sound:
 6. Then start **W08**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-16 (UI redesign)** - User asked for a clean redesign before
+  any other W: terminal-style command bar (customisable per staff / VIP,
+  Owner picks the default) and a dynamic panel with animations. Built
+  `Shared/UIPrefs`, `Systems/PrefsService`, `;commandbar` / `;theme`,
+  dynamic `Theme` (Apply / Retint / tween), new `Shell` (section tabs, sub
+  menu, status bar, open / close / page animations), `CommandBar`,
+  `AppearancePage`. Fixed while testing: Esc didn't close the bar, typed
+  text was lost when the bar rebuilt, theme chips overlapped their colour
+  dot. Tests 72/72. Verified in Play by keyboard and mouse: bar open (F2),
+  command and argument suggestions, Tab / Down / Enter, error colouring,
+  Carbon preset, bottom position, font size live; section tabs and sub
+  menu; Appearance page switching Ocean + Cyan live; personal > default >
+  built-in layering and input validation by remote. ✅ 6 bullets. Not
+  committed. (Cross-server work committed + pushed as `87bc1b7`.)
 
 - **2026-11-16 (cross-server, W17-W21 out of order)** - User asked for the
   biggest task in `Docs/Planned`. Built `Core/CrossServerNode`,

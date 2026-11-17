@@ -550,6 +550,8 @@ if sentinelUIFolder then
 		{ Name = "LibraryPage" },
 		{ Name = "CommandBuilder" },
 		{ Name = "CrossServerPage" },
+		{ Name = "CommandBar" },
+		{ Name = "AppearancePage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -602,8 +604,71 @@ if sentinelUIFolder then
 	local uiBuilt = false
 	local Shell, CommandPalette
 
+	-- -----------------------------------------------------------------------
+	-- UI preferences (redesign): panel theme + command bar look. Effective =
+	-- built-in < server default (Owner) < personal. Applied before anything
+	-- is built, and live whenever the server reports a change.
+	-- -----------------------------------------------------------------------
+	local Theme = require(themeModule)
+	local CommandBar: any = nil
+	local effectivePrefs: any = nil
+	local uiPrefsRemote = SentinelShared:WaitForChild("GetUIPrefsRemote", 15) :: RemoteFunction?
+	local prefsChangedRemote = SentinelShared:WaitForChild("UIPrefsChangedRemote", 15) :: RemoteEvent?
+
+	local function applyPrefs(newPrefs: any)
+		if type(newPrefs) ~= "table" or type(newPrefs.Panel) ~= "table" then
+			return
+		end
+		effectivePrefs = newPrefs
+		local previous = Theme.Apply(newPrefs.Panel)
+		-- Recolour what already exists (the command bar rebuilds itself).
+		for _, gui in ipairs(playerGui:GetChildren()) do
+			if gui:IsA("ScreenGui") and gui.Name:sub(1, 8) == "Sentinel" and gui.Name ~= "SentinelCommandBar" and gui.Name ~= "SentinelOverlay" then
+				Theme.Retint(gui, previous)
+			end
+		end
+		if uiBuilt and Shell then
+			Shell.ApplyPrefs(newPrefs.Panel)
+		end
+		if CommandBar then
+			CommandBar.ApplyPrefs(newPrefs)
+		end
+	end
+
+	-- Asks the server what this player may use. The command bar is built
+	-- for staff and for ranks with "commandbar.use" (VIP); asked again on
+	-- F2 until it exists, so a rank granted mid-session works without a
+	-- rejoin.
+	local function ensureCommandBar(): boolean
+		if CommandBar then
+			return true
+		end
+		if not uiPrefsRemote then
+			return false
+		end
+		local ok, snapshot = pcall(function()
+			return (uiPrefsRemote :: RemoteFunction):InvokeServer()
+		end)
+		if not ok or type(snapshot) ~= "table" or not snapshot.CanCommandBar then
+			return false
+		end
+		applyPrefs(snapshot.Effective)
+		CommandBar = require(loadedModules.CommandBar)
+		CommandBar.Init(effectivePrefs)
+		return true
+	end
+	task.spawn(ensureCommandBar)
+
+	if prefsChangedRemote then
+		prefsChangedRemote.OnClientEvent:Connect(function(update: any)
+			if type(update) == "table" then
+				applyPrefs(update.Effective)
+			end
+		end)
+	end
+
 	local function buildUI()
-		local Theme = require(themeModule)
+		ensureCommandBar() -- also loads + applies the theme before pages are required
 		Shell = require(shellModule)
 		CommandPalette = require(commandPaletteModule)
 		local DashboardPage = require(dashboardPageModule)
@@ -619,6 +684,9 @@ if sentinelUIFolder then
 		local RankManagementPage = require(rankPageModule)
 
 		Shell.Init()
+		if effectivePrefs then
+			Shell.ApplyPrefs(effectivePrefs.Panel)
+		end
 		CommandPalette.Init()
 		local CommandBuilder = require(commandBuilderModule)
 		local LibraryPage = require(libraryPageModule)
@@ -641,6 +709,7 @@ if sentinelUIFolder then
 		require(crossServerPageModule).Build(crossServerContainer, NotificationCenter)
 		RankManagementPage.Build(Shell.RegisterPage("Ranks", "Ranks", "👑"), Shell.GetPageIds())
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
+		require(loadedModules.AppearancePage).Build(Shell.RegisterPage("Appearance", "Appearance", "🎨"), CommandBar)
 
 		-- Page visibility permissions: hide pages the player's ranks
 		-- explicitly deny ("!page.<id>"). Visible by default.
@@ -730,6 +799,13 @@ if sentinelUIFolder then
 		end
 		if input.KeyCode == Enum.KeyCode.F6 then
 			tryOpenPanel()
+		elseif input.KeyCode == Enum.KeyCode.F2 and not CommandBar then
+			-- Not built yet (no access at join): ask again, then open.
+			task.spawn(function()
+				if ensureCommandBar() and CommandBar and effectivePrefs.CommandBar.Key == "F2" then
+					CommandBar.Open()
+				end
+			end)
 		end
 	end)
 end

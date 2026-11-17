@@ -158,6 +158,8 @@ local LIMITS: { [string]: { number } } = {
 	GetCommandHistoryRemote = { 6, 2 },
 	GetCommandLibraryRemote = { 4, 1 },
 	UpdateCommandLibraryRemote = { 6, 1 },
+	GetUIPrefsRemote = { 5, 1 },
+	SetUIPrefsRemote = { 8, 2 },
 	GetCrossServerSnapshotRemote = { 6, 1.5 },
 	GetCrossServerServerRemote = { 6, 2 },
 	CrossServerFindRemote = { 4, 1 }, -- may call Roblox's user lookup
@@ -273,7 +275,9 @@ local function serializeArgs(args: any): { any }
 end
 
 bindInvoke(getCommandListRemote, function(player: Player)
-	if not isStaff(player) then
+	-- Staff, and ranks that may use the command bar (e.g. VIP). The list is
+	-- permission-aware either way: only commands this player can run.
+	if not isStaff(player) and not PermissionSystem.Has(player, "commandbar.use") then
 		return {}
 	end
 	-- Permission-aware: only commands this player can actually run.
@@ -569,7 +573,7 @@ local getAutocompleteDataRemote = getOrCreate("GetAutocompleteDataRemote", "Remo
 
 -- Palette autocomplete (W05): rank names/colours. Staff only.
 bindInvoke(getAutocompleteDataRemote, function(player: Player)
-	if not isStaff(player) then
+	if not isStaff(player) and not PermissionSystem.Has(player, "commandbar.use") then
 		return nil
 	end
 	local ranks = {}
@@ -906,6 +910,61 @@ bindInvoke(crossServerFindRemote, function(player: Player, query: any)
 		end
 	end
 	return result
+end)
+
+-- ---------------------------------------------------------------------------
+-- UI preferences (redesign): panel theme and command bar look. Personal
+-- settings for anyone who may use the panel or the command bar; the server
+-- default needs the "config.ui" node (Owner). Values are validated by
+-- PrefsService (Shared/UIPrefs.Sanitize).
+-- ---------------------------------------------------------------------------
+local PrefsService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PrefsService"))
+local getUIPrefsRemote = getOrCreate("GetUIPrefsRemote", "RemoteFunction") :: RemoteFunction
+local setUIPrefsRemote = getOrCreate("SetUIPrefsRemote", "RemoteFunction") :: RemoteFunction
+
+bindInvoke(getUIPrefsRemote, function(player: Player)
+	local canBar = PrefsService.CanUseCommandBar(player)
+	if not canBar then
+		return { CanCommandBar = false, CanPanel = false }
+	end
+	local snapshot = PrefsService.Snapshot(player)
+	snapshot.CanCommandBar = true
+	snapshot.CanPanel = isStaff(player)
+	snapshot.CanSetDefaults = PermissionSystem.Has(player, "config.ui")
+	snapshot.Prefixes = ConfigService.GetPrefixes()
+	return snapshot
+end)
+
+bindInvoke(setUIPrefsRemote, function(player: Player, scope: any, prefs: any)
+	if not PrefsService.CanUseCommandBar(player) or type(scope) ~= "string" then
+		return { Success = false, Message = "Not allowed." }
+	end
+	local ok, message
+	if scope == "personal" then
+		ok, message = PrefsService.SetPersonal(player, prefs)
+	elseif scope == "reset" then
+		ok, message = PrefsService.ResetPersonal(player, nil)
+	elseif scope == "default" or scope == "resetdefault" then
+		if not PermissionSystem.Has(player, "config.ui") then
+			return { Success = false, Message = "Only ranks with config.ui (Owner) can change the server default." }
+		end
+		if scope == "default" then
+			ok, message = PrefsService.SetDefaults(prefs, player)
+		else
+			ok, message = PrefsService.ResetDefaults(nil, player)
+		end
+		Logger.Write({
+			Executor = tostring(player.UserId),
+			ExecutorName = player.Name,
+			Command = "config.ui",
+			Result = if ok then "Success" else "Failure",
+			Severity = "Info",
+			Message = message,
+		})
+	else
+		return { Success = false, Message = "Unknown request." }
+	end
+	return { Success = ok, Message = message }
 end)
 
 return true

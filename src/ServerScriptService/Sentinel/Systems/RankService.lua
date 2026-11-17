@@ -214,7 +214,7 @@ local function defaultState(): State
 				Color = { 0, 255, 127 },
 				Icon = "⭐",
 				Description = "VIP perks (fly, noclip). Cannot open the panel.",
-				Nodes = { "player.fly", "player.noclip" },
+				Nodes = { "player.fly", "player.noclip", "commandbar.use" },
 				Inherits = {},
 			},
 		},

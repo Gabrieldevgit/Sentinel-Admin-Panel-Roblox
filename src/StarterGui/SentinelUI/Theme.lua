@@ -58,6 +58,87 @@ Theme.Motion = {
 	Spring = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 }
 
+-- ---------------------------------------------------------------------------
+-- Dynamic themes (UI redesign). Theme.Colors is mutated in place, so every
+-- module keeps reading Theme.Colors.X. Apply() before the pages are built;
+-- when the theme changes later, Retint() recolours what already exists.
+-- ---------------------------------------------------------------------------
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UIPrefs = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("UIPrefs"))
+
+Theme.Animations = true
+
+-- Sets the palette from panel prefs ({ Theme, Accent, Animations }).
+-- Returns the previous colours (for Retint).
+function Theme.Apply(panel: any): { [string]: Color3 }
+	local previous = table.clone(Theme.Colors)
+	local set = UIPrefs.THEMES[panel and panel.Theme] or UIPrefs.THEMES[UIPrefs.BUILTIN.Panel.Theme]
+	for key, color in pairs(set) do
+		(Theme.Colors :: any)[key] = color
+	end
+	Theme.Colors.Accent = UIPrefs.ACCENTS[panel and panel.Accent] or UIPrefs.ACCENTS[UIPrefs.BUILTIN.Panel.Accent]
+	Theme.Animations = not (panel and panel.Animations == false)
+	return previous
+end
+
+local COLOR_PROPS = { "BackgroundColor3", "TextColor3", "ImageColor3", "PlaceholderColor3", "ScrollBarImageColor3", "BorderColor3" }
+
+-- Recolours existing UI: any colour equal to an old palette colour becomes
+-- the matching new one. Colours that were never palette colours stay.
+function Theme.Retint(root: Instance, previous: { [string]: Color3 })
+	local map: { { Color3 } } = {}
+	for key, old in pairs(previous) do
+		local new = (Theme.Colors :: any)[key]
+		if new and new ~= old then
+			table.insert(map, { old, new })
+		end
+	end
+	if #map == 0 then
+		return
+	end
+	local function swap(inst: any, prop: string)
+		local ok, value = pcall(function()
+			return inst[prop]
+		end)
+		if ok and typeof(value) == "Color3" then
+			for _, pair in ipairs(map) do
+				if value == pair[1] then
+					inst[prop] = pair[2]
+					return
+				end
+			end
+		end
+	end
+	local count = 0
+	for _, inst in ipairs(root:GetDescendants()) do
+		if inst:IsA("GuiObject") then
+			for _, prop in ipairs(COLOR_PROPS) do
+				swap(inst, prop)
+			end
+		elseif inst:IsA("UIStroke") then
+			swap(inst, "Color")
+		end
+		count += 1
+		if count % 1500 == 0 then
+			task.wait()
+		end
+	end
+end
+
+-- Tween that respects the Animations preference (jumps to the goal when off).
+function Theme.tween(inst: Instance, info: TweenInfo, goal: { [string]: any }): Tween?
+	if not Theme.Animations then
+		for prop, value in pairs(goal) do
+			(inst :: any)[prop] = value
+		end
+		return nil
+	end
+	local tween = TweenService:Create(inst, info, goal)
+	tween:Play()
+	return tween
+end
+
 -- Small helpers used all over the UI layer.
 function Theme.corner(parent: Instance, radius: UDim?)
 	local corner = Instance.new("UICorner")

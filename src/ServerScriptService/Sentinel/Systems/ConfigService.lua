@@ -44,6 +44,9 @@ ConfigService.ALLOWED_PREFIXES = { ";", ":", "!", ".", "/", "-", "?", ">" }
 
 local DEFAULTS: { [string]: any } = {
 	Prefixes = { ";" },
+	-- Owner-chosen UI defaults (panel theme, command bar look). Validated
+	-- field by field by Shared/UIPrefs.Sanitize in Systems/PrefsService.
+	UIDefaults = {},
 }
 
 local values: { [string]: any } = table.clone(DEFAULTS)
@@ -76,6 +79,9 @@ end
 
 local VALIDATORS: { [string]: (any) -> boolean } = {
 	Prefixes = validPrefixes,
+	UIDefaults = function(value: any): boolean
+		return type(value) == "table"
+	end,
 }
 
 local function apply(key: string, value: any)
