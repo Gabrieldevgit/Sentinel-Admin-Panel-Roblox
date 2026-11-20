@@ -5,6 +5,10 @@
 	Purpose:
 		Dedicated Commands catalog page for Sentinel, inspired by HD Admin & Nexus Admin:
 		- Searchable and category-filtered directory of all registered commands
+		- Target bar: Run / Fill / Build act on the player selected on the
+		  Players page (Selection.lua), or on "me" when none is selected
+		- Narrow / short panels (phones): cards stack their buttons under
+		  the text, the header shrinks
 		- Live view of usage syntax, required permission nodes, and aliases
 		- One-click "Run" and "Fill into Palette" action buttons
 
@@ -19,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Selection = require(script.Parent:WaitForChild("Selection"))
 
 local CommandsPage = {}
 
@@ -86,6 +91,71 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 	subHeader.Text = "Browse, search, and run any command available to your role."
 	subHeader.Parent = container
 
+	-- Target bar: which player Run / Fill / Build use.
+	local targetBar = Instance.new("Frame")
+	targetBar.Name = "TargetBar"
+	targetBar.Position = UDim2.new(0, 0, 0, 56)
+	targetBar.Size = UDim2.new(1, 0, 0, 34)
+	targetBar.BackgroundColor3 = Theme.Colors.Surface
+	targetBar.BorderSizePixel = 0
+	targetBar.Parent = container
+	Theme.corner(targetBar, Theme.Radius.S)
+
+	local targetAvatar = Instance.new("ImageLabel")
+	targetAvatar.Name = "Avatar"
+	targetAvatar.AnchorPoint = Vector2.new(0, 0.5)
+	targetAvatar.Position = UDim2.new(0, 6, 0.5, 0)
+	targetAvatar.Size = UDim2.fromOffset(24, 24)
+	targetAvatar.BackgroundColor3 = Theme.Colors.SurfaceRaised
+	targetAvatar.BorderSizePixel = 0
+	targetAvatar.Parent = targetBar
+	Theme.corner(targetAvatar, Theme.Radius.Pill)
+
+	local targetLabel = Instance.new("TextLabel")
+	targetLabel.Name = "Label"
+	targetLabel.BackgroundTransparency = 1
+	targetLabel.Position = UDim2.new(0, 38, 0, 0)
+	targetLabel.Size = UDim2.new(1, -120, 1, 0)
+	targetLabel.Font = Theme.Font.Regular
+	targetLabel.TextSize = 13
+	targetLabel.TextColor3 = Theme.Colors.TextSecondary
+	targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+	targetLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	targetLabel.RichText = true
+	targetLabel.Parent = targetBar
+
+	local clearTarget = Instance.new("TextButton")
+	clearTarget.Name = "ClearButton"
+	clearTarget.AnchorPoint = Vector2.new(1, 0.5)
+	clearTarget.Position = UDim2.new(1, -5, 0.5, 0)
+	clearTarget.Size = UDim2.fromOffset(72, 26)
+	clearTarget.BackgroundColor3 = Theme.Colors.SurfaceRaised
+	clearTarget.AutoButtonColor = true
+	clearTarget.Font = Theme.Font.Medium
+	clearTarget.TextSize = 12
+	clearTarget.TextColor3 = Theme.Colors.Text
+	clearTarget.Text = "Use me"
+	clearTarget.Parent = targetBar
+	Theme.corner(clearTarget, Theme.Radius.Pill)
+	clearTarget.MouseButton1Click:Connect(function()
+		Selection.Set(nil, nil)
+	end)
+
+	local function refreshTarget()
+		local selected = Selection.Get()
+		local userId = if selected then selected.UserId else Players.LocalPlayer.UserId
+		targetAvatar.Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(userId)
+		local strong = Theme.Colors.Text:ToHex()
+		if selected then
+			targetLabel.Text = ('Target: <font color="#%s"><b>@%s</b></font>  (selected on the Players page)'):format(strong, selected.Name)
+		else
+			targetLabel.Text = ('Target: <font color="#%s"><b>yourself</b></font>  (select a player on the Players page to target them)'):format(strong)
+		end
+		clearTarget.Visible = selected ~= nil
+	end
+	refreshTarget()
+	Selection.Changed:Connect(refreshTarget)
+
 	-- Search Input
 	local searchBox = Instance.new("TextBox")
 	searchBox.Name = "CommandSearch"
@@ -142,9 +212,46 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	listLayout.Parent = scrollFrame
 
+	-- Narrow (phone / small window): search and categories on their own
+	-- rows, card buttons under the text. Short: smaller header.
+	local narrow = false
+	local function placeHeader()
+		local size = container.AbsoluteSize
+		local short = size.Y > 0 and size.Y < 380
+		subHeader.Visible = not short
+		header.TextSize = if short then 17 else 20
+		local y = if short then 28 else 56
+		targetBar.Position = UDim2.new(0, 0, 0, y)
+		y += 34 + 6
+		if narrow then
+			searchBox.Position = UDim2.new(0, 0, 0, y)
+			searchBox.Size = UDim2.new(1, 0, 0, 32)
+			y += 32 + 4
+			filterBar.Position = UDim2.new(0, 0, 0, y)
+			filterBar.Size = UDim2.new(1, 0, 0, 32)
+			y += 32 + 6
+		else
+			searchBox.Position = UDim2.new(0, 0, 0, y)
+			searchBox.Size = UDim2.new(0.4, 0, 0, 32)
+			filterBar.Position = UDim2.new(0.42, 0, 0, y)
+			filterBar.Size = UDim2.new(0.58, 0, 0, 32)
+			y += 32 + 8
+		end
+		scrollFrame.Position = UDim2.new(0, 0, 0, y)
+		scrollFrame.Size = UDim2.new(1, 0, 1, -y)
+	end
+
 	local allCommands: { CommandEntry } = {}
 	local activeCategory = "All"
 	local categoryButtons: { [string]: TextButton } = {}
+
+	local function needsTarget(cmd: CommandEntry): boolean
+		local flag = (cmd :: any).RequiresTarget
+		if flag ~= nil then
+			return flag == true
+		end
+		return cmd.Usage:find("target") ~= nil
+	end
 
 	local function renderCommands()
 		for _, child in ipairs(scrollFrame:GetChildren()) do
@@ -179,7 +286,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 
 				local card = Instance.new("Frame")
 				card.Name = "CmdCard_" .. cmd.Name
-				card.Size = UDim2.new(1, 0, 0, 68)
+				card.Size = UDim2.new(1, 0, 0, if narrow then 104 else 68)
 				card.BackgroundColor3 = Theme.Colors.SurfaceRaised
 				card.BorderSizePixel = 0
 				card.Parent = scrollFrame
@@ -189,7 +296,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 				-- Header line: Name + Aliases + Category
 				local titleLine = Instance.new("Frame")
 				titleLine.BackgroundTransparency = 1
-				titleLine.Size = UDim2.new(1, -200, 0, 20)
+				titleLine.Size = UDim2.new(1, if narrow then 0 else -200, 0, 20)
 				titleLine.Parent = card
 
 				local titleLayout = Instance.new("UIListLayout")
@@ -236,7 +343,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 				local descLbl = Instance.new("TextLabel")
 				descLbl.BackgroundTransparency = 1
 				descLbl.Position = UDim2.new(0, 0, 0, 22)
-				descLbl.Size = UDim2.new(1, -340, 0, 16)
+				descLbl.Size = UDim2.new(1, if narrow then 0 else -340, 0, 16)
 				descLbl.Font = Theme.Font.Regular
 				descLbl.TextSize = 12
 				descLbl.TextColor3 = Theme.Colors.Text
@@ -249,7 +356,8 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 				local usageLbl = Instance.new("TextLabel")
 				usageLbl.BackgroundTransparency = 1
 				usageLbl.Position = UDim2.new(0, 0, 0, 38)
-				usageLbl.Size = UDim2.new(1, -340, 0, 16)
+				usageLbl.Size = UDim2.new(1, if narrow then 0 else -340, 0, 16)
+				usageLbl.TextTruncate = Enum.TextTruncate.AtEnd
 				usageLbl.Font = Theme.Font.Mono
 				usageLbl.TextSize = 11
 				usageLbl.TextColor3 = Theme.Colors.TextSecondary
@@ -271,15 +379,21 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 				local btnGroup = Instance.new("Frame")
 				btnGroup.Name = "Actions"
 				btnGroup.BackgroundTransparency = 1
-				btnGroup.AnchorPoint = Vector2.new(1, 0.5)
-				btnGroup.Position = UDim2.new(1, 0, 0.5, 0)
-				btnGroup.Size = UDim2.new(0, 330, 0, 30)
+				if narrow then
+					btnGroup.AnchorPoint = Vector2.new(0, 0)
+					btnGroup.Position = UDim2.new(0, 0, 0, 58)
+					btnGroup.Size = UDim2.new(1, 0, 0, 30)
+				else
+					btnGroup.AnchorPoint = Vector2.new(1, 0.5)
+					btnGroup.Position = UDim2.new(1, 0, 0.5, 0)
+					btnGroup.Size = UDim2.new(0, 330, 0, 30)
+				end
 				btnGroup.Parent = card
 
 				local btnLayout = Instance.new("UIListLayout")
 				btnLayout.FillDirection = Enum.FillDirection.Horizontal
 				btnLayout.Padding = UDim.new(0, 6)
-				btnLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+				btnLayout.HorizontalAlignment = if narrow then Enum.HorizontalAlignment.Left else Enum.HorizontalAlignment.Right
 				btnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 				btnLayout.Parent = btnGroup
 
@@ -317,7 +431,10 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 				Theme.corner(buildBtn, Theme.Radius.S)
 				buildBtn.MouseButton1Click:Connect(function()
 					if commandBuilder then
-						commandBuilder.Open({ Command = cmd.Name })
+						commandBuilder.Open({
+							Command = cmd.Name,
+							Target = if needsTarget(cmd) then Selection.TargetText() else nil,
+						})
 					end
 				end)
 
@@ -340,6 +457,7 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 
 				-- Fill into Palette button
 				local fillBtn = Instance.new("TextButton")
+				fillBtn.Name = "FillButton"
 				fillBtn.Size = UDim2.new(0, 56, 0, 26)
 				fillBtn.BackgroundColor3 = Theme.Colors.Surface
 				fillBtn.Font = Theme.Font.Medium
@@ -351,12 +469,13 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 
 				fillBtn.MouseButton1Click:Connect(function()
 					if commandPalette and commandPalette.Open then
-						commandPalette.Open(cmd.Name .. " ")
+						commandPalette.Open(cmd.Name .. " " .. (if needsTarget(cmd) then Selection.TargetText() .. " " else ""))
 					end
 				end)
 
 				-- Run / Execute button
 				local runBtn = Instance.new("TextButton")
+				runBtn.Name = "RunButton"
 				runBtn.Size = UDim2.new(0, 56, 0, 26)
 				runBtn.BackgroundColor3 = Theme.Colors.Accent
 				runBtn.Font = Theme.Font.Medium
@@ -368,12 +487,14 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 
 				runBtn.MouseButton1Click:Connect(function()
 					if executeCommandRemote then
-						-- Run with localplayer as default if required
+						-- Target = the player selected on the Players page,
+						-- else yourself. The server checks permissions and
+						-- rank protection as usual.
 						local raw = cmd.Name
-						if cmd.Usage:find("target") then
-							raw = cmd.Name .. " me"
+						if needsTarget(cmd) then
+							raw = cmd.Name .. " " .. Selection.TargetText()
 						end
-						executeCommandRemote:FireServer(raw)
+						executeCommandRemote:FireServer(raw, { Source = "panel" })
 					end
 				end)
 			end
@@ -417,6 +538,19 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 	end
 
 	searchBox:GetPropertyChangedSignal("Text"):Connect(renderCommands)
+
+	local function reflow()
+		local width = container.AbsoluteSize.X
+		local nowNarrow = width > 0 and width < 640
+		placeHeader()
+		if nowNarrow ~= narrow then
+			narrow = nowNarrow
+			placeHeader()
+			renderCommands()
+		end
+	end
+	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
+	reflow()
 
 	-- Load command list from server
 	local function fetchCommands()

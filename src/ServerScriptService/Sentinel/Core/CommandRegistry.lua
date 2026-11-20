@@ -220,6 +220,12 @@ function CommandRegistry.Resolve(nameOrAlias: string): CommandDefinition?
 	if canonical then
 		return byName[canonical]
 	end
+	-- Names are registered in lower case; ";Sentinel" or ";openSentinel"
+	-- should still work.
+	local lower = nameOrAlias:lower()
+	if lower ~= nameOrAlias then
+		return CommandRegistry.Resolve(lower)
+	end
 	return nil
 end
 

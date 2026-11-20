@@ -27,7 +27,11 @@ local function makeCard(parent: Instance, layoutOrder: number, label: string): (
 	local card = Instance.new("Frame")
 	card.Name = label .. "Card"
 	card.LayoutOrder = layoutOrder
-	card.Size = UDim2.new(0, 150, 0, 80)
+	card.Size = UDim2.new(0, 150, 0, 0)
+	card.AutomaticSize = Enum.AutomaticSize.Y
+	local minHeight = Instance.new("UISizeConstraint")
+	minHeight.MinSize = Vector2.new(0, 80)
+	minHeight.Parent = card
 	card.BackgroundColor3 = Theme.Colors.Surface
 	card.BorderSizePixel = 0
 	card.Parent = parent
@@ -35,9 +39,18 @@ local function makeCard(parent: Instance, layoutOrder: number, label: string): (
 	Theme.stroke(card, Theme.Colors.Border, 1)
 	Theme.padding(card, Theme.Spacing.S)
 
+	-- Stacked (not fixed offsets) so enlarged phone text can't overlap.
+	local stack = Instance.new("UIListLayout")
+	stack.SortOrder = Enum.SortOrder.LayoutOrder
+	stack.Padding = UDim.new(0, 2)
+	stack.Parent = card
+
 	local labelText = Instance.new("TextLabel")
+	labelText.LayoutOrder = 1
 	labelText.BackgroundTransparency = 1
-	labelText.Size = UDim2.new(1, 0, 0, 18)
+	labelText.Size = UDim2.new(1, 0, 0, 0)
+	labelText.AutomaticSize = Enum.AutomaticSize.Y
+	labelText.TextTruncate = Enum.TextTruncate.AtEnd
 	labelText.Font = Theme.Font.Regular
 	labelText.TextSize = 12
 	labelText.TextColor3 = Theme.Colors.TextSecondary
@@ -48,8 +61,10 @@ local function makeCard(parent: Instance, layoutOrder: number, label: string): (
 	local valueText = Instance.new("TextLabel")
 	valueText.Name = "Value"
 	valueText.BackgroundTransparency = 1
-	valueText.Position = UDim2.new(0, 0, 0, 22)
-	valueText.Size = UDim2.new(1, 0, 0, 36)
+	valueText.LayoutOrder = 2
+	valueText.Size = UDim2.new(1, 0, 0, 0)
+	valueText.AutomaticSize = Enum.AutomaticSize.Y
+	valueText.TextTruncate = Enum.TextTruncate.AtEnd
 	valueText.Font = Theme.Font.Black
 	valueText.TextSize = 26
 	valueText.TextColor3 = Theme.Colors.Text
@@ -104,9 +119,11 @@ function DashboardPage.Build(container: Frame, commandPalette: any)
 	cardRow.BackgroundTransparency = 1
 	cardRow.Parent = body
 
-	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.new(0, 150, 0, 80)
-	layout.CellPadding = UDim2.new(0, 12, 0, 12)
+	-- Wrapping row: cards grow with their text (phones enlarge text).
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Wraps = true
+	layout.Padding = UDim.new(0, 12)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = cardRow
 

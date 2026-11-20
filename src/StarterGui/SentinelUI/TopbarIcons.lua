@@ -26,6 +26,7 @@ local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local TopbarIcons = {}
 
@@ -121,6 +122,10 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 	local hovered: TextButton? = nil
 
 	local function showTooltip(button: TextButton, text: string)
+		-- Touch screens have no hover: a tap would leave the tooltip stuck.
+		if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+			return
+		end
 		tooltip.Text = text
 		-- AbsolutePosition is measured from below Roblox's bar, Position
 		-- offsets from the screen top (gui.AbsolutePosition = (0, -inset)).
@@ -142,6 +147,7 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 		button.BorderSizePixel = 0
 		button.Font = icon.Font or Enum.Font.BuilderSansExtraBold
 		button.TextSize = icon.GlyphSize or 20
+		button:SetAttribute("GlyphSize", button.TextSize)
 		button.TextColor3 = Color3.new(1, 1, 1)
 		button.Text = icon.Glyph
 		button.Parent = group
@@ -178,20 +184,36 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 		if height <= 0 then
 			height = 36
 		end
-		local buttonSize = math.clamp(height - 18, 28, 40)
-		local pillHeight = buttonSize + 4
-		local left = if inset.Width > 0 then inset.Min.X else 104
-		-- Roblox's own pills sit 2 px above the bottom of the inset.
-		group.Position = UDim2.fromOffset(left + 4, math.max(0, height - pillHeight - 2))
+		-- Desktop's new bar (58) gets 44 px pills like Roblox's own; the
+		-- shorter phone / classic bars get smaller ones that still fit.
+		local pillHeight = math.clamp(height - 14, 30, 44)
+		local buttonSize = pillHeight - 4
+		local y = math.max(0, height - pillHeight - 2) -- Roblox's pills sit 2 px above the inset bottom
+		local touchOnly = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+		if touchOnly then
+			-- Phones: Roblox's left pills (menu, chat, mic) are wider than
+			-- the space TopbarInset reports, so they covered this pill. The
+			-- right end of the bar is free on mobile.
+			local right = if inset.Width > 0 then inset.Max.X else gui.AbsoluteSize.X - 16
+			group.AnchorPoint = Vector2.new(1, 0)
+			group.Position = UDim2.fromOffset(right - 8, y)
+		else
+			local left = if inset.Width > 0 then inset.Min.X else 104
+			group.AnchorPoint = Vector2.new(0, 0)
+			group.Position = UDim2.fromOffset(left + 4, y)
+		end
 		group.Size = UDim2.fromOffset(0, pillHeight)
 		pad.PaddingLeft = UDim.new(0, 2)
 		pad.PaddingRight = UDim.new(0, 2)
 		for _, button in pairs(buttons) do
 			button.Size = UDim2.fromOffset(buttonSize, buttonSize)
+			local base = button:GetAttribute("GlyphSize") or 20
+			button.TextSize = math.max(12, math.floor(base * buttonSize / 40))
 		end
 	end
 	place()
 	GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(place)
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(place)
 
 	-- Keep the "open" highlight in sync with the panel / command bar,
 	-- however they were opened (key, command, button).

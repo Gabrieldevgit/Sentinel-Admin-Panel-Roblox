@@ -40,6 +40,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Selection = require(script.Parent:WaitForChild("Selection"))
 local BanPromptSystem = require(script.Parent:WaitForChild("BanPromptSystem"))
 
 local PlayersPage = {}
@@ -140,11 +141,25 @@ function PlayersPage.Build(container: Frame)
 		if width <= 0 then
 			return
 		end
-		local split = if width < 760 then 0.36 else 0.58
-		tableFrame.Size = UDim2.new(split, -8, 1, -82)
-		detailPanel.Position = UDim2.new(split, 8, 0, 82)
-		detailPanel.Size = UDim2.new(1 - split, -8, 1, -82)
-		searchBox.Size = UDim2.new(if width < 760 then split else 0.4, if width < 760 then -8 else 0, 0, 32)
+		-- Phones (landscape ~800 wide, ~250 tall): the search box moves
+		-- into the title row so the list and details get the height.
+		local narrow = width < 900
+		local short = container.AbsoluteSize.Y > 0 and container.AbsoluteSize.Y < 380
+		local split = if narrow then 0.36 else 0.58
+		local top = if short then 40 else 82
+		tableFrame.Size = UDim2.new(split, -8, 1, -top)
+		tableFrame.Position = UDim2.new(0, 0, 0, top)
+		detailPanel.Position = UDim2.new(split, 8, 0, top)
+		detailPanel.Size = UDim2.new(1 - split, -8, 1, -top)
+		if short then
+			searchBox.AnchorPoint = Vector2.new(1, 0)
+			searchBox.Position = UDim2.new(1, 0, 0, 0)
+			searchBox.Size = UDim2.new(1 - split, -8, 0, 32)
+		else
+			searchBox.AnchorPoint = Vector2.new(0, 0)
+			searchBox.Position = UDim2.new(0, 0, 0, 40)
+			searchBox.Size = UDim2.new(if narrow then split else 0.4, if narrow then -8 else 0, 0, 32)
+		end
 	end
 	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
 	reflow()
@@ -844,6 +859,8 @@ function PlayersPage.Build(container: Frame)
 					selectedRow = button
 					selectedUserId = row.UserId
 					selectedName = row.Name
+					-- Shared with the Commands page (Run / Fill target).
+					Selection.Set(row.UserId, row.Name)
 					showDetail(row)
 				end)
 			end

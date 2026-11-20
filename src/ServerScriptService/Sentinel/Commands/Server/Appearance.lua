@@ -474,4 +474,53 @@ end
 pinCommand("pin", { "favpage" }, true)
 pinCommand("unpin", { "unfavpage" }, false)
 
+-- ---------------------------------------------------------------------------
+-- ;sentinel / ;opensentinel - opens (or closes) the panel. Phones have no
+-- F6 key, so this (chat or command bar) and the top bar button are how a
+-- mobile staff member opens it. The client re-checks access itself.
+-- ---------------------------------------------------------------------------
+local panelRemote = SentinelShared:FindFirstChild("PanelRemote") :: RemoteEvent?
+if not panelRemote then
+	local created = Instance.new("RemoteEvent")
+	created.Name = "PanelRemote"
+	created.Parent = SentinelShared
+	panelRemote = created
+end
+
+CommandRegistry.Register({
+	Name = "sentinel",
+	Aliases = { "opensentinel", "panel" },
+	Description = "Opens the Sentinel panel (or closes it if it is open). Works from chat and the command bar, e.g. on mobile.",
+	Usage = "/sentinel [page]",
+	ArgHints = {
+		page = { Type = "choice", Choices = UIPrefs.PAGE_IDS, Description = "A page to open, e.g. Players" },
+	},
+	Permission = "panel.open",
+	Category = "Utility",
+	Subcategory = "Appearance",
+	Cooldown = 0.5,
+	Log = false,
+	Undoable = false,
+	NoHistory = true,
+	RequiresTarget = false,
+	Examples = { "sentinel", "opensentinel", "sentinel players" },
+	Execute = function(ctx: Ctx): Result
+		local page: string? = nil
+		local wanted = ctx.Arguments[1]
+		if type(wanted) == "string" and wanted ~= "" then
+			for _, id in ipairs(UIPrefs.PAGE_IDS) do
+				if id:lower() == wanted:lower() then
+					page = id
+				end
+			end
+			if not page then
+				return { Success = false, Message = ("Unknown page '%s'."):format(wanted) }
+			end
+		end
+		;(panelRemote :: RemoteEvent):FireClient(ctx.Executor, if page then "open" else "toggle", page)
+		-- No message: opening the panel is its own feedback (no toast).
+		return { Success = true, Message = "" }
+	end,
+} :: any)
+
 return true

@@ -273,6 +273,46 @@ function Theme.crossIcon(parent: Instance, size: number, color: Color3?, thickne
 	return holder
 end
 
+-- How much the device enlarges text (phones with a larger system text
+-- size render TextSize 14 noticeably bigger). 1 = no enlargement. Measured
+-- by comparing a probe label's rendered TextBounds with TextService's
+-- nominal size; cached for a few seconds.
+local textScaleCache, textScaleAt = 1, -math.huge
+function Theme.textScale(): number
+	if os.clock() - textScaleAt < 5 then
+		return textScaleCache
+	end
+	textScaleAt = os.clock()
+	local ok, ratio = pcall(function()
+		local player = game:GetService("Players").LocalPlayer
+		local gui = player and player:FindFirstChildOfClass("PlayerGui")
+		if not gui then
+			return 1
+		end
+		local holder = Instance.new("ScreenGui")
+		holder.Name = "SentinelTextProbe"
+		holder.Enabled = true
+		local probe = Instance.new("TextLabel")
+		probe.Size = UDim2.fromOffset(400, 100)
+		probe.BackgroundTransparency = 1
+		probe.TextTransparency = 1
+		probe.Font = Enum.Font.BuilderSans
+		probe.TextSize = 14
+		probe.Text = "Sentinel"
+		probe.Parent = holder
+		holder.Parent = gui
+		local rendered = probe.TextBounds.Y
+		local nominal = game:GetService("TextService"):GetTextSize("Sentinel", 14, Enum.Font.BuilderSans, Vector2.new(400, 100)).Y
+		holder:Destroy()
+		if rendered <= 0 or nominal <= 0 then
+			return 1
+		end
+		return rendered / nominal
+	end)
+	textScaleCache = if ok and type(ratio) == "number" then math.clamp(ratio, 1, 2.5) else 1
+	return textScaleCache
+end
+
 -- Start from the built-in look, so UI built before any prefs arrive (e.g.
 -- the join notification for a player without the panel) already matches.
 Theme.Apply(UIPrefs.BUILTIN.Panel)

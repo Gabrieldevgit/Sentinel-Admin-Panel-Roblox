@@ -1029,6 +1029,25 @@ if sentinelUIFolder then
 			},
 		})
 	end)
+
+	-- ;sentinel / ;opensentinel (chat or command bar): the server says
+	-- "toggle", or "open" with a page id. tryOpenPanel still asks the server
+	-- for access before building anything.
+	local panelRemote = SentinelShared:WaitForChild("PanelRemote", 15) :: RemoteEvent?
+	if panelRemote then
+		panelRemote.OnClientEvent:Connect(function(action: any, page: any)
+			if action == "toggle" then
+				tryOpenPanel()
+			elseif action == "open" then
+				if not (uiBuilt and Shell.IsOpen()) then
+					tryOpenPanel()
+				end
+				if uiBuilt and type(page) == "string" then
+					Shell.ShowPage(page)
+				end
+			end
+		end)
+	end
 end
 
 print("[Sentinel] Client shell loaded.")

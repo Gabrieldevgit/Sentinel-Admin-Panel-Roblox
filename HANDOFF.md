@@ -4,11 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-20 (Roblox-style redesign session) — W12 and the
-**Roblox-style redesign** (notification cards, join welcome, top bar
-buttons, Roblox theme) are built and verified in Play, **both not
-committed**. The user said NOT to start W13 that session; next undone row
-is still W13. Start with §6 "Next session"._
+_Last updated: 2026-11-20 (mobile pass) — W12 + Roblox-style redesign
+committed and pushed (`0630fd8`). **Mobile pass + `;sentinel` command +
+Players selection -> Commands page** built and verified in Play with an
+emulated phone viewport, **not committed**. Next undone row is still W13.
+Start with §6 "Next session"._
 
 ---
 
@@ -410,6 +410,47 @@ Control" UI, all driven by one command grammar
     round icon buttons, drawn X close, pill search, no sub-menu marker.
   - **Command bar and command palette were deliberately not restyled**
     (user's instruction: leave them alone for now).
+- **Mobile pass (2026-11-20):**
+  - Shell: `viewportSize()` = attribute `EmulateViewport` (Vector2) on the
+    `SentinelShell` ScreenGui, else its AbsoluteSize. **Test phones in
+    Studio by setting that attribute in the Client** (e.g. 844x390,
+    667x375); Studio MCP can't emulate a device. Mobile = touch-only, or
+    width < 760, or **height < 480** (phones in landscape). Mobile layout:
+    compact metrics, no title bar / status bar, `NavBar.Right.
+    MobileCloseButton`.
+  - TopbarIcons: pill height `clamp(insetHeight - 14, 30, 44)`, glyphs
+    scale with it, no hover tooltip on touch-only devices.
+    **Real phone test (user screenshot):** Roblox's left pills are wider
+    than TopbarInset reports and covered the S button, so on touch-only
+    devices the pill is right-aligned (`inset.Max.X - 8`).
+  - **Phones enlarge text** (user screenshot: 11-13 px labels rendered
+    nearly as big as 20 px headers, overlapping in fixed-offset cards;
+    likely the device text-size setting). `Theme.textScale()` measures it
+    (probe TextBounds vs TextService) but **on the user's phone it did not
+    detect the enlargement** (cards still overflowed), so the dashboard no
+    longer uses it: stat + Quick Action cards are content-sized
+    (AutomaticSize Y + min height, wrapping UIListLayout instead of
+    UIGridLayout). Prefer content-sized layouts over textScale(). User
+    says the other pages look okay on the phone.
+  - Palette: on touch-only devices the syntax-coloured copy under the
+    input is off (it doubled the text on the phone); plain TextBox.
+  - PlayersPage: below 900 px wide the list gets 36 %; when short (< 380)
+    search moves into the title row. CommandsPage: short header, narrow
+    (< 640) = search / categories on own rows and card buttons under the
+    text. Palette (sizing only, no restyle) starts under the top bar and
+    fits the height on short screens; builder MinSize 300x240.
+  - `;sentinel [page]` (aliases `opensentinel`, `panel`; node
+    `panel.open`; in `Commands/Server/Appearance.lua`) fires
+    `PanelRemote` ("toggle" | "open", page); init.client opens / shows the
+    page. Silent on success (empty Message; NotificationCenter skips empty
+    results). `CommandRegistry.Resolve` now falls back to lower case, so
+    `;Sentinel` / `;openSentinel` work for every command.
+  - `StarterGui/SentinelUI/Selection.lua`: the player selected on the
+    Players page (`Selection.Set/Get/TargetText/Changed`). Commands page
+    has `TargetBar` ("Use me" clears); Run / Fill / Build use the selected
+    name (else `me`) for commands that take a target;
+    `CommandBuilder.Open({Command, Target})` pre-fills the first player
+    field.
 - **W12 Moderation center:**
   - `Systems/CaseService`: numbered cases (DataStore `Sentinel_Cases_v1`:
     `Counter` via UpdateAsync, `Case_<id>`, `Index` = newest 500 summaries
@@ -708,9 +749,9 @@ Rules that keep it sound:
 ## 6. Current state
 
 - Sentinel server and client boot cleanly in Play. Unit tests **102/102**.
-- **Roblox-style redesign** (see §3) built and verified in Play, **not
-  committed**. The user asked for it instead of W13.
-- **W12 Moderation center** built and verified in Play, **not committed**.
+- **Mobile pass / `;sentinel` / selection targets** (see §3) built and
+  verified in Play with an emulated viewport, **not committed**.
+- **W12 + Roblox-style redesign** committed and pushed (`0630fd8`).
 - **W10 persistent audit + W11 Logs page** committed (`6ed1d87`).
 - **W09 responsive UI pass** committed (`daef915`). README roadmap marks
   Phase 7 done.
@@ -761,7 +802,9 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit W12 + the Roblox-style redesign** if the user agrees. Ask
+0. **Ask the user to try the mobile pass on a real phone** (top bar
+   buttons, panel, palette) and commit it if they agree.
+1. Ask
    whether the command bar / palette should get the Roblox look next, and
    whether page content (dashboard cards etc.) should be restyled too. Decide the Discord webhook
    proxy (W11 leftover). Ask whether to delete
@@ -782,6 +825,17 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-20 (mobile pass)** - Pushed `0630fd8`. User found the panel
+  and top bar buttons not adapted on a phone, asked for `;sentinel` /
+  `;opensentinel` (chat + command bar), and for the Players page selection
+  to drive the Commands page. Built the items in §3 "Mobile pass". Verified
+  in Play: `openSentinel` / `Sentinel Players` via remote, emulated 844x390
+  and 667x375 (Commands, Players, Dashboard, Moderation, Ranks screenshots;
+  automatic overflow scan of all 17 pages = 0), selecting a player then
+  Commands Run `heal` -> history shows `heal gabrielethangame`. Not
+  verified: a real phone (top bar inset on mobile, touch scrolling,
+  palette size), portrait. Tests 102/102. Not committed.
 
 - **2026-11-20 (Roblox-style redesign)** - User sent screenshots (Roblox
   top bar with icon pills, an "Info" welcome notification) and asked for:

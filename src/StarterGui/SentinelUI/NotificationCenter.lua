@@ -624,7 +624,7 @@ function NotificationCenter.Init()
 	if commandResultRemote then
 		commandResultRemote.OnClientEvent:Connect(function(results: { any })
 			for _, result in ipairs(results) do
-				if result.Message then
+				if result.Message and result.Message ~= "" then
 					-- The persistent log always gets every result — mute
 					-- only suppresses the popup, not the record of it.
 					-- Pending confirmations get the ConfirmDialog instead of a

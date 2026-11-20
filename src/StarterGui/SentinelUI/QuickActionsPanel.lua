@@ -89,9 +89,12 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 	cardRow.BackgroundTransparency = 1
 	cardRow.Parent = container
 
-	local layout = Instance.new("UIGridLayout")
-	layout.CellSize = UDim2.new(0, 170, 0, 110)
-	layout.CellPadding = UDim2.new(0, 10, 0, 10)
+	-- Wrapping row, not a fixed-cell grid: each card grows with its text
+	-- (phones enlarge text, which overflowed the old 110 px cells).
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.Wraps = true
+	layout.Padding = UDim.new(0, 10)
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	layout.Parent = cardRow
 
@@ -105,7 +108,8 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		local card = Instance.new("Frame")
 		card.Name = title .. "Card"
 		card.LayoutOrder = layoutOrder
-		card.Size = UDim2.new(0, 170, 0, 110)
+		card.Size = UDim2.new(0, 170, 0, 0)
+		card.AutomaticSize = Enum.AutomaticSize.Y
 		card.BackgroundColor3 = Theme.Colors.Surface
 		card.BorderSizePixel = 0
 		card.Parent = cardRow
@@ -114,49 +118,72 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		stroke.Transparency = 0.4
 		Theme.padding(card, Theme.Spacing.S)
 
+		-- Icon, title and description stack (enlarged phone text can't
+		-- overlap); the status line stays pinned to the bottom.
+		local content = Instance.new("Frame")
+		content.Name = "Content"
+		content.BackgroundTransparency = 1
+		content.Size = UDim2.new(1, 0, 0, 0)
+		content.AutomaticSize = Enum.AutomaticSize.Y
+		content.Parent = card
+		local minHeight = Instance.new("UISizeConstraint")
+		minHeight.MinSize = Vector2.new(0, 94)
+		minHeight.Parent = card
+		local contentLayout = Instance.new("UIListLayout")
+		contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		contentLayout.Padding = UDim.new(0, 2)
+		contentLayout.Parent = content
+
 		local iconLabel = Instance.new("TextLabel")
+		iconLabel.LayoutOrder = 1
 		iconLabel.BackgroundTransparency = 1
-		iconLabel.Size = UDim2.new(1, 0, 0, 26)
+		iconLabel.Size = UDim2.new(1, 0, 0, 0)
+		iconLabel.AutomaticSize = Enum.AutomaticSize.Y
 		iconLabel.Font = Theme.Font.Regular
 		iconLabel.TextSize = 20
 		iconLabel.TextXAlignment = Enum.TextXAlignment.Left
 		iconLabel.Text = icon
-		iconLabel.Parent = card
+		iconLabel.Parent = content
 
 		local titleLabel = Instance.new("TextLabel")
+		titleLabel.LayoutOrder = 2
 		titleLabel.BackgroundTransparency = 1
-		titleLabel.Position = UDim2.new(0, 0, 0, 28)
-		titleLabel.Size = UDim2.new(1, 0, 0, 18)
+		titleLabel.Size = UDim2.new(1, 0, 0, 0)
+		titleLabel.AutomaticSize = Enum.AutomaticSize.Y
 		titleLabel.Font = Theme.Font.Bold
 		titleLabel.TextSize = 13
 		titleLabel.TextColor3 = Theme.Colors.Text
 		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 		titleLabel.Text = title
-		titleLabel.Parent = card
+		titleLabel.Parent = content
 
 		local descLabel = Instance.new("TextLabel")
+		descLabel.LayoutOrder = 3
 		descLabel.BackgroundTransparency = 1
-		descLabel.Position = UDim2.new(0, 0, 0, 46)
-		descLabel.Size = UDim2.new(1, 0, 0, 16)
+		descLabel.Size = UDim2.new(1, -46, 0, 0)
+		descLabel.AutomaticSize = Enum.AutomaticSize.Y
 		descLabel.Font = Theme.Font.Regular
 		descLabel.TextSize = 11
 		descLabel.TextColor3 = Theme.Colors.TextSecondary
 		descLabel.TextXAlignment = Enum.TextXAlignment.Left
-		descLabel.TextWrapped = true
+		descLabel.TextTruncate = Enum.TextTruncate.AtEnd
 		descLabel.Text = description
-		descLabel.Parent = card
+		descLabel.Parent = content
 
 		local statusLabel = Instance.new("TextLabel")
 		statusLabel.Name = "Status"
 		statusLabel.BackgroundTransparency = 1
-		statusLabel.Position = UDim2.new(0, 0, 1, -20)
-		statusLabel.Size = UDim2.new(1, 0, 0, 18)
+		statusLabel.LayoutOrder = 4
+		statusLabel.Size = UDim2.new(1, -46, 0, 0)
+		statusLabel.AutomaticSize = Enum.AutomaticSize.Y
+		statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 		statusLabel.Font = Theme.Font.Medium
 		statusLabel.TextSize = 11
 		statusLabel.TextColor3 = categoryColor
 		statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 		statusLabel.Text = category
-		statusLabel.Parent = card
+		statusLabel.Parent = content
 
 		return card, statusLabel
 	end
@@ -202,7 +229,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		local switchTrack = Instance.new("Frame")
 		switchTrack.Name = "SwitchTrack"
 		switchTrack.AnchorPoint = Vector2.new(1, 1)
-		switchTrack.Position = UDim2.new(1, 0, 1, -20)
+		switchTrack.Position = UDim2.new(1, 0, 1, 0)
 		switchTrack.Size = UDim2.new(0, 40, 0, 18)
 		switchTrack.BackgroundColor3 = Theme.Colors.Error
 		switchTrack.BorderSizePixel = 0

@@ -446,7 +446,7 @@ function CommandBuilder.Init(commandPalette: any)
 		BackgroundColor3 = Theme.Colors.Background,
 		Active = true, -- clicks inside don't fall through to the backdrop
 	}, screen)
-	make("UISizeConstraint", { MaxSize = Vector2.new(580, 540), MinSize = Vector2.new(320, 330) }, window)
+	make("UISizeConstraint", { MaxSize = Vector2.new(580, 540), MinSize = Vector2.new(300, 240) }, window)
 	Theme.corner(window, Theme.Radius.L)
 	Theme.stroke(window, Theme.Colors.Border)
 	Theme.padding(window, 14)
@@ -671,6 +671,15 @@ function CommandBuilder.Open(options: any?)
 		elseif opts.Command then
 			local meta = findCommand(opts.Command)
 			loadCommand(meta)
+			-- Pre-fill the target (the player selected on the Players page).
+			if meta and type(opts.Target) == "string" and opts.Target ~= "" then
+				for _, field in ipairs(fields) do
+					if field.Arg.Type == "players" or field.Arg.Type == "player" then
+						field.Input.Text = opts.Target
+						break
+					end
+				end
+			end
 			if not meta then
 				refs.CommandBox.Text = opts.Command
 				refs.Info.Text = ("Unknown command '%s'."):format(opts.Command)

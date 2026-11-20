@@ -256,7 +256,14 @@ function CommandPalette.Init()
 	local function fit()
 		local camera = workspace.CurrentCamera
 		local width = if camera then camera.ViewportSize.X else 1000
-		panel.Size = UDim2.new(0, math.min(680, width - 24), 0, 520)
+		local height = if camera then camera.ViewportSize.Y else 800
+		-- Short screens (phones in landscape): start just under Roblox's top
+		-- bar and use the height that is left.
+		local short = height < 600
+		local inset = game:GetService("GuiService"):GetGuiInset().Y
+		panel.Position = if short then UDim2.new(0.5, 0, 0, inset + 8) else UDim2.new(0.5, 0, 0.12, 0)
+		local top = if short then inset + 8 else height * 0.12
+		panel.Size = UDim2.new(0, math.min(680, width - 24), 0, math.clamp(height - top - 12, 220, 520))
 	end
 	fit()
 	if workspace.CurrentCamera then
@@ -466,8 +473,11 @@ function CommandPalette.Init()
 	-- Paints the highlighted copy of the input plus the ghost completion.
 	local function updateGhost()
 		local text = inputBox.Text
-		if text == "" or inputBox.TextBounds.X > inputHolder.AbsoluteSize.X - 60 then
+		local touchOnly = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+		if text == "" or touchOnly or inputBox.TextBounds.X > inputHolder.AbsoluteSize.X - 60 then
 			-- Empty, or the box has scrolled and a copy would not line up.
+			-- Phones: the on-screen keyboard draws the TextBox's own text
+			-- (and enlarges it), so the coloured copy never lines up there.
 			ghost.Text = ""
 			inputBox.TextTransparency = 0
 			placeCaret()

@@ -717,6 +717,14 @@ function Shell.Init(): ScreenGui
 		Shell.ShowPage("Settings")
 	end)
 
+	-- Mobile has no title bar: this close button takes its place.
+	local mobileClose = iconButton(right, "MobileCloseButton", "", 9)
+	mobileClose.Visible = false
+	Theme.crossIcon(mobileClose, 11, Theme.Colors.TextSecondary, 2)
+	mobileClose.MouseButton1Click:Connect(function()
+		Shell.Close()
+	end)
+
 	local userChip = Instance.new("Frame")
 	userChip.Name = "User"
 	userChip.LayoutOrder = 4
@@ -1100,14 +1108,32 @@ function Shell.Init(): ScreenGui
 	local desktopSize: UDim2? = nil
 	local desktopPosition: UDim2? = nil
 
+	-- Screen size used for layout. Studio can't emulate a phone through
+	-- MCP, so a test can set the attribute EmulateViewport (Vector2) on the
+	-- SentinelShell ScreenGui to lay the panel out as on that screen.
+	local function viewportSize(): Vector2
+		local emulated = screenGui:GetAttribute("EmulateViewport")
+		if typeof(emulated) == "Vector2" then
+			return emulated
+		end
+		return screenGui.AbsoluteSize
+	end
+	Shell.viewportSize = viewportSize
+	screenGui:GetAttributeChangedSignal("EmulateViewport"):Connect(function()
+		relayout()
+	end)
+
 	local function wantMobile(): boolean
 		if layout.Mode == "Mobile" then
 			return true
 		elseif layout.Mode == "Desktop" then
 			return false
 		end
-		local viewport = screenGui.AbsoluteSize
-		return (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled) or (viewport.X > 0 and viewport.X < 760)
+		local viewport = viewportSize()
+		-- Phones in landscape are often wider than 760 but only ~390 tall.
+		return (UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled)
+			or (viewport.X > 0 and viewport.X < 760)
+			or (viewport.Y > 0 and viewport.Y < 480)
 	end
 
 	local function textWidth(text: string, size: number, font: Enum.Font): number
@@ -1147,7 +1173,6 @@ function Shell.Init(): ScreenGui
 			return
 		end
 		laying = true
-		metrics = if layout.Compact then METRICS.Compact else METRICS.Normal
 
 		-- Mobile: the window fills the screen below Roblox's top bar; no
 		-- drag or resize. Leaving mobile restores the desktop window.
@@ -1164,7 +1189,7 @@ function Shell.Init(): ScreenGui
 			Shell.isMobile = mobile
 		end
 		if isMobile and not isMinimized then
-			local viewport = screenGui.AbsoluteSize
+			local viewport = viewportSize()
 			local inset = GuiService:GetGuiInset().Y
 			local margin = 6
 			root.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1175,16 +1200,22 @@ function Shell.Init(): ScreenGui
 			)
 		end
 		resizeHandle.Visible = not isMobile and not isMinimized
+		-- Phones: every pixel of height counts, so mobile always uses the
+		-- compact bars, drops the title bar (close moves into the nav bar)
+		-- and the status bar.
+		metrics = if layout.Compact or isMobile then METRICS.Compact else METRICS.Normal
 
 		-- Bars.
-		local top, nav = metrics.Top, metrics.Nav
-		local status = if layout.StatusBar then metrics.Status else 0
+		local top, nav = if isMobile then 0 else metrics.Top, metrics.Nav
+		local status = if layout.StatusBar and not isMobile then metrics.Status else 0
+		topBar.Visible = not isMobile
+		mobileClose.Visible = isMobile
 		topBar.Size = UDim2.new(1, 0, 0, top)
 		navBar.Position = UDim2.new(0, 0, 0, top)
 		navBar.Size = UDim2.new(1, 0, 0, nav)
 		statusBar.Position = UDim2.new(0, 0, 1, -metrics.Status)
 		statusBar.Size = UDim2.new(1, 0, 0, metrics.Status)
-		statusBar.Visible = layout.StatusBar and not isMinimized
+		statusBar.Visible = layout.StatusBar and not isMinimized and not isMobile
 		statusLabel.TextSize = if layout.Compact then 11 else 12
 		statusRight.TextSize = statusLabel.TextSize
 		windowButtons.Size = UDim2.new(0, metrics.Icon * 2 + 4, 0, metrics.Icon)
@@ -1196,7 +1227,7 @@ function Shell.Init(): ScreenGui
 
 		-- Width-based reflow (unscaled pixels).
 		local scale = if uiScale.Scale > 0 then uiScale.Scale else 1
-		local width = root.AbsoluteSize.X / scale
+		local width = if isMobile then viewportSize().X / scale else root.AbsoluteSize.X / scale
 		local narrow = isMobile or width < NARROW_WIDTH
 		clock.Visible = width >= 640
 		searchButton.Text = if narrow then "🔍" else "🔍  Search"
@@ -1206,7 +1237,7 @@ function Shell.Init(): ScreenGui
 		userChip.Size = UDim2.new(0, userWidth, 0, metrics.Icon)
 		userLabel.Visible = not narrow
 		right.Size = UDim2.new(0, 0, 0, metrics.Icon)
-		local rightWidth = metrics.Icon * 3 + searchWidth + userWidth + 6 * 4
+		local rightWidth = metrics.Icon * (if isMobile then 4 else 3) + searchWidth + userWidth + 6 * (if isMobile then 5 else 4)
 		tabs.Size = UDim2.new(1, -(rightWidth + 26), 1, 0)
 
 		-- Section tabs: full labels while they fit, else icons only.
