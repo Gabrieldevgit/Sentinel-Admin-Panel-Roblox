@@ -173,12 +173,12 @@ local function refreshNav()
 			local position = table.find(layout.Tabs, section.Id)
 			tab.Visible = position ~= nil and #visiblePages(section) > 0
 			tab.LayoutOrder = position or 99
-			Theme.tween(tab, Theme.Motion.Fast, { TextColor3 = if active then Theme.Colors.Text else Theme.Colors.TextSecondary })
-			local underline = tab:FindFirstChild("Underline") :: Frame?
-			if underline then
-				underline.BackgroundColor3 = Theme.Colors.Accent
-				Theme.tween(underline, Theme.Motion.Normal, { Size = UDim2.new(if active then 1 else 0, 0, 0, 2) })
-			end
+			-- Roblox-style: the active section is a filled pill.
+			tab.BackgroundColor3 = Theme.Colors.SurfaceRaised
+			Theme.tween(tab, Theme.Motion.Fast, {
+				TextColor3 = if active then Theme.Colors.Text else Theme.Colors.TextSecondary,
+				BackgroundTransparency = if active then 0 else 1,
+			})
 		end
 		for _, page in ipairs(section.Pages) do
 			local button = navButtons[page.Id]
@@ -320,7 +320,7 @@ local function iconButton(parent: Instance, name: string, text: string, order: n
 	button.TextColor3 = Theme.Colors.TextSecondary
 	button.Text = text
 	button.Parent = parent
-	Theme.corner(button, Theme.Radius.S)
+	Theme.corner(button, Theme.Radius.Pill)
 	Shell.iconButtons = Shell.iconButtons or {}
 	table.insert(Shell.iconButtons, button)
 	hover(button, function()
@@ -460,7 +460,7 @@ function Shell.Init(): ScreenGui
 	root.BackgroundColor3 = Theme.Colors.Background
 	root.BorderSizePixel = 0
 	root.Parent = screenGui
-	Theme.corner(root, Theme.Radius.M)
+	Theme.corner(root, Theme.Radius.L)
 	Theme.stroke(root, Theme.Colors.Border, 1)
 	Shell.root = root
 
@@ -480,11 +480,11 @@ function Shell.Init(): ScreenGui
 	topBar.BorderSizePixel = 0
 	topBar.Parent = root
 	-- Rounded like the window, squared off at the bottom by a mask.
-	Theme.corner(topBar, Theme.Radius.M)
+	Theme.corner(topBar, Theme.Radius.L)
 	local topMask = Instance.new("Frame")
 	topMask.Name = "BottomMask"
-	topMask.Position = UDim2.new(0, 0, 1, -12)
-	topMask.Size = UDim2.new(1, 0, 0, 12)
+	topMask.Position = UDim2.new(0, 0, 1, -16)
+	topMask.Size = UDim2.new(1, 0, 0, 16)
 	topMask.BackgroundColor3 = Theme.Colors.Surface
 	topMask.BorderSizePixel = 0
 	topMask.ZIndex = 0
@@ -493,26 +493,49 @@ function Shell.Init(): ScreenGui
 	local clock = Instance.new("TextLabel")
 	clock.Name = "Clock"
 	clock.BackgroundTransparency = 1
-	clock.Position = UDim2.new(0, 14, 0, 0)
+	clock.AnchorPoint = Vector2.new(0.5, 0)
+	clock.Position = UDim2.new(0.5, 0, 0, 0)
 	clock.Size = UDim2.new(0, 160, 1, 0)
 	clock.Font = Theme.Font.Medium
 	clock.TextSize = 13
 	clock.TextColor3 = Theme.Colors.TextSecondary
-	clock.TextXAlignment = Enum.TextXAlignment.Left
+	clock.TextXAlignment = Enum.TextXAlignment.Center
 	clock.Text = ""
 	clock.Parent = topBar
 
 	local brand = Instance.new("TextLabel")
 	brand.Name = "Title"
 	brand.BackgroundTransparency = 1
-	brand.AnchorPoint = Vector2.new(0.5, 0)
-	brand.Position = UDim2.new(0.5, 0, 0, 0)
+	brand.Position = UDim2.new(0, 12, 0, 0)
 	brand.Size = UDim2.new(0, 200, 1, 0)
-	brand.Font = Theme.Font.Black
-	brand.TextSize = 15
+	brand.Font = Theme.Font.Bold
+	brand.TextSize = 17
 	brand.TextColor3 = Theme.Colors.Text
-	brand.Text = "🛡  SENTINEL"
+	brand.TextXAlignment = Enum.TextXAlignment.Left
+	brand.Text = "Sentinel"
 	brand.Parent = topBar
+	-- Round accent badge with the "S" monogram (same mark as the top bar button).
+	local brandPad = Instance.new("UIPadding")
+	brandPad.PaddingLeft = UDim.new(0, 32)
+	brandPad.Parent = brand
+	local badge = Instance.new("Frame")
+	badge.Name = "Badge"
+	badge.AnchorPoint = Vector2.new(0, 0.5)
+	badge.Position = UDim2.new(0, -32, 0.5, 0)
+	badge.Size = UDim2.fromOffset(24, 24)
+	badge.BackgroundColor3 = Theme.Colors.Accent
+	badge.BorderSizePixel = 0
+	badge.Parent = brand
+	Theme.corner(badge, Theme.Radius.Pill)
+	local badgeGlyph = Instance.new("TextLabel")
+	badgeGlyph.Name = "Glyph"
+	badgeGlyph.BackgroundTransparency = 1
+	badgeGlyph.Size = UDim2.fromScale(1, 1)
+	badgeGlyph.Font = Theme.Font.Black
+	badgeGlyph.TextSize = 15
+	badgeGlyph.TextColor3 = Color3.new(1, 1, 1)
+	badgeGlyph.Text = "S"
+	badgeGlyph.Parent = badge
 
 	local windowButtons = Instance.new("Frame")
 	windowButtons.Name = "WindowButtons"
@@ -530,13 +553,18 @@ function Shell.Init(): ScreenGui
 
 	local minimizeButton = iconButton(windowButtons, "MinimizeButton", "-", 1)
 	minimizeButton.TextSize = 20
-	local closeButton = iconButton(windowButtons, "CloseButton", "X", 2)
-	closeButton.Font = Theme.Font.Bold
-	closeButton.TextSize = 13
+	local closeButton = iconButton(windowButtons, "CloseButton", "", 2)
+	local closeCross = Theme.crossIcon(closeButton, 11, Theme.Colors.TextSecondary, 2)
 	hover(closeButton, function()
 		Theme.tween(closeButton, Theme.Motion.Fast, { BackgroundColor3 = Theme.Colors.Error })
+		for _, bar in ipairs(closeCross:GetChildren()) do
+			(bar :: Frame).BackgroundColor3 = Theme.Colors.Text
+		end
 	end, function()
 		Theme.tween(closeButton, Theme.Motion.Fast, { BackgroundColor3 = Theme.Colors.SurfaceRaised })
+		for _, bar in ipairs(closeCross:GetChildren()) do
+			(bar :: Frame).BackgroundColor3 = Theme.Colors.TextSecondary
+		end
 	end)
 	closeButton.MouseButton1Click:Connect(function()
 		Shell.Close()
@@ -572,7 +600,8 @@ function Shell.Init(): ScreenGui
 	local tabLayout = Instance.new("UIListLayout")
 	tabLayout.FillDirection = Enum.FillDirection.Horizontal
 	tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	tabLayout.Padding = UDim.new(0, 2)
+	tabLayout.Padding = UDim.new(0, 4)
+	tabLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 	tabLayout.Parent = tabs
 
 	for i, section in ipairs(SECTIONS) do
@@ -583,7 +612,8 @@ function Shell.Init(): ScreenGui
 		tab.Name = section.Id .. "Tab"
 		tab.LayoutOrder = i
 		tab.AutomaticSize = Enum.AutomaticSize.X
-		tab.Size = UDim2.new(0, 0, 1, 0)
+		tab.Size = UDim2.new(0, 0, 0, 30)
+		tab.BackgroundColor3 = Theme.Colors.SurfaceRaised
 		tab.BackgroundTransparency = 1
 		tab.AutoButtonColor = false
 		tab.BorderSizePixel = 0
@@ -599,22 +629,15 @@ function Shell.Init(): ScreenGui
 		pad.PaddingRight = UDim.new(0, 12)
 		pad.Parent = tab
 
-		local underline = Instance.new("Frame")
-		underline.Name = "Underline"
-		underline.AnchorPoint = Vector2.new(0.5, 1)
-		underline.Position = UDim2.new(0.5, 0, 1, 0)
-		underline.Size = UDim2.new(0, 0, 0, 2)
-		underline.BackgroundColor3 = Theme.Colors.Accent
-		underline.BorderSizePixel = 0
-		underline.Parent = tab
+		Theme.corner(tab, Theme.Radius.Pill)
 
 		hover(tab, function()
 			if sectionOfPage[currentPageId or ""] ~= section then
-				Theme.tween(tab, Theme.Motion.Fast, { TextColor3 = Theme.Colors.Text })
+				Theme.tween(tab, Theme.Motion.Fast, { TextColor3 = Theme.Colors.Text, BackgroundTransparency = 0.6 })
 			end
 		end, function()
 			if sectionOfPage[currentPageId or ""] ~= section then
-				Theme.tween(tab, Theme.Motion.Fast, { TextColor3 = Theme.Colors.TextSecondary })
+				Theme.tween(tab, Theme.Motion.Fast, { TextColor3 = Theme.Colors.TextSecondary, BackgroundTransparency = 1 })
 			end
 		end)
 		tab.MouseButton1Click:Connect(function()
@@ -659,7 +682,7 @@ function Shell.Init(): ScreenGui
 	searchButton.TextColor3 = Theme.Colors.TextSecondary
 	searchButton.Text = "🔍  Search"
 	searchButton.Parent = right
-	Theme.corner(searchButton, Theme.Radius.S)
+	Theme.corner(searchButton, Theme.Radius.Pill)
 	hover(searchButton, function()
 		Theme.tween(searchButton, Theme.Motion.Fast, { TextColor3 = Theme.Colors.Text })
 	end, function()
@@ -753,7 +776,7 @@ function Shell.Init(): ScreenGui
 	for _, section in ipairs(SECTIONS) do
 		for _, page in ipairs(section.Pages) do
 			order += 1
-			local button = makeNavButton(subNav, page.Id .. "NavButton", page, order, true)
+			local button = makeNavButton(subNav, page.Id .. "NavButton", page, order, false)
 			button.Visible = false
 			navButtons[page.Id] = button
 		end
@@ -783,10 +806,10 @@ function Shell.Init(): ScreenGui
 	statusBar.BackgroundColor3 = Theme.Colors.Surface
 	statusBar.BorderSizePixel = 0
 	statusBar.Parent = root
-	Theme.corner(statusBar, Theme.Radius.M)
+	Theme.corner(statusBar, Theme.Radius.L)
 	local statusMask = Instance.new("Frame")
 	statusMask.Name = "TopMask"
-	statusMask.Size = UDim2.new(1, 0, 0, 12)
+	statusMask.Size = UDim2.new(1, 0, 0, 16)
 	statusMask.BackgroundColor3 = Theme.Colors.Surface
 	statusMask.BorderSizePixel = 0
 	statusMask.ZIndex = 0
@@ -1168,7 +1191,7 @@ function Shell.Init(): ScreenGui
 		for _, button in ipairs(Shell.iconButtons or {}) do
 			button.Size = UDim2.new(0, metrics.Icon, 0, metrics.Icon)
 		end
-		brand.TextSize = if layout.Compact then 13 else 15
+		brand.TextSize = if layout.Compact then 15 else 17
 		clock.TextSize = if layout.Compact then 12 else 13
 
 		-- Width-based reflow (unscaled pixels).
@@ -1199,6 +1222,7 @@ function Shell.Init(): ScreenGui
 		for _, tab in pairs(tabButtons) do
 			tab.Text = (if iconTabs then tab:GetAttribute("IconText") else tab:GetAttribute("FullText")) or tab.Text
 			tab.TextSize = metrics.Tab + (if iconTabs then 3 else 0)
+			tab.Size = UDim2.new(0, 0, 0, metrics.Icon)
 			local pad = tab:FindFirstChildOfClass("UIPadding")
 			if pad then
 				pad.PaddingLeft = UDim.new(0, if iconTabs then 10 else 12)

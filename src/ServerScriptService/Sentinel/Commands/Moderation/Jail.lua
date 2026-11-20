@@ -148,7 +148,7 @@ CommandRegistry.Register({
 	Name = "jail",
 	Aliases = { "j" },
 	Description = "Confines a player to the jail area and freezes them there.",
-	Usage = "/jail target",
+	Usage = "/jail target [reason...]",
 	Permission = "player.jail",
 	Category = "Moderation",
 	Cooldown = 1,

@@ -585,7 +585,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 				if spec.Kind == "choice" then
 					for i, option in ipairs(spec.Choices) do
 						local hasSwatch = field == "Accent" or field == "Theme"
-						local chip = button(controls, "Choice_" .. option, option, math.max(56, #option * 8 + 26) + (if hasSwatch then 14 else 0), i)
+						local chip = button(controls, "Choice_" .. option, option, math.max(50, #option * 7 + 22) + (if hasSwatch then 14 else 0), i)
 						if hasSwatch then
 							-- leave room for the colour dot on the left
 							local pad = Instance.new("UIPadding")

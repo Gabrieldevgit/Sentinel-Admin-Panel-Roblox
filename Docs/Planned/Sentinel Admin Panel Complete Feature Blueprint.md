@@ -323,31 +323,31 @@ Punishment management
 - Server-specific restrictions.
 - Experience-wide restrictions.
 Punishment configuration
-- Custom ban durations.
-- Custom mute durations.
-- Predefined reason templates.
-- Required punishment reasons.
+- ✅ Custom ban durations.
+- ✅ Custom mute durations.
+- ✅ Predefined reason templates.
+- ✅ Required punishment reasons.
 - Automatic escalation.
 - Warning thresholds.
-- Ban history.
-- Mute history.
+- ✅ Ban history.
+- ✅ Mute history.
 - Punishment expiry.
 - Automatic punishment expiration.
 - Rank immunity.
-- Bulk punishments.
+- ✅ Bulk punishments.
 Moderation dashboard
-- Active cases.
+- ✅ Active cases.
 - Pending reports.
-- Recent punishments.
+- ✅ Recent punishments.
 - Recent warnings.
-- Active bans.
-- Active mutes.
-- Moderators online.
-- Moderation activity.
-- Case search.
-- Case filtering.
-- Case details.
-- Staff responsible for a case.
+- ✅ Active bans.
+- ✅ Active mutes.
+- ✅ Moderators online.
+- ✅ Moderation activity.
+- ✅ Case search.
+- ✅ Case filtering.
+- ✅ Case details.
+- ✅ Staff responsible for a case.
 Advanced moderation
 - Player report system.
 - Report management.
@@ -357,9 +357,9 @@ Advanced moderation
 - Appeal submission.
 - Appeal review.
 - Appeal acceptance/rejection.
-- Moderator notes.
-- Internal staff discussion.
-- Moderation collaboration.
+- ✅ Moderator notes.
+- ✅ Internal staff discussion.
+- ✅ Moderation collaboration.
 - Shared punishment database.
 - Cross-server punishment synchronization.
 - Discord moderation notifications.
@@ -807,7 +807,7 @@ Additional tools
 - Success notifications.
 - Error notifications.
 - Warning notifications.
-- Information notifications.
+- ✅ Information notifications.
 - Command results.
 - Moderation alerts.
 - Player reports.
@@ -818,7 +818,7 @@ Additional tools
 - Notification search.
 - Notification filtering.
 - Dismiss all.
-- Individual dismissal.
+- ✅ Individual dismissal.
 - Notification preferences.
 - Sound notifications.
 - Priority notifications.

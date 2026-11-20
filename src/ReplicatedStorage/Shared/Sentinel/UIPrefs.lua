@@ -52,6 +52,17 @@ end
 
 -- Panel themes: the neutral surfaces. Accent and status colours are separate.
 UIPrefs.THEMES = {
+	-- Roblox's own in-experience look (top bar, menus, notifications):
+	-- near-black neutral surfaces, white text. The default since the
+	-- Roblox-style redesign.
+	Roblox = {
+		Background = rgb(17, 18, 21),
+		Surface = rgb(25, 26, 31),
+		SurfaceRaised = rgb(40, 41, 48),
+		Border = rgb(56, 58, 66),
+		Text = rgb(247, 247, 248),
+		TextSecondary = rgb(170, 172, 180),
+	},
 	Nebula = {
 		Background = rgb(20, 17, 30),
 		Surface = rgb(28, 23, 42),
@@ -101,13 +112,14 @@ UIPrefs.THEMES = {
 		TextSecondary = rgb(88, 95, 114),
 	},
 }
--- "Custom" uses Panel.Custom (falls back to Nebula until one is saved).
-UIPrefs.THEME_ORDER = { "Nebula", "Midnight", "Ocean", "Graphite", "Ember", "Light", "Custom" }
+-- "Custom" uses Panel.Custom (falls back to the default theme until one is saved).
+UIPrefs.THEME_ORDER = { "Roblox", "Nebula", "Midnight", "Ocean", "Graphite", "Ember", "Light", "Custom" }
 
 -- Colours a custom theme / theme code holds, in code order.
 UIPrefs.PALETTE_KEYS = { "Background", "Surface", "SurfaceRaised", "Border", "Text", "TextSecondary", "Accent" }
 
 UIPrefs.ACCENTS = {
+	Royal = rgb(51, 95, 255), -- Roblox's blue
 	Violet = rgb(139, 108, 255),
 	Blue = rgb(64, 156, 255),
 	Cyan = rgb(56, 200, 220),
@@ -115,7 +127,7 @@ UIPrefs.ACCENTS = {
 	Amber = rgb(240, 176, 64),
 	Rose = rgb(240, 96, 128),
 }
-UIPrefs.ACCENT_ORDER = { "Violet", "Blue", "Cyan", "Green", "Amber", "Rose" }
+UIPrefs.ACCENT_ORDER = { "Royal", "Violet", "Blue", "Cyan", "Green", "Amber", "Rose" }
 
 -- Font families: Enum.Font names for Regular / Medium / Bold / Black.
 UIPrefs.FONTS = {
@@ -405,9 +417,9 @@ UIPrefs.ORDER = {
 
 UIPrefs.BUILTIN = {
 	Panel = {
-		Theme = "Nebula",
-		Accent = "Violet",
-		Font = "Gotham",
+		Theme = "Roblox",
+		Accent = "Royal",
+		Font = "Builder",
 		Animations = true,
 		AnimationSpeed = 1,
 		ReducedMotion = false,

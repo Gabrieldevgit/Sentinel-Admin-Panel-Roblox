@@ -55,20 +55,34 @@ type HistoryEntry = {
 	Timestamp: number,
 	Success: boolean,
 	Message: string,
+	Title: string?,
+}
+
+-- Notify() options. Kind picks the icon colour: info (accent), success,
+-- warning, error.
+export type Chip = { Text: string, Color: Color3? }
+export type NotifyOptions = {
+	Kind: string?,
+	Title: string?,
+	Message: string,
+	RichText: boolean?,
+	Chips: { Chip }?,
+	Action: { Text: string, Callback: () -> () }?,
+	Duration: number?,
+	Record: boolean?, -- keep in the Notifications page (default true)
 }
 
 local MAX_HISTORY = 100
 local TOAST_WIDTH = 320
 local SUCCESS_DURATION = 4
 local ERROR_DURATION = 6
+local INFO_DURATION = 10
 
 local history: { HistoryEntry } = {}
 local historyChanged: (() -> ())? = nil
 local initialized = false
 
--- Client-only prefs, set from the Settings page (Phase 7E). Neither
--- persists across sessions (no client DataStore access) — they're
--- honestly scoped as "for this session" until a real prefs store exists.
+-- Client-only prefs, set from the Settings page (Phase 7E).
 local mutedToasts = false
 local reducedMotion = false
 
@@ -88,7 +102,8 @@ local function placeStack()
 	local right = toastPosition:find("Right") ~= nil
 	local bottom = toastPosition:find("Bottom") ~= nil
 	stack.AnchorPoint = Vector2.new(if right then 1 else 0, if bottom then 1 else 0)
-	stack.Position = UDim2.new(if right then 1 else 0, if right then -16 else 16, if bottom then 1 else 0, if bottom then -16 else 60)
+	-- Top corners sit below Roblox's top bar (this gui ignores the inset).
+	stack.Position = UDim2.new(if right then 1 else 0, if right then -16 else 16, if bottom then 1 else 0, if bottom then -16 else 70)
 	local layout = stack:FindFirstChildOfClass("UIListLayout")
 	if layout then
 		layout.VerticalAlignment = if bottom then Enum.VerticalAlignment.Bottom else Enum.VerticalAlignment.Top
@@ -139,14 +154,25 @@ function NotificationCenter.IsReducedMotion(): boolean
 	return reducedMotion
 end
 
-local pushExternal: ((boolean, string) -> ())? = nil
+local notifyExternal: ((NotifyOptions) -> ())? = nil
 
--- Shows a toast and records it in the notification history. Safe to call
+-- Shows a card (Roblox-style notification) and records it. Safe to call
 -- before Init (it does nothing then).
-function NotificationCenter.Push(success: boolean, message: string)
-	if pushExternal and type(message) == "string" and message ~= "" then
-		pushExternal(success == true, message:sub(1, 300))
+function NotificationCenter.Notify(options: NotifyOptions)
+	if notifyExternal and type(options) == "table" and type(options.Message) == "string" and options.Message ~= "" then
+		notifyExternal(options)
 	end
+end
+
+-- Command-result style notification (kept for older callers).
+function NotificationCenter.Push(success: boolean, message: string)
+	if type(message) == "string" then
+		NotificationCenter.Notify({ Kind = if success then "success" else "error", Message = message:sub(1, 300) })
+	end
+end
+
+function NotificationCenter.IsReady(): boolean
+	return initialized
 end
 
 local function pushHistory(entry: HistoryEntry)
@@ -157,6 +183,302 @@ local function pushHistory(entry: HistoryEntry)
 	if historyChanged then
 		historyChanged()
 	end
+end
+
+-- ---------------------------------------------------------------------------
+-- Notification card (matches Roblox's own in-experience notifications):
+--   [icon] Title                      [pause] [X]
+--   Message text (rich text allowed)
+--   (o Chip) (o Chip)                 optional
+--   [        (i) Action button        ] optional
+--   ------------- timer line ---------
+-- Instance paths: SentinelNotifications.ToastStack.Toast_<n>.Notification
+--   .Body.{Header.Controls.{PauseButton, CloseButton}, Message, Chips,
+--   ActionButton}
+-- ---------------------------------------------------------------------------
+local KIND_TITLES = { info = "Info", success = "Success", warning = "Warning", error = "Error" }
+local KIND_GLYPHS = { info = "i", success = "\u{2713}", warning = "!", error = "!" }
+
+local function kindColor(kind: string): Color3
+	if kind == "success" then
+		return Theme.Colors.Success
+	elseif kind == "warning" then
+		return Theme.Colors.Warning
+	elseif kind == "error" then
+		return Theme.Colors.Error
+	end
+	return Theme.Colors.Accent
+end
+
+local function new(className: string, props: { [string]: any }, parent: Instance?): any
+	local inst = Instance.new(className)
+	for key, value in pairs(props) do
+		(inst :: any)[key] = value
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+-- Small round badge with a glyph ("i", check, "!").
+local function badge(parent: Instance, kind: string, size: number, order: number?): Frame
+	local circle = new("Frame", {
+		Name = "Icon",
+		LayoutOrder = order or 0,
+		Size = UDim2.fromOffset(size, size),
+		BackgroundColor3 = kindColor(kind),
+		BorderSizePixel = 0,
+	}, parent)
+	Theme.corner(circle, Theme.Radius.Pill)
+	new("TextLabel", {
+		Name = "Glyph",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Font = Theme.Font.Black,
+		TextSize = math.floor(size * 0.72),
+		TextColor3 = Color3.new(1, 1, 1),
+		Text = KIND_GLYPHS[kind] or "i",
+	}, circle)
+	return circle
+end
+
+-- Round, borderless icon button that lights up on hover.
+local function headerButton(parent: Instance, name: string, order: number): TextButton
+	local button = new("TextButton", {
+		Name = name,
+		LayoutOrder = order,
+		Size = UDim2.fromOffset(26, 26),
+		BackgroundColor3 = Theme.Colors.SurfaceRaised,
+		BackgroundTransparency = 1,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		Text = "",
+	}, parent)
+	Theme.corner(button, Theme.Radius.Pill)
+	button.MouseEnter:Connect(function()
+		Theme.tween(button, Theme.Motion.Fast, { BackgroundTransparency = 0 })
+	end)
+	button.MouseLeave:Connect(function()
+		Theme.tween(button, Theme.Motion.Fast, { BackgroundTransparency = 1 })
+	end)
+	return button
+end
+
+-- Builds one card (not yet animated). Returns the card, its pause / close
+-- buttons, the timer line and the pause glyph bars.
+local function buildCard(options: NotifyOptions, kind: string): (CanvasGroup, TextButton, TextButton, Frame, { Frame })
+	local card = new("CanvasGroup", {
+		Name = "Notification",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Theme.Colors.Surface,
+		BackgroundTransparency = 0.04,
+		BorderSizePixel = 0,
+	})
+	Theme.corner(card, Theme.Radius.M)
+
+	local body = new("Frame", {
+		Name = "Body",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+	}, card)
+	new("UIPadding", {
+		PaddingTop = UDim.new(0, 10),
+		PaddingBottom = UDim.new(0, 14),
+		PaddingLeft = UDim.new(0, 14),
+		PaddingRight = UDim.new(0, 10),
+	}, body)
+	new("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder }, body)
+
+	-- Header: icon + title, pause + close on the right.
+	local header = new("Frame", { Name = "Header", LayoutOrder = 1, Size = UDim2.new(1, 0, 0, 26), BackgroundTransparency = 1 }, body)
+	local titleGroup = new("Frame", { Name = "TitleGroup", Size = UDim2.new(1, -64, 1, 0), BackgroundTransparency = 1 }, header)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Padding = UDim.new(0, 8),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, titleGroup)
+	badge(titleGroup, kind, 18, 1)
+	new("TextLabel", {
+		Name = "Title",
+		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -26, 1, 0),
+		Font = Theme.Font.Bold,
+		TextSize = 17,
+		TextColor3 = Theme.Colors.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = options.Title or KIND_TITLES[kind] or "Info",
+	}, titleGroup)
+
+	local controls = new("Frame", {
+		Name = "Controls",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, 0, 0.5, 0),
+		Size = UDim2.fromOffset(58, 26),
+		BackgroundTransparency = 1,
+	}, header)
+	new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		Padding = UDim.new(0, 4),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+	}, controls)
+	local pauseButton = headerButton(controls, "PauseButton", 1)
+	local pauseBars = {}
+	for i = 0, 1 do
+		local bar = new("Frame", {
+			Name = "Bar",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new(0.5, if i == 0 then -3 else 3, 0.5, 0),
+			Size = UDim2.fromOffset(3, 12),
+			BackgroundColor3 = Theme.Colors.TextSecondary,
+			BorderSizePixel = 0,
+		}, pauseButton)
+		Theme.corner(bar, UDim.new(0, 1))
+		table.insert(pauseBars, bar)
+	end
+	local closeButton = headerButton(controls, "CloseButton", 2)
+	Theme.crossIcon(closeButton, 11, Theme.Colors.TextSecondary, 2)
+
+	-- Message.
+	new("TextLabel", {
+		Name = "Message",
+		LayoutOrder = 2,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -4, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Font = Theme.Font.Regular,
+		TextSize = 15,
+		TextColor3 = Theme.Colors.Text,
+		TextWrapped = true,
+		RichText = options.RichText == true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = options.Message,
+	}, body)
+
+	-- Chips (e.g. the player's roles).
+	if options.Chips and #options.Chips > 0 then
+		local chipRow = new("Frame", {
+			Name = "Chips",
+			LayoutOrder = 3,
+			Size = UDim2.new(1, -4, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, body)
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Wraps = true,
+			Padding = UDim.new(0, 6),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, chipRow)
+		for i, chip in ipairs(options.Chips) do
+			local pill = new("Frame", {
+				Name = "Chip_" .. tostring(chip.Text),
+				LayoutOrder = i,
+				Size = UDim2.fromOffset(0, 28),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = Theme.Colors.SurfaceRaised,
+				BorderSizePixel = 0,
+			}, chipRow)
+			Theme.corner(pill, Theme.Radius.Pill)
+			new("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 12) }, pill)
+			new("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				VerticalAlignment = Enum.VerticalAlignment.Center,
+				Padding = UDim.new(0, 7),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+			}, pill)
+			local dot = new("Frame", {
+				Name = "Dot",
+				LayoutOrder = 1,
+				Size = UDim2.fromOffset(8, 8),
+				BackgroundColor3 = chip.Color or Theme.Colors.TextSecondary,
+				BorderSizePixel = 0,
+			}, pill)
+			Theme.corner(dot, Theme.Radius.Pill)
+			new("TextLabel", {
+				Name = "Label",
+				LayoutOrder = 2,
+				BackgroundTransparency = 1,
+				Size = UDim2.fromOffset(0, 28),
+				AutomaticSize = Enum.AutomaticSize.X,
+				Font = Theme.Font.Medium,
+				TextSize = 14,
+				TextColor3 = Theme.Colors.Text,
+				Text = tostring(chip.Text),
+			}, pill)
+		end
+	end
+
+	-- Action button (full width, icon + label).
+	local action = options.Action
+	if action then
+		local actionButton = new("TextButton", {
+			Name = "ActionButton",
+			LayoutOrder = 4,
+			Size = UDim2.new(1, -4, 0, 34),
+			BackgroundColor3 = Theme.Colors.SurfaceRaised,
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			Text = "",
+		}, body)
+		Theme.corner(actionButton, Theme.Radius.S)
+		local content = new("Frame", {
+			Name = "Content",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(0, 20),
+			AutomaticSize = Enum.AutomaticSize.X,
+			BackgroundTransparency = 1,
+		}, actionButton)
+		new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Padding = UDim.new(0, 8),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}, content)
+		badge(content, "info", 16, 1)
+		new("TextLabel", {
+			Name = "Label",
+			LayoutOrder = 2,
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(0, 20),
+			AutomaticSize = Enum.AutomaticSize.X,
+			Font = Theme.Font.Bold,
+			TextSize = 15,
+			TextColor3 = Theme.Colors.Text,
+			Text = action.Text,
+		}, content)
+		local hoverColor = Theme.Colors.SurfaceRaised:Lerp(Theme.Colors.Text, 0.08)
+		actionButton.MouseEnter:Connect(function()
+			Theme.tween(actionButton, Theme.Motion.Fast, { BackgroundColor3 = hoverColor })
+		end)
+		actionButton.MouseLeave:Connect(function()
+			Theme.tween(actionButton, Theme.Motion.Fast, { BackgroundColor3 = Theme.Colors.SurfaceRaised })
+		end)
+		actionButton.MouseButton1Click:Connect(function()
+			task.spawn(action.Callback)
+		end)
+	end
+
+	-- Timer line along the bottom edge.
+	local timer = new("Frame", {
+		Name = "Timer",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = kindColor(kind),
+		BackgroundTransparency = 0.3,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+	}, card)
+
+	return card, pauseButton, closeButton, timer, pauseBars
 end
 
 -- ---------------------------------------------------------------------------
@@ -196,127 +518,105 @@ function NotificationCenter.Init()
 
 	local toastOrder = 0
 
-	local function showToast(success: boolean, message: string)
+	local function showToast(options: NotifyOptions)
+		local kind = if KIND_TITLES[options.Kind or ""] then options.Kind :: string else "info"
 		toastOrder += 1
-		local order = toastOrder
 
-		local frame = Instance.new("Frame")
-		frame.LayoutOrder = order
-		frame.Size = UDim2.new(0, TOAST_WIDTH, 0, 0)
-		frame.AutomaticSize = Enum.AutomaticSize.Y
-		frame.BackgroundColor3 = Theme.Colors.Surface
-		frame.BorderSizePixel = 0
-		frame.Parent = stack
-		Theme.corner(frame, Theme.Radius.M)
-		Theme.stroke(frame, if success then Theme.Colors.Success else Theme.Colors.Error, 1)
-		Theme.padding(frame, Theme.Spacing.S)
+		-- The holder keeps the slot in the stack; the card slides inside it.
+		local holder = new("Frame", {
+			Name = "Toast_" .. toastOrder,
+			LayoutOrder = toastOrder,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+		}, stack)
+		local card, pauseButton, closeButton, timer, pauseBars = buildCard(options, kind)
+		card.Parent = holder
+		-- Hairline border so the card stays readable over dark scenes (a
+		-- stroke inside the CanvasGroup would be clipped, so it sits on an
+		-- overlay frame that follows the card).
+		local outline = new("Frame", { Name = "Outline", AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, -2, 1, -2), BackgroundTransparency = 1, ZIndex = 3 }, card)
+		Theme.corner(outline, Theme.Radius.M)
+		new("UIStroke", { Color = Theme.Colors.Border, Transparency = 0.35, Thickness = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, outline)
 
-		local innerLayout = Instance.new("UIListLayout")
-		innerLayout.Padding = UDim.new(0, 2)
-		innerLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		innerLayout.Parent = frame
-
-		local titleRow = Instance.new("Frame")
-		titleRow.LayoutOrder = 1
-		titleRow.Size = UDim2.new(1, 0, 0, 20)
-		titleRow.BackgroundTransparency = 1
-		titleRow.Parent = frame
-
-		local titleLabel = Instance.new("TextLabel")
-		titleLabel.BackgroundTransparency = 1
-		titleLabel.Size = UDim2.new(1, -24, 1, 0)
-		titleLabel.Font = Theme.Font.Bold
-		titleLabel.TextSize = 14
-		titleLabel.TextColor3 = if success then Theme.Colors.Success else Theme.Colors.Error
-		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-		titleLabel.Text = if success then "✅ Success" else "❌ Failed"
-		titleLabel.Parent = titleRow
-
-		local dismissButton = Instance.new("TextButton")
-		dismissButton.AnchorPoint = Vector2.new(1, 0)
-		dismissButton.Position = UDim2.new(1, 0, 0, 0)
-		dismissButton.Size = UDim2.new(0, 20, 0, 20)
-		dismissButton.BackgroundTransparency = 1
-		dismissButton.Font = Theme.Font.Medium
-		dismissButton.TextSize = 14
-		dismissButton.TextColor3 = Theme.Colors.TextSecondary
-		dismissButton.Text = "✕"
-		dismissButton.Parent = titleRow
-
-		local messageLabel = Instance.new("TextLabel")
-		messageLabel.LayoutOrder = 2
-		messageLabel.BackgroundTransparency = 1
-		messageLabel.Size = UDim2.new(1, 0, 0, 0)
-		messageLabel.AutomaticSize = Enum.AutomaticSize.Y
-		messageLabel.Font = Theme.Font.Regular
-		messageLabel.TextSize = 13
-		messageLabel.TextColor3 = Theme.Colors.Text
-		messageLabel.TextWrapped = true
-		messageLabel.TextXAlignment = Enum.TextXAlignment.Left
-		messageLabel.Text = message
-		messageLabel.Parent = frame
-
+		local base = if kind == "success" then SUCCESS_DURATION elseif kind == "info" then INFO_DURATION else ERROR_DURATION
+		local duration = options.Duration
+			or (if toastDuration then (if kind == "success" then toastDuration else toastDuration + 2) else base)
+		local remaining = duration
+		local paused = false
 		local dismissed = false
+		local animate = not reducedMotion and Theme.Animations
+		local fromRight = toastPosition:find("Right") ~= nil
+
 		local function dismiss()
 			if dismissed then
 				return
 			end
 			dismissed = true
-			if reducedMotion then
-				frame:Destroy()
+			if not animate then
+				holder:Destroy()
 				return
 			end
-			local tweenOut = TweenService:Create(frame, Theme.Motion.Fast, { BackgroundTransparency = 1 })
-			tweenOut:Play()
-			for _, descendant in ipairs(frame:GetDescendants()) do
-				if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-					TweenService:Create(descendant, Theme.Motion.Fast, { TextTransparency = 1 }):Play()
-				elseif descendant:IsA("UIStroke") then
-					TweenService:Create(descendant, Theme.Motion.Fast, { Transparency = 1 }):Play()
-				end
-			end
+			Theme.tween(card, Theme.Motion.Fast, {
+				GroupTransparency = 1,
+				Position = UDim2.fromOffset(if fromRight then 40 else -40, 0),
+			})
 			task.wait(Theme.Motion.Fast.Time)
-			frame:Destroy()
+			holder:Destroy()
 		end
 
-		dismissButton.MouseButton1Click:Connect(dismiss)
+		local function setPaused(value: boolean)
+			paused = value
+			for _, bar in ipairs(pauseBars) do
+				bar.BackgroundColor3 = if paused then Theme.Colors.Accent else Theme.Colors.TextSecondary
+			end
+			timer.BackgroundTransparency = if paused then 0.7 else 0.3
+		end
 
-		-- Fade/slide in (skipped entirely under Reduced Motion — the
-		-- frame just appears fully opaque immediately).
-		if reducedMotion then
-			frame.BackgroundTransparency = 0
-		else
-			frame.BackgroundTransparency = 1
-			for _, descendant in ipairs(frame:GetDescendants()) do
-				if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-					descendant.TextTransparency = 1
-				end
-			end
-			local tweenIn = TweenService:Create(frame, Theme.Motion.Normal, { BackgroundTransparency = 0 })
-			tweenIn:Play()
-			for _, descendant in ipairs(frame:GetDescendants()) do
-				if descendant:IsA("TextLabel") then
-					TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
-				elseif descendant:IsA("TextButton") then
-					TweenService:Create(descendant, Theme.Motion.Normal, { TextTransparency = 0 }):Play()
-				end
-			end
+		closeButton.MouseButton1Click:Connect(dismiss)
+		pauseButton.MouseButton1Click:Connect(function()
+			setPaused(not paused)
+		end)
+
+		if animate then
+			card.GroupTransparency = 1
+			card.Position = UDim2.fromOffset(if fromRight then 60 else -60, 0)
+			TweenService:Create(card, TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+				GroupTransparency = 0,
+				Position = UDim2.fromOffset(0, 0),
+			}):Play()
 		end
 
 		playSound()
-		local duration = if toastDuration then (if success then toastDuration else toastDuration + 2)
-			elseif success then SUCCESS_DURATION
-			else ERROR_DURATION
-		task.delay(duration, dismiss)
+		task.spawn(function()
+			while not dismissed and holder.Parent do
+				local dt = task.wait()
+				if not paused then
+					remaining -= dt
+					timer.Size = UDim2.new(math.clamp(remaining / duration, 0, 1), 0, 0, 2)
+					if remaining <= 0 then
+						dismiss()
+					end
+				end
+			end
+		end)
 	end
 
-	-- Other UI modules (e.g. the Cross-Server page: staff chat, global
-	-- notifications) raise toasts through NotificationCenter.Push.
-	pushExternal = function(success: boolean, message: string)
+	-- Other UI modules (Cross-Server page, the join welcome) raise cards
+	-- through NotificationCenter.Notify / Push.
+	notifyExternal = function(options: NotifyOptions)
 		if not mutedToasts then
-			showToast(success, message)
+			showToast(options)
 		end
-		pushHistory({ Timestamp = os.time(), Success = success, Message = message })
+		if options.Record ~= false then
+			local plain = if options.RichText then (options.Message:gsub("<[^>]->", "")) else options.Message
+			pushHistory({
+				Timestamp = os.time(),
+				Success = options.Kind ~= "error",
+				Message = plain,
+				Title = options.Title,
+			})
+		end
 	end
 
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
@@ -329,12 +629,13 @@ function NotificationCenter.Init()
 					-- only suppresses the popup, not the record of it.
 					-- Pending confirmations get the ConfirmDialog instead of a
 					-- red "Failed" toast (they haven't failed, they're waiting).
+					local success = result.Success == true
 					if not mutedToasts and not result.NeedsConfirmation then
-						showToast(result.Success == true, result.Message)
+						showToast({ Kind = if success then "success" else "error", Message = tostring(result.Message) })
 					end
 					pushHistory({
 						Timestamp = os.time(),
-						Success = result.Success == true,
+						Success = success,
 						Message = result.Message,
 					})
 				end

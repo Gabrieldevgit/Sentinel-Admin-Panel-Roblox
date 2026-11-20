@@ -46,10 +46,13 @@ Theme.Spacing = {
 	XL = 32,
 }
 
+-- Roblox-style redesign: softer corners; Pill = fully rounded ends (the
+-- Roblox top bar / menu look).
 Theme.Radius = {
-	S = UDim.new(0, 6),
-	M = UDim.new(0, 10),
-	L = UDim.new(0, 14),
+	S = UDim.new(0, 8),
+	M = UDim.new(0, 12),
+	L = UDim.new(0, 16),
+	Pill = UDim.new(1, 0),
 }
 
 Theme.Motion = {
@@ -244,5 +247,34 @@ function Theme.padding(parent: Instance, amount: number?)
 	pad.Parent = parent
 	return pad
 end
+
+-- Two thin rotated bars = an "X" glyph that renders in every font (the
+-- multiplication sign does not render in Gotham). Returns the holder.
+function Theme.crossIcon(parent: Instance, size: number, color: Color3?, thickness: number?): Frame
+	local holder = Instance.new("Frame")
+	holder.Name = "Cross"
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Position = UDim2.new(0.5, 0, 0.5, 0)
+	holder.Size = UDim2.fromOffset(size, size)
+	holder.BackgroundTransparency = 1
+	holder.Parent = parent
+	for _, rotation in ipairs({ 45, -45 }) do
+		local bar = Instance.new("Frame")
+		bar.Name = "Bar"
+		bar.AnchorPoint = Vector2.new(0.5, 0.5)
+		bar.Position = UDim2.new(0.5, 0, 0.5, 0)
+		bar.Size = UDim2.new(1.3, 0, 0, thickness or 2)
+		bar.Rotation = rotation
+		bar.BackgroundColor3 = color or Theme.Colors.Text
+		bar.BorderSizePixel = 0
+		bar.Parent = holder
+		Theme.corner(bar, Theme.Radius.Pill)
+	end
+	return holder
+end
+
+-- Start from the built-in look, so UI built before any prefs arrive (e.g.
+-- the join notification for a player without the panel) already matches.
+Theme.Apply(UIPrefs.BUILTIN.Panel)
 
 return Theme

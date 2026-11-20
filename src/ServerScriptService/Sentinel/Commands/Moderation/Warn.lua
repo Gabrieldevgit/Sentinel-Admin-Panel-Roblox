@@ -31,12 +31,14 @@ local PunishmentService = require(Sentinel:WaitForChild("Systems"):WaitForChild(
 local Core = Sentinel:WaitForChild("Core")
 local DurationParser = require(Core:WaitForChild("Parser"):WaitForChild("DurationParser"))
 local ChatModerationService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ChatModerationService"))
+local CaseService = require(Sentinel:WaitForChild("Systems"):WaitForChild("CaseService"))
 
 local function latest(warnings: { PunishmentService.WarningRecord }): string
 	return warnings[#warnings] and warnings[#warnings].Reason or "unspecified"
 end
 
 PunishmentService.RegisterEscalationAction("kick", function(target, warnings, step)
+	CaseService.RecordSystem("kick", target, ("Automatic: %d warnings (latest: %s)"):format(step.Count, latest(warnings)))
 	target:Kick(("Automatically kicked: %d warnings reached (latest: %s)."):format(step.Count, latest(warnings)))
 end)
 
@@ -44,6 +46,7 @@ PunishmentService.RegisterEscalationAction("mute", function(target, _warnings, s
 	local duration = DurationParser.Parse(step.Duration or "1h")
 	if duration then
 		ChatModerationService.Mute(target, duration.Seconds, duration.IsPermanent)
+		CaseService.RecordSystem("mute", target, ("Automatic: %d warnings"):format(step.Count), step.Duration or "1h")
 	end
 end)
 
@@ -68,6 +71,7 @@ PunishmentService.RegisterEscalationAction("ban", function(target, warnings, ste
 	if not ok then
 		warn(("[Sentinel.Warn] failed to persist auto-ban: %s"):format(tostring(err)))
 	end
+	CaseService.RecordSystem("ban", target, record.Reason, if permanent then "forever" else step.Duration or "1d")
 	target:Kick(("Banned: Automatically banned, %d warnings reached."):format(step.Count))
 end)
 

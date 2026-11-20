@@ -123,6 +123,7 @@ local MODERATOR_NODES = {
 	"moderation.mute",
 	"moderation.warn",
 	"moderation.notes",
+	"moderation.cases",
 	"player.freeze",
 	"player.jail",
 	"player.goto",
@@ -1073,7 +1074,7 @@ local PRESETS: { [string]: { Description: string, Nodes: { string } } } = {
 	PanelAccess = { Description = "Open the panel and view ranks", Nodes = { "panel.open", "ranks.view" } },
 	Moderation = {
 		Description = "Kick, mute, warn, notes, freeze, jail",
-		Nodes = { "moderation.kick", "moderation.mute", "moderation.warn", "moderation.notes", "player.freeze", "player.jail" },
+		Nodes = { "moderation.kick", "moderation.mute", "moderation.warn", "moderation.notes", "moderation.cases", "player.freeze", "player.jail" },
 	},
 	FullModeration = { Description = "All moderation incl. bans and access lists", Nodes = { "moderation.*", "player.freeze", "player.jail" } },
 	Teleport = { Description = "Goto, bring, teleport, spawn", Nodes = { "player.goto", "player.bring", "player.teleport", "player.spawn" } },

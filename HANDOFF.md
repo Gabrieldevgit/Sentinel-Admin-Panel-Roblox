@@ -4,10 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-17 (W10 + W11 session) — W09 is committed
-(`daef915`). **W10 persistent audit + W11 Logs page** are built and
-verified in Play, **not committed yet** (user commits on request). Next
-undone row: W12. Start with §6 "Next session"._
+_Last updated: 2026-11-20 (Roblox-style redesign session) — W12 and the
+**Roblox-style redesign** (notification cards, join welcome, top bar
+buttons, Roblox theme) are built and verified in Play, **both not
+committed**. The user said NOT to start W13 that session; next undone row
+is still W13. Start with §6 "Next session"._
 
 ---
 
@@ -124,7 +125,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit, 94 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases, 102 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -376,6 +377,67 @@ Control" UI, all driven by one command grammar
   server / Changes), rows `Body.List.Row_<n>.Header` expand to every field
   incl. before/after, "Load older" via cursor, Export modal (copyable
   text). Page container path: `SentinelShell.Root.Workspace.LogsPage`.
+- **Roblox-style redesign (2026-11-20, from the user's screenshots of
+  Roblox's top bar + an "Info" notification):**
+  - `Shared/UIPrefs`: theme **Roblox** (near-black neutrals) + accent
+    **Royal** (Roblox blue) + font Builder are the new BUILTIN defaults
+    (old themes still selectable). `Theme.Radius` S/M/L = 8/12/16 + `Pill`;
+    `Theme.crossIcon(parent, size, color, thickness)` draws an X from two
+    bars; Theme applies the BUILTIN panel at load (UI built before prefs
+    arrive already matches).
+  - `NotificationCenter`: every toast is a Roblox-style card (CanvasGroup):
+    kind badge + title, pause + close, message (RichText optional), role
+    chips, full-width action button, timer line; hairline outline overlay.
+    New `NotificationCenter.Notify({Kind info|success|warning|error, Title,
+    Message, RichText, Chips={{Text,Color}}, Action={Text,Callback},
+    Duration, Record})`; `Push(success, msg)` still works. Paths:
+    `SentinelNotifications.ToastStack.Toast_<n>.Notification.Body.{Header.
+    Controls.{PauseButton,CloseButton}, Message, Chips, ActionButton}`.
+  - Join welcome: `GetWelcomeRemote` (UIBridge) returns ranks (name,
+    colour, priority), command count, CanPanel, CanCommandBar, prefixes -
+    or nil when the player can't run any non-Public command. init.client
+    asks up to 3 times (4 s apart), inits NotificationCenter early (not only
+    on F6 now) and shows "Welcome @name! Your roles are:" + chips + Learn
+    More (a "Getting started" card with the player's real keys / prefixes,
+    plus "Open Sentinel" for staff).
+  - `StarterGui/SentinelUI/TopbarIcons.lua`: ScreenGui `SentinelTopbar`
+    placed from `GuiService.TopbarInset` (right of Roblox's buttons): one
+    dark pill with `SentinelButton` ("S", toggles the panel) and
+    `CommandBarButton` (">_", toggles the bar), tooltips, highlight while
+    open. Only the buttons the player may use are created.
+  - Shell: rounded window (16), brand left ("S" badge + Sentinel), clock
+    centred, section tabs are pills (filled when active; underline gone),
+    round icon buttons, drawn X close, pill search, no sub-menu marker.
+  - **Command bar and command palette were deliberately not restyled**
+    (user's instruction: leave them alone for now).
+- **W12 Moderation center:**
+  - `Systems/CaseService`: numbered cases (DataStore `Sentinel_Cases_v1`:
+    `Counter` via UpdateAsync, `Case_<id>`, `Index` = newest 500 summaries
+    merged by Id, `Player_<userId>` id lists; queued, flushed every 10 s +
+    on close; memory-only outside a running game). Status Open / Active /
+    Expired / Revoked / Closed; ban / mute / jail start Active (expiry from
+    the duration, -1 = permanent), kick / warn Closed, investigation Open.
+    An **After hook** turns successful ban / kick / mute / warn / jail and
+    gban / gkick / gwarn into cases (global commands set
+    `ctx.CaseTarget = {UserId, Name}`); unmute / unjail / gunban revoke the
+    Active case. Warn.lua escalation records SYSTEM cases
+    (`CaseService.RecordSystem`). `Search(filter, offsetCursor, limit)`,
+    `ParseQuery` (`player: mod: type: status: since: #id` + text),
+    `Dashboard()` (counts, 24 h activity, recent lists, active bans / mutes,
+    moderators online, top moderators, reasons).
+  - Reason templates = ConfigService key `ReasonTemplates` (7 defaults);
+    a Before hook expands `#name` tokens in any command's arguments
+    (except `;reasons`). Mute / unmute / jail Usage gained `[reason...]`.
+  - Commands (`Commands/Moderation/Cases.lua`, node `moderation.cases`,
+    added to default Moderator + BasicModeration preset - **saved ranks not
+    migrated**): `;cases [query]`, `;case <id>`, `;caseopen <player>
+    <summary>`, `;casenote`, `;caseclose`, `;casereopen`, `;caseassign <id>
+    me|name|none`, `;reasons [add|remove]` (edit = config.edit).
+  - Remotes `GetModerationDashboardRemote`, `SearchCasesRemote(query,
+    cursor, limit)`, `GetCaseRemote(id)`.
+  - `ModerationPage.lua` rewritten: tabs Dashboard / Cases / Bulk (paths in
+    its header; `Root.Workspace.ModerationPage.Tabs.Tab_<name>`). Bulk
+    builds one `action a,b:dur reason` command.
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -591,6 +653,13 @@ Rules that keep it sound:
   server-side with quick keys (W08), and it binds its own keys + uses
   `Config.KEYBINDS`. Ask the user whether to delete it. `Config.lua` ranks
   are only reference; RankService owns ranks.
+- **W12 not verified / open (so not ✅):** pending reports card shows "-"
+  until W14; recent warnings list (no second player to warn - the test
+  account has 4 warnings); automatic escalation cases; punishment expiry
+  seen live (unit-tested only); cases written by two servers at once;
+  pre-W12 bans / mutes have no case, so the Active bans / mutes cards only
+  count punishments given since W12. There is no local `;unban` (only
+  `;gunban`) - W13. Testing place has 5 test cases (#1-#5).
 - **W10/W11 open:** Discord webhook integration not built (Discord blocks
   Roblox; needs an HTTP proxy - external infra decision). `;resetranks`
   style confirmations are not logged until `;confirm` runs them. Pages are
@@ -638,9 +707,11 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **94/94**.
-- **W10 persistent audit + W11 Logs page** built and verified in Play,
-  **not committed** (see §3).
+- Sentinel server and client boot cleanly in Play. Unit tests **102/102**.
+- **Roblox-style redesign** (see §3) built and verified in Play, **not
+  committed**. The user asked for it instead of W13.
+- **W12 Moderation center** built and verified in Play, **not committed**.
+- **W10 persistent audit + W11 Logs page** committed (`6ed1d87`).
 - **W09 responsive UI pass** committed (`daef915`). README roadmap marks
   Phase 7 done.
 - **W08 settings integration** is committed (`0d24484`). Testing-place admin config is back to defaults and
@@ -650,9 +721,9 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W10 + W11 done; next undone row is **W12 -
-  Moderation center** (`CaseService`, moderation dashboard, case search,
-  reason templates, bulk punishments). About 8 weekends
+- **Schedule position:** W12 done; next undone row is **W13 - Offline
+  management** (username lookup, offline profiles, offline ban/unban,
+  ban list, is-banned check, `Players:BanAsync`). About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -662,7 +733,11 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **247 bullets ✅**: W10/W11 28 (12 audit fields,
+- Feature blueprint: **267 bullets ✅**: W12 20 (custom ban / mute
+  durations, reason templates, required reasons, ban / mute history, bulk
+  punishments, active cases, recent punishments, active bans / mutes,
+  moderators online, activity, case search / filtering / details, staff
+  responsible, moderator notes, internal discussion, collaboration), W10/W11 28 (12 audit fields,
   search, 7 filters, pagination, persistent, export, configurable
   retention, cross-server logs, failed-action logs, data modification
   history, admin-config log retention), W09 4 (sidebar customization,
@@ -686,7 +761,9 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
-1. **Commit W10 + W11** if the user agrees. Decide the Discord webhook
+1. **Commit W12 + the Roblox-style redesign** if the user agrees. Ask
+   whether the command bar / palette should get the Roblox look next, and
+   whether page content (dashboard cards etc.) should be restyled too. Decide the Discord webhook
    proxy (W11 leftover). Ask whether to delete
    `PlayerControlsSystem.lua` (see §5).
 2. **Publish and test with two
@@ -702,9 +779,34 @@ Rules that keep it sound:
 5. **Live-server check**: text censoring (Studio doesn't filter text).
 6. Phone check of the mobile layout (Studio device emulator by hand).
 7. Scaffold `src/client`, `src/server`, `src/shared`: ask whether to delete.
-8. Then start **W12**.
+8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-20 (Roblox-style redesign)** - User sent screenshots (Roblox
+  top bar with icon pills, an "Info" welcome notification) and asked for:
+  that notification style, a welcome card for everyone with command perms,
+  Sentinel + command bar buttons in Roblox's top bar, and a panel redesign
+  in that style - not W13, and no changes to the command bar / palette.
+  Built Roblox theme + defaults, notification cards (`Notify`),
+  `GetWelcomeRemote`, `TopbarIcons`, Shell restyle. Verified in Play by
+  mouse: welcome card + Owner chip, pause, close, Learn More, top bar S
+  (panel opens, highlight) and >_ (bar opens), Appearance with 8 theme
+  chips. Tests 102/102. ✅ 2 bullets (information notifications,
+  individual dismissal). Not committed.
+
+- **2026-11-17 (W12)** - User asked to continue the plan through all rows.
+  Built `Systems/CaseService` (persistent cases, statuses, notes,
+  assignment, revoke, expiry, search, dashboard, reason templates with
+  `#name` expansion), `Commands/Moderation/Cases.lua`, 3 UIBridge remotes,
+  new Moderation page (Dashboard / Cases / Bulk), escalation cases,
+  `Cases.spec` (tests 102/102). Verified in Play by remote, mouse and
+  keyboard: mute / jail with `#templates` -> cases, unmute / unjail revoke,
+  investigation open / note / assign / close / reopen, gban + gunban of an
+  offline account (global case, active-ban count 1 -> 0), reasons add /
+  remove, dashboard cards + activity bars, case list + detail + note box,
+  bulk mute through the panel, cases persisting across a restart. Fixed:
+  activity bar overflow, Bulk status text. ✅ 20 bullets. Not committed.
 
 - **2026-11-17 (planning)** - Added the user's W-FINAL Modules Ecosystem
   spec to `Docs/Planned`, as Phase 7 of the schedule and rule §0.2b (last

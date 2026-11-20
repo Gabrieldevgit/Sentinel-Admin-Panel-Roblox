@@ -555,6 +555,7 @@ if sentinelUIFolder then
 		{ Name = "AppearancePage" },
 		{ Name = "KeybindsPage" },
 		{ Name = "InGameSettingsPage" },
+		{ Name = "TopbarIcons" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -634,7 +635,7 @@ if sentinelUIFolder then
 		if uiBuilt and Shell then
 			Shell.ApplyPrefs(newPrefs.Panel, newPrefs.Layout)
 		end
-		if uiBuilt and NotificationCenterRef and type(newPrefs.Notifications) == "table" then
+		if NotificationCenterRef and type(newPrefs.Notifications) == "table" then
 			NotificationCenterRef.ApplyPrefs(newPrefs.Notifications)
 		end
 		if CommandBar then
@@ -897,6 +898,136 @@ if sentinelUIFolder then
 				end
 			end)
 		end
+	end)
+
+	-- -----------------------------------------------------------------------
+	-- Join welcome + top bar buttons (Roblox-style redesign). Everyone who
+	-- can run at least one command gets an "Info" card with their ranks;
+	-- staff / command bar users also get Sentinel buttons in Roblox's top
+	-- bar. The server decides who qualifies (GetWelcomeRemote).
+	-- -----------------------------------------------------------------------
+	local welcomeRemote = SentinelShared:WaitForChild("GetWelcomeRemote", 15) :: RemoteFunction?
+
+	local function keyLabel(field: string, fallback: string): string
+		local keys = (effectivePrefs and effectivePrefs.Keys) or UIPrefs.BUILTIN.Keys
+		local key = keys[field]
+		return if type(key) == "string" and key ~= "None" then key else fallback
+	end
+
+	local function toggleCommandBar()
+		task.spawn(function()
+			if ensureCommandBar() and CommandBar then
+				CommandBar.Toggle()
+			end
+		end)
+	end
+
+	local function showHowTo(NotificationCenter: any, info: any)
+		local lines = {}
+		if info.CanPanel then
+			table.insert(lines, ("<b>%s</b> or the <b>S</b> button in the top bar opens the Sentinel panel."):format(keyLabel("Panel", "F6")))
+			table.insert(lines, ("<b>%s</b> opens the command palette."):format(keyLabel("Palette", "Ctrl+K")))
+		end
+		if info.CanCommandBar then
+			local barKey = (effectivePrefs and effectivePrefs.CommandBar and effectivePrefs.CommandBar.Key) or "F2"
+			table.insert(lines, ("<b>%s</b> or the <b>&gt;_</b> button opens the command bar."):format(tostring(barKey)))
+		end
+		local prefixes = if type(info.Prefixes) == "table" and #info.Prefixes > 0 then info.Prefixes else { ";" }
+		table.insert(lines, ("In chat, start a command with <b>%s</b> (try <b>%shelp</b>)."):format(
+			table.concat(prefixes, " "),
+			tostring(prefixes[1])
+		))
+		table.insert(lines, ("You can use <b>%d</b> commands."):format(tonumber(info.Commands) or 0))
+		NotificationCenter.Notify({
+			Kind = "info",
+			Title = "Getting started",
+			RichText = true,
+			Message = table.concat(lines, "\n"),
+			Duration = 20,
+			Record = false,
+			Action = if info.CanPanel then { Text = "Open Sentinel", Callback = tryOpenPanel } else nil,
+		})
+	end
+
+	task.spawn(function()
+		if not welcomeRemote then
+			return
+		end
+		-- Ranks are applied as the player joins (group lookups can take a
+		-- moment), so ask again a couple of times before giving up.
+		local info: any = nil
+		for attempt = 1, 3 do
+			local ok, result = pcall(function()
+				return (welcomeRemote :: RemoteFunction):InvokeServer()
+			end)
+			if ok and type(result) == "table" then
+				info = result
+				break
+			end
+			task.wait(4)
+		end
+		if not info then
+			return
+		end
+
+		local NotificationCenter = require(notificationCenterModule)
+		NotificationCenter.Init()
+		NotificationCenterRef = NotificationCenter
+		if effectivePrefs and type(effectivePrefs.Notifications) == "table" then
+			NotificationCenter.ApplyPrefs(effectivePrefs.Notifications)
+		end
+
+		-- Top bar buttons first, so the "S" button the card mentions exists.
+		local icons = {}
+		if info.CanPanel then
+			table.insert(icons, {
+				Id = "Sentinel",
+				Glyph = "S",
+				GlyphSize = 23,
+				Tooltip = ("Sentinel (%s)"):format(keyLabel("Panel", "F6")),
+				OnClick = tryOpenPanel,
+				IsActive = function()
+					return uiBuilt and Shell ~= nil and Shell.IsOpen()
+				end,
+			})
+		end
+		if info.CanCommandBar then
+			table.insert(icons, {
+				Id = "CommandBar",
+				Glyph = ">_",
+				Font = Enum.Font.RobotoMono,
+				GlyphSize = 19,
+				Tooltip = "Command bar",
+				OnClick = toggleCommandBar,
+				IsActive = function()
+					return CommandBar ~= nil and CommandBar.IsOpen()
+				end,
+			})
+		end
+		if #icons > 0 then
+			require(loadedModules.TopbarIcons).Init(icons)
+		end
+
+		local chips = {}
+		for _, role in ipairs(info.Roles or {}) do
+			if type(role) == "table" and type(role.Name) == "string" then
+				table.insert(chips, { Text = role.Name, Color = if typeof(role.Color) == "Color3" then role.Color else nil })
+			end
+		end
+		NotificationCenter.Notify({
+			Kind = "info",
+			Title = "Info",
+			RichText = true,
+			Message = ("Welcome <b>@%s</b>! Your roles are:"):format(localPlayer.Name),
+			Chips = chips,
+			Duration = 12,
+			Action = {
+				Text = "Learn More",
+				Callback = function()
+					showHowTo(NotificationCenter, info)
+				end,
+			},
+		})
 	end)
 end
 

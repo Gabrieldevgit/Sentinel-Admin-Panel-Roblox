@@ -164,6 +164,8 @@ local LIMITS: { [string]: { number } } = {
 	GetCrossServerSnapshotRemote = { 6, 1.5 },
 	GetCrossServerServerRemote = { 6, 2 },
 	CrossServerFindRemote = { 4, 1 }, -- may call Roblox's user lookup
+	GetModerationDashboardRemote = { 4, 1 },
+	SearchCasesRemote = { 5, 1 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -1007,6 +1009,107 @@ bindInvoke(searchAuditLogRemote, function(player: Player, query: any, cursor: an
 	found.Status = AuditService.GetStatus()
 	found.Filter = filter
 	return found
+end)
+
+-- ---------------------------------------------------------------------------
+-- Moderation center (W12). Reads only; every change (case notes, status,
+-- assignment, punishments, reason templates) is a normal command.
+-- ---------------------------------------------------------------------------
+local CaseService = require(Sentinel:WaitForChild("Systems"):WaitForChild("CaseService"))
+local getModerationDashboardRemote = getOrCreate("GetModerationDashboardRemote", "RemoteFunction") :: RemoteFunction
+local searchCasesRemote = getOrCreate("SearchCasesRemote", "RemoteFunction") :: RemoteFunction
+local getCaseRemote = getOrCreate("GetCaseRemote", "RemoteFunction") :: RemoteFunction
+
+local function canViewCases(player: Player): boolean
+	return isStaff(player) and PermissionSystem.Has(player, "moderation.cases")
+end
+
+bindInvoke(getModerationDashboardRemote, function(player: Player)
+	if not canViewCases(player) then
+		return { Error = "You need moderation.cases to see the moderation center." }
+	end
+	local data = CaseService.Dashboard()
+	data.CanEditReasons = PermissionSystem.Has(player, "config.edit")
+	return data
+end)
+
+bindInvoke(searchCasesRemote, function(player: Player, query: any, cursor: any, limit: any)
+	if not canViewCases(player) then
+		return { Cases = {}, Total = 0, Error = "You need moderation.cases." }
+	end
+	local filter
+	if type(query) == "string" then
+		local err
+		filter, err = CaseService.ParseQuery(query:sub(1, 200))
+		if not filter then
+			return { Cases = {}, Total = 0, Error = err }
+		end
+	else
+		filter = CaseService.SanitizeFilter(query)
+	end
+	local found = CaseService.Search(filter, if type(cursor) == "number" then cursor else nil, clampCount(limit, 40, 100))
+	found.Filter = filter
+	return found
+end)
+
+bindInvoke(getCaseRemote, function(player: Player, id: any)
+	if not canViewCases(player) or type(id) ~= "number" then
+		return nil
+	end
+	return CaseService.Get(id)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Join welcome (Roblox-style redesign): every player who can run at least
+-- one command gets an "Info" notification with their ranks. The client asks
+-- once it has loaded (a pushed event could arrive before it listens).
+-- Returns nil for players without any command permission.
+-- ---------------------------------------------------------------------------
+local getWelcomeRemote = getOrCreate("GetWelcomeRemote", "RemoteFunction") :: RemoteFunction
+LIMITS.GetWelcomeRemote = { 3, 0.5 }
+
+local function commandCount(player: Player): number
+	local count = 0
+	for _, def in ipairs(CommandRegistry.All()) do
+		local d = def :: any
+		if not d.Public and not d.Hidden and PermissionSystem.Has(player, def.Permission) then
+			count += 1
+		end
+	end
+	return count
+end
+
+bindInvoke(getWelcomeRemote, function(player: Player)
+	local count = commandCount(player)
+	if count == 0 then
+		return nil
+	end
+	local roles = {}
+	for _, roleName in ipairs(PermissionSystem.GetRoles(player)) do
+		local rank = RankService.GetRank(roleName)
+		if rank then
+			local c = rank.Color or { 200, 200, 200 }
+			table.insert(roles, {
+				Name = rank.Name,
+				Priority = rank.Priority,
+				Color = Color3.fromRGB(c[1] or 200, c[2] or 200, c[3] or 200),
+			})
+		end
+	end
+	table.sort(roles, function(a, b)
+		return a.Priority > b.Priority
+	end)
+	-- Permissions that come from the default nodes only (no rank).
+	if #roles == 0 then
+		table.insert(roles, { Name = "Player", Priority = 0, Color = Color3.fromRGB(150, 150, 160) })
+	end
+	return {
+		Roles = roles,
+		Commands = count,
+		CanPanel = isStaff(player),
+		CanCommandBar = PrefsService.CanUseCommandBar(player),
+		Prefixes = ConfigService.GetPrefixes(),
+	}
 end)
 
 return true

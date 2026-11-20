@@ -425,6 +425,7 @@ register({
 		if not user then
 			return { Success = false, Message = err }
 		end
+		(ctx :: any).CaseTarget = { UserId = user.UserId, Name = user.Name } -- W12 cases
 		if not canActOn(ctx.Executor, user) then
 			return { Success = false, Message = PROTECTED }
 		end
@@ -462,6 +463,7 @@ register({
 		if not user then
 			return { Success = false, Message = err }
 		end
+		(ctx :: any).CaseTarget = { UserId = user.UserId, Name = user.Name } -- W12 cases
 		local parsed = DurationParser.Parse(ctx.Arguments[2] or "")
 		if not parsed then
 			return { Success = false, Message = "Usage: ;gban <player> <duration|perm> [reason]  (e.g. 30m, 7d, perm)" }
@@ -524,6 +526,7 @@ register({
 		if not user then
 			return { Success = false, Message = err }
 		end
+		(ctx :: any).CaseTarget = { UserId = user.UserId, Name = user.Name } -- W12 cases
 		if not BanCommand.GetActiveBan(user.UserId) then
 			return { Success = false, Message = user.Name .. " is not banned." }
 		end
@@ -561,6 +564,7 @@ register({
 		if not user then
 			return { Success = false, Message = err }
 		end
+		(ctx :: any).CaseTarget = { UserId = user.UserId, Name = user.Name } -- W12 cases
 		if #ctx.Arguments < 2 then
 			return { Success = false, Message = "Usage: ;gwarn <player> <reason>" }
 		end
