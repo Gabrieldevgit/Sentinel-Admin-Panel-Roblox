@@ -17,7 +17,7 @@
 	uses.
 
 	Responsibilities (current):
-		- Display banner announcements (AnnounceRemote)
+		- Load SentinelUI/AnnouncementBanner (announcements, PMs, approvals)
 		- Display a countdown overlay (CountdownRemote)
 	Responsibilities (future):
 		- Render dockable command palette
@@ -45,84 +45,22 @@ screenGui.DisplayOrder = 100
 screenGui.Parent = playerGui
 
 -- ---------------------------------------------------------------------------
--- Announcement banner
+-- Announcements, private messages and Owner approval cards live in
+-- SentinelUI/AnnouncementBanner (built for every player, staff or not).
 -- ---------------------------------------------------------------------------
-local bannerFrame = Instance.new("Frame")
-bannerFrame.Name = "AnnouncementBanner"
-bannerFrame.AnchorPoint = Vector2.new(0.5, 0)
-bannerFrame.Position = UDim2.new(0.5, 0, 0, -80)
-bannerFrame.Size = UDim2.new(0, 600, 0, 60)
-bannerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-bannerFrame.BackgroundTransparency = 0.1
-bannerFrame.BorderSizePixel = 0
-bannerFrame.Parent = screenGui
-
-local bannerCorner = Instance.new("UICorner")
-bannerCorner.CornerRadius = UDim.new(0, 10)
-bannerCorner.Parent = bannerFrame
-
-local bannerStroke = Instance.new("UIStroke")
-bannerStroke.Color = Color3.fromRGB(255, 215, 0)
-bannerStroke.Thickness = 2
-bannerStroke.Parent = bannerFrame
-
-local bannerLabel = Instance.new("TextLabel")
-bannerLabel.Name = "Text"
-bannerLabel.BackgroundTransparency = 1
-bannerLabel.Size = UDim2.new(1, -20, 1, 0)
-bannerLabel.Position = UDim2.new(0, 10, 0, 0)
-bannerLabel.Font = Enum.Font.GothamBold
-bannerLabel.TextSize = 20
-bannerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-bannerLabel.TextWrapped = true
-bannerLabel.Text = ""
-bannerLabel.Parent = bannerFrame
-
-local BANNER_SHOWN_Y = UDim2.new(0.5, 0, 0, 20)
-local BANNER_HIDDEN_Y = UDim2.new(0.5, 0, 0, -80)
-local bannerQueue: { { Text: string, Color: Color3 } } = {}
-local bannerBusy = false
-
-local function playBanner(text: string, color: Color3)
-	bannerLabel.Text = text
-	bannerStroke.Color = color
-
-	bannerFrame.Position = BANNER_HIDDEN_Y
-	local tweenIn = TweenService:Create(bannerFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		Position = BANNER_SHOWN_Y,
-	})
-	tweenIn:Play()
-	tweenIn.Completed:Wait()
-
-	task.wait(3.5)
-
-	local tweenOut = TweenService:Create(bannerFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-		Position = BANNER_HIDDEN_Y,
-	})
-	tweenOut:Play()
-	tweenOut.Completed:Wait()
-end
-
-local function processBannerQueue()
-	if bannerBusy then
-		return
-	end
-	bannerBusy = true
-	while #bannerQueue > 0 do
-		local next = table.remove(bannerQueue, 1)
-		if next then
-			playBanner(next.Text, next.Color)
+local AnnouncementBanner: any = nil
+do
+	local folder = playerGui:WaitForChild("SentinelUI", 15)
+	local module = folder and folder:WaitForChild("AnnouncementBanner", 15)
+	if module and module:IsA("ModuleScript") then
+		local ok, result = pcall(require, module)
+		if ok then
+			AnnouncementBanner = result
+			AnnouncementBanner.Init()
+		else
+			warn("[Sentinel] AnnouncementBanner failed to load: " .. tostring(result))
 		end
 	end
-	bannerBusy = false
-end
-
-local announceRemote = SentinelShared:WaitForChild("AnnounceRemote", 15)
-if announceRemote and announceRemote:IsA("RemoteEvent") then
-	announceRemote.OnClientEvent:Connect(function(text: string, color: Color3?)
-		table.insert(bannerQueue, { Text = text, Color = color or Color3.fromRGB(255, 215, 0) })
-		task.spawn(processBannerQueue)
-	end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -444,7 +382,9 @@ if utilityRemote and utilityRemote:IsA("RemoteEvent") then
 		local args = { ... }
 		if action == "Hint" then
 			local text = args[1] or ""
-			playBanner(text, Color3.fromRGB(0, 170, 255))
+			if AnnouncementBanner then
+				AnnouncementBanner.ShowHint(tostring(text))
+			end
 		elseif action == "View" then
 			local subject = args[1]
 			if subject and workspace.CurrentCamera then
@@ -454,70 +394,7 @@ if utilityRemote and utilityRemote:IsA("RemoteEvent") then
 			if workspace.CurrentCamera and localPlayer.Character then
 				workspace.CurrentCamera.CameraSubject = localPlayer.Character:FindFirstChildOfClass("Humanoid")
 			end
-		elseif action == "PM" then
-			local senderName = args[1] or "Staff"
-			local messageText = args[2] or ""
-
-			local pmGui = Instance.new("Frame")
-			pmGui.Name = "SentinelPM"
-			pmGui.AnchorPoint = Vector2.new(0.5, 0.5)
-			pmGui.Position = UDim2.new(0.5, 0, 0.5, 0)
-			pmGui.Size = UDim2.new(0, 360, 0, 150)
-			pmGui.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
-			pmGui.BorderSizePixel = 0
-			pmGui.Parent = screenGui
-
-			local corner = Instance.new("UICorner")
-			corner.CornerRadius = UDim.new(0, 10)
-			corner.Parent = pmGui
-
-			local stroke = Instance.new("UIStroke")
-			stroke.Color = Color3.fromRGB(64, 156, 255)
-			stroke.Thickness = 2
-			stroke.Parent = pmGui
-
-			local titleLbl = Instance.new("TextLabel")
-			titleLbl.BackgroundTransparency = 1
-			titleLbl.Position = UDim2.new(0, 14, 0, 10)
-			titleLbl.Size = UDim2.new(1, -28, 0, 24)
-			titleLbl.Font = Enum.Font.GothamBold
-			titleLbl.TextSize = 16
-			titleLbl.TextColor3 = Color3.fromRGB(64, 156, 255)
-			titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-			titleLbl.Text = "✉ Private Message from " .. senderName
-			titleLbl.Parent = pmGui
-
-			local bodyLbl = Instance.new("TextLabel")
-			bodyLbl.BackgroundTransparency = 1
-			bodyLbl.Position = UDim2.new(0, 14, 0, 38)
-			bodyLbl.Size = UDim2.new(1, -28, 0, 64)
-			bodyLbl.Font = Enum.Font.Gotham
-			bodyLbl.TextSize = 13
-			bodyLbl.TextColor3 = Color3.fromRGB(240, 240, 245)
-			bodyLbl.TextXAlignment = Enum.TextXAlignment.Left
-			bodyLbl.TextYAlignment = Enum.TextYAlignment.Top
-			bodyLbl.TextWrapped = true
-			bodyLbl.Text = messageText
-			bodyLbl.Parent = pmGui
-
-			local closeBtn = Instance.new("TextButton")
-			closeBtn.AnchorPoint = Vector2.new(0.5, 1)
-			closeBtn.Position = UDim2.new(0.5, 0, 1, -10)
-			closeBtn.Size = UDim2.new(0, 100, 0, 28)
-			closeBtn.BackgroundColor3 = Color3.fromRGB(64, 156, 255)
-			closeBtn.Font = Enum.Font.GothamMedium
-			closeBtn.TextSize = 12
-			closeBtn.TextColor3 = Color3.new(1, 1, 1)
-			closeBtn.Text = "Dismiss"
-			closeBtn.Parent = pmGui
-
-			local btnCorner = Instance.new("UICorner")
-			btnCorner.CornerRadius = UDim.new(0, 6)
-			btnCorner.Parent = closeBtn
-
-			closeBtn.MouseButton1Click:Connect(function()
-				pmGui:Destroy()
-			end)
+		-- Private messages arrive on PrivateMessageRemote (AnnouncementBanner).
 		end
 	end)
 end
@@ -543,6 +420,8 @@ if sentinelUIFolder then
 		{ Name = "ServerPage" },
 		{ Name = "AnalyticsPage" },
 		{ Name = "AuditLogPage" },
+		{ Name = "LookupPage" },
+		{ Name = "AnnouncementsPage" },
 		{ Name = "DeveloperPage" },
 		{ Name = "NotificationCenter" },
 		{ Name = "SettingsPage" },
@@ -703,11 +582,23 @@ if sentinelUIFolder then
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
+		require(loadedModules.LookupPage).Build(Shell.RegisterPage("Lookup", "Lookup", "🔎"), function(caseId: number)
+			Shell.ShowPage("Moderation")
+			ModerationPage.OpenCase(caseId)
+		end)
 		CommandsPage.Build(Shell.RegisterPage("Commands", "Commands", "📜"), CommandPalette, CommandBuilder)
 		LibraryPage.Build(Shell.RegisterPage("Library", "Library", "📚"), CommandPalette, CommandBuilder)
 		EconomyPage.Build(Shell.RegisterPage("Economy", "Economy", "🪙"))
 		ServerPage.Build(Shell.RegisterPage("Server", "Server", "🌎"))
 		local crossServerContainer = Shell.RegisterPage("CrossServer", "Cross-Server", "🌐")
+		require(loadedModules.AnnouncementsPage).Build({
+			History = Shell.RegisterPage("AnnounceHistory", "History", "🕘"),
+			Server = Shell.RegisterPage("AnnounceServer", "Current server", "📢"),
+			Global = Shell.RegisterPage("AnnounceGlobal", "Global", "🌐"),
+			Players = Shell.RegisterPage("AnnouncePlayers", "Some players", "👤"),
+		}, AnnouncementBanner, function(pageId: string)
+			Shell.ShowPage(pageId)
+		end)
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		require(loadedModules.AuditLogPage).Build(Shell.RegisterPage("Logs", "Audit Log", "📋"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))

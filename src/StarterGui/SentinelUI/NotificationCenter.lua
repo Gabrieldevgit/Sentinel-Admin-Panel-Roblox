@@ -631,7 +631,12 @@ function NotificationCenter.Init()
 					-- red "Failed" toast (they haven't failed, they're waiting).
 					local success = result.Success == true
 					if not mutedToasts and not result.NeedsConfirmation then
-						showToast({ Kind = if success then "success" else "error", Message = tostring(result.Message) })
+						-- Pending = held for the Owner's approval (ApprovalService): not a failure.
+						showToast({
+							Kind = if success then "success" elseif result.Pending then "warning" else "error",
+							Title = if result.Pending then "Waiting for approval" else nil,
+							Message = tostring(result.Message),
+						})
 					end
 					pushHistory({
 						Timestamp = os.time(),

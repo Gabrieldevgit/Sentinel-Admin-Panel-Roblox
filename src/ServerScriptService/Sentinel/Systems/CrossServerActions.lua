@@ -22,7 +22,7 @@
 		                                  record is written by the origin)
 		warn      { u, tn, r }            add a warning if they are here
 		bring     { u, tn, j, pl }        teleport the player to server j
-		announce  { m }                   banner for everyone
+		announce  { m, i, d, s, t, c, h }  banner for everyone (text, id, display name, style, time, colour, title)
 		notify    { m }                   toast for staff
 		lockdown  { on, r, by, at }       lock / unlock this server
 		shutdown  { m }                   kick everyone
@@ -43,6 +43,7 @@ local PermissionSystem = require(Core:WaitForChild("PermissionSystem"))
 local CrossServerService = require(script.Parent:WaitForChild("CrossServerService"))
 local PunishmentService = require(script.Parent:WaitForChild("PunishmentService"))
 local RankService = require(script.Parent:WaitForChild("RankService"))
+local AnnouncementService = require(script.Parent:WaitForChild("AnnouncementService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -161,11 +162,26 @@ CrossServerService.Handle("bring", function(payload: any, envelope: any)
 	return true, 1, "sending " .. player.Name
 end)
 
-CrossServerService.Handle("announce", function(payload: any, _envelope: any)
+CrossServerService.Handle("announce", function(payload: any, envelope: any)
 	if type(payload.m) ~= "string" or payload.m == "" then
 		return false, 0, "empty announcement"
 	end
-	announceRemote:FireAllClients(payload.m, Color3.fromRGB(255, 215, 0))
+	-- The text was filtered by the sending server (AnnouncementService.Send).
+	local actor = if type(envelope.a) == "table" then envelope.a else {}
+	AnnouncementService.Show({
+		Id = payload.i,
+		Text = payload.m,
+		Title = if type(payload.h) == "string" then payload.h else nil,
+		Style = payload.s,
+		Duration = payload.t,
+		Color = payload.c,
+		Scope = "global",
+		Author = {
+			UserId = tonumber(actor.u) or 0,
+			Name = tostring(actor.n or "Staff"),
+			DisplayName = if type(payload.d) == "string" then payload.d else tostring(actor.n or "Staff"),
+		},
+	})
 	return true, #Players:GetPlayers(), nil
 end)
 

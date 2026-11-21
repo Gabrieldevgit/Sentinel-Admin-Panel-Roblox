@@ -19,6 +19,9 @@
 		requirereason  RequiredReasons        "ban kick warn" | "none"
 		logretention   LogRetentionDays       "30"
 		defaultperms   DefaultPermissions     "player.fly !page.Developer" | "none"
+		ownerapproval  OwnerApproval          "on" | "off"
+		approvalrisk   ApprovalRisk           "critical" | "high" | "medium"
+		approvaltimeout ApprovalTimeout       "60"  (seconds, 15-300)
 
 		Applied by this module:
 			- CommandRegistry cooldown resolver (scale + overrides)
@@ -168,6 +171,17 @@ ConfigService.Define("WarningEscalation", {
 ConfigService.Define("RequiredReasons", {}, VALID.RequiredReasons)
 ConfigService.Define("LogRetentionDays", 30, VALID.LogRetentionDays)
 ConfigService.Define("DefaultPermissions", {}, VALID.DefaultPermissions)
+-- Owner approval (Systems/ApprovalService): risky commands from non-Owners
+-- wait for an Owner who is in the server.
+ConfigService.Define("OwnerApproval", true, function(v)
+	return type(v) == "boolean"
+end)
+ConfigService.Define("ApprovalRisk", "critical", function(v)
+	return v == "critical" or v == "high" or v == "medium"
+end)
+ConfigService.Define("ApprovalTimeout", 60, function(v)
+	return type(v) == "number" and v % 1 == 0 and v >= 15 and v <= 300
+end)
 
 -- ---------------------------------------------------------------------------
 -- Text <-> value
@@ -425,6 +439,62 @@ local ENTRIES: { Entry } = {
 		end,
 		Format = function(v)
 			return tostring(v) .. " days"
+		end,
+	},
+	{
+		Key = "ownerapproval",
+		ConfigKey = "OwnerApproval",
+		Label = "Owner approval",
+		Group = "Security",
+		Description = "When an Owner is in the server, risky commands from other ranks wait for the Owner to approve them (on / off).",
+		Example = "on",
+		Parse = function(text)
+			local t = text:lower():match("^%s*(.-)%s*$")
+			if t == "on" or t == "true" or t == "yes" then
+				return true, nil
+			elseif t == "off" or t == "false" or t == "no" then
+				return false, nil
+			end
+			return nil, "use on or off"
+		end,
+		Format = function(v)
+			return if v then "on" else "off"
+		end,
+	},
+	{
+		Key = "approvalrisk",
+		ConfigKey = "ApprovalRisk",
+		Label = "Approval risk level",
+		Group = "Security",
+		Description = "Lowest risk that needs approval: critical (server-wide: shutdown, lockdown, data), high (adds bans, economy resets, rank deletes) or medium (adds kicks, mutes, jails...).",
+		Example = "critical",
+		Parse = function(text)
+			local t = text:lower():match("^%s*(.-)%s*$")
+			if t == "critical" or t == "high" or t == "medium" then
+				return t, nil
+			end
+			return nil, "use critical, high or medium"
+		end,
+		Format = function(v)
+			return tostring(v)
+		end,
+	},
+	{
+		Key = "approvaltimeout",
+		ConfigKey = "ApprovalTimeout",
+		Label = "Approval timeout",
+		Group = "Security",
+		Description = "Seconds the Owner has to answer before the request is denied (15-300).",
+		Example = "60",
+		Parse = function(text)
+			local n = tonumber((text:gsub("s%s*$", "")))
+			if not n or n % 1 ~= 0 or n < 15 or n > 300 then
+				return nil, "give a whole number of seconds from 15 to 300"
+			end
+			return n, nil
+		end,
+		Format = function(v)
+			return tostring(v) .. "s"
 		end,
 	},
 	{

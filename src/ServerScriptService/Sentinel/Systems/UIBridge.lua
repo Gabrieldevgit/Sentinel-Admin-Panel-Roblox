@@ -166,6 +166,9 @@ local LIMITS: { [string]: { number } } = {
 	CrossServerFindRemote = { 4, 1 }, -- may call Roblox's user lookup
 	GetModerationDashboardRemote = { 4, 1 },
 	SearchCasesRemote = { 5, 1 },
+	GetOfflineProfileRemote = { 4, 0.5 }, -- Roblox name lookups
+	GetBanListRemote = { 3, 0.5 },
+	GetAnnouncementsRemote = { 4, 1 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -1109,6 +1112,63 @@ bindInvoke(getWelcomeRemote, function(player: Player)
 		CanPanel = isStaff(player),
 		CanCommandBar = PrefsService.CanUseCommandBar(player),
 		Prefixes = ConfigService.GetPrefixes(),
+	}
+end)
+
+-- ---------------------------------------------------------------------------
+-- Offline management (W13): profiles of any Roblox user + the ban list.
+-- ---------------------------------------------------------------------------
+local PlayerProfileService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PlayerProfileService"))
+local getOfflineProfileRemote = getOrCreate("GetOfflineProfileRemote", "RemoteFunction") :: RemoteFunction
+local getBanListRemote = getOrCreate("GetBanListRemote", "RemoteFunction") :: RemoteFunction
+
+bindInvoke(getOfflineProfileRemote, function(player: Player, query: any)
+	if not isStaff(player) then
+		return nil
+	end
+	if type(query) ~= "string" and type(query) ~= "number" then
+		return { Error = "Give a username or UserId." }
+	end
+	local profile, err = PlayerProfileService.Profile(tostring(query):sub(1, 40), player)
+	if not profile then
+		return { Error = err }
+	end
+	profile.CanBan = PermissionSystem.Has(player, "moderation.ban")
+	return profile
+end)
+
+bindInvoke(getBanListRemote, function(player: Player)
+	if not isStaff(player) or not PermissionSystem.Has(player, "moderation.ban") then
+		return { Bans = {}, Error = "You need moderation.ban to see the ban list." }
+	end
+	local BanCommand = require(Sentinel:WaitForChild("Commands"):WaitForChild("Moderation"):WaitForChild("Ban")) :: any
+	local list, err = BanCommand.ListBans(false)
+	return { Bans = list, Error = err }
+end)
+
+-- ---------------------------------------------------------------------------
+-- Announcements section: history + who can be targeted + what you may send.
+-- ---------------------------------------------------------------------------
+local getAnnouncementsRemote = getOrCreate("GetAnnouncementsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getAnnouncementsRemote, function(player: Player, limit: any)
+	if not isStaff(player) then
+		return nil
+	end
+	local AnnouncementService = require(script.Parent:WaitForChild("AnnouncementService")) :: any
+	local players = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		table.insert(players, { UserId = p.UserId, Name = p.Name, DisplayName = p.DisplayName, Staff = isStaff(p) })
+	end
+	table.sort(players, function(a, b)
+		return a.Name:lower() < b.Name:lower()
+	end)
+	return {
+		History = AnnouncementService.History(clampCount(limit, 50, 100)),
+		Players = players,
+		CanServer = PermissionSystem.Has(player, "server.announce"),
+		CanGlobal = PermissionSystem.Has(player, "crossserver.announce"),
+		Colors = AnnouncementService.COLORS,
+		Server = Logger.GetServerId(),
 	}
 end)
 

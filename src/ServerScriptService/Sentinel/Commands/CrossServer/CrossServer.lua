@@ -483,6 +483,8 @@ register({
 		local issuedAt = os.time()
 		local record = {
 			BannedBy = ctx.Executor.UserId,
+			BannedByName = ctx.Executor.Name,
+			TargetName = user.Name,
 			Reason = reason,
 			IssuedAt = issuedAt,
 			ExpiresAt = if parsed.IsPermanent then math.huge else issuedAt + parsed.Seconds,
@@ -657,6 +659,7 @@ register({
 	Aliases = { "globalannounce", "ga" },
 	Description = "Shows a banner announcement on every server.",
 	Usage = "/gannounce message...",
+	ArgHints = { message = { Description = "Optional style=, time=, color=, title= words, then the text" } },
 	Permission = "crossserver.announce",
 	Subcategory = "Operations",
 	Cooldown = 3,
@@ -665,11 +668,25 @@ register({
 		if #ctx.Arguments == 0 then
 			return { Success = false, Message = "Usage: ;gannounce <message>" }
 		end
-		local text, failed = filtered(ctx, restOf(ctx, 1))
-		if failed then
-			return failed
+		-- Options (style= time= color= title=) and history: AnnouncementService.
+		local AnnouncementService = require(Sentinel:WaitForChild("Systems"):WaitForChild("AnnouncementService"))
+		local options, rest, err = AnnouncementService.ParseOptions(ctx.Arguments)
+		if err then
+			return { Success = false, Message = err }
 		end
-		local result = sendAndReport("announce", { m = (text :: string):sub(1, 400) }, {
+		local ok, why, record = AnnouncementService.Send(ctx.Executor, table.concat(rest, " "), "global", options)
+		if not ok or not record then
+			return { Success = false, Message = why }
+		end
+		local result = sendAndReport("announce", {
+			m = (record.Text :: string):sub(1, 400),
+			i = record.Id,
+			d = ctx.Executor.DisplayName:sub(1, 40),
+			s = record.Style,
+			t = record.Duration,
+			c = record.Color,
+			h = record.Title,
+		}, {
 			Actor = CrossServerService.ActorOf(ctx.Executor),
 			Label = "announcement",
 			History = true,

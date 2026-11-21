@@ -138,24 +138,20 @@ CommandRegistry.Register({
 	Undoable = false,
 	RequiresTarget = false,
 	Execute = function(ctx: CommandContext): CommandResult
-		local text = table.concat(ctx.Arguments, " ")
+		-- Same as ";announce style=full ...": full-screen card with the
+		-- sender's name and avatar, recorded in the announcement history.
+		local AnnouncementService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("AnnouncementService"))
+		local options, rest, err = AnnouncementService.ParseOptions(ctx.Arguments)
+		if err then
+			return { Success = false, Message = err }
+		end
+		options.Style = "full"
+		local text = table.concat(rest, " ")
 		if #text == 0 then
 			return { Success = false, Message = "Message text is required." }
 		end
-		text = TextFilterService.ForBroadcast(ctx.Executor.UserId, text) :: any
-		if not text then
-			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
-		end
-
-		local announceRemote = SentinelShared:FindFirstChild("AnnounceRemote")
-		if announceRemote and announceRemote:IsA("RemoteEvent") then
-			announceRemote:FireAllClients(("[%s]: %s"):format(ctx.Executor.DisplayName, text), Color3.fromRGB(0, 180, 255))
-		end
-
-		return {
-			Success = true,
-			Message = "Broadcasted message.",
-		}
+		local ok, message = AnnouncementService.Send(ctx.Executor, text, "server", options)
+		return { Success = ok, Message = if ok then "Broadcasted message." else message }
 	end,
 })
 
@@ -190,13 +186,23 @@ CommandRegistry.Register({
 	end,
 })
 
--- /pm [target] [message...]
+-- /pm [target] [options] [message...]
+-- Options (Systems/PrivateMessageService): kind= time= reply= ack= anon= style= title=
 CommandRegistry.Register({
 	Name = "pm",
 	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
-	Aliases = { "privatemessage" },
-	Description = "Sends a private pop-up message to a specific player.",
+	Aliases = { "privatemessage", "dm" },
+	Description = "Sends a private message card to one or more players. They can reply unless reply=off.",
 	Usage = "/pm target message...",
+	ArgHints = {
+		message = { Description = "Optional kind= time= reply= ack= anon= style= title= words, then the text" },
+	},
+	Examples = {
+		"pm Alpha Please stop spawn killing.",
+		"pm Alpha kind=warning ack=on Last warning before a kick.",
+		"pm Alpha,Beta reply=off time=15 title=Event Meet at the arena!",
+		"pm @team Red style=popup anon=on Your base is under attack.",
+	},
 	Permission = "utility.pm",
 	Category = "Utility",
 	Cooldown = 1,
@@ -204,25 +210,44 @@ CommandRegistry.Register({
 	Undoable = false,
 	RequiresTarget = true,
 	Execute = function(ctx: CommandContext): CommandResult
-		local target = ctx.Targets[1]
-		if not target then
+		if #ctx.Targets == 0 then
 			return { Success = false, Message = "Target player not found." }
 		end
-
-		local text = table.concat(ctx.Arguments, " ")
+		local PrivateMessageService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("PrivateMessageService"))
+		local options, rest, err = PrivateMessageService.ParseOptions(ctx.Arguments)
+		if err then
+			return { Success = false, Message = err .. ". Options: kind=info|success|warning|error time=0|5-120 reply=on|off ack=on anon=on style=card|popup title=Word_Word" }
+		end
+		local text = table.concat(rest, " ")
 		if #text == 0 then
 			return { Success = false, Message = "Private message text is required." }
 		end
-		text = TextFilterService.ForUser(ctx.Executor.UserId, text, target.UserId) :: any
-		if not text then
-			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+		local sent, lastError = 0, nil
+		for _, target in ipairs(ctx.Targets) do
+			local ok, message = PrivateMessageService.Send(ctx.Executor, target, text, options)
+			if ok then
+				sent += 1
+			else
+				lastError = message
+			end
 		end
-
-		utilityRemote:FireClient(target, "PM", ctx.Executor.DisplayName, text)
-
+		if sent == 0 then
+			return { Success = false, Message = lastError or "Could not send the message." }
+		end
+		local who = if sent == 1 and #ctx.Targets == 1 then ctx.Targets[1].DisplayName else ("%d players"):format(sent)
+		local extras = {}
+		if not options.Reply then
+			table.insert(extras, "replies off")
+		end
+		if options.Ack then
+			table.insert(extras, "read receipt on")
+		end
+		if options.Anonymous then
+			table.insert(extras, "anonymous")
+		end
 		return {
 			Success = true,
-			Message = ("Sent private message to %s."):format(target.DisplayName),
+			Message = ("Sent private message to %s%s."):format(who, if #extras > 0 then " (" .. table.concat(extras, ", ") .. ")" else ""),
 		}
 	end,
 })

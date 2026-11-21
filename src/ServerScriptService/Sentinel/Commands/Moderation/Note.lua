@@ -54,6 +54,9 @@ end
 local NoteCommand = {
 	GetNotes = getNotes,
 }
+require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("PlayerProfileService")).SetProviders({
+	GetNotes = getNotes, -- W13 offline profiles
+})
 
 CommandRegistry.Register({
 	Name = "note",

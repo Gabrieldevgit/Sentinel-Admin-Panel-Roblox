@@ -81,7 +81,15 @@ local relayout: () -> () = function() end
 
 local SECTIONS = {
 	{ Id = "Dashboard", Label = "Dashboard", Icon = "🏠", Pages = { { Id = "Dashboard", Label = "Dashboard", Icon = "🏠" } } },
-	{ Id = "Players", Label = "Players", Icon = "👥", Pages = { { Id = "Players", Label = "Players", Icon = "👥" } } },
+	{
+		Id = "Players",
+		Label = "Players",
+		Icon = "👥",
+		Pages = {
+			{ Id = "Players", Label = "Players", Icon = "👥" },
+			{ Id = "Lookup", Label = "Lookup", Icon = "🔎" },
+		},
+	},
 	{
 		Id = "Moderation",
 		Label = "Moderation",
@@ -108,6 +116,17 @@ local SECTIONS = {
 			{ Id = "Server", Label = "This server", Icon = "🌎" },
 			{ Id = "CrossServer", Label = "Cross-Server", Icon = "🌐" },
 			{ Id = "Economy", Label = "Economy", Icon = "💰" },
+		},
+	},
+	{
+		Id = "Announcements",
+		Label = "Announcements",
+		Icon = "📢",
+		Pages = {
+			{ Id = "AnnounceHistory", Label = "History", Icon = "🕘" },
+			{ Id = "AnnounceServer", Label = "Current server", Icon = "📢" },
+			{ Id = "AnnounceGlobal", Label = "Global", Icon = "🌐" },
+			{ Id = "AnnouncePlayers", Label = "Some players", Icon = "👤" },
 		},
 	},
 	{

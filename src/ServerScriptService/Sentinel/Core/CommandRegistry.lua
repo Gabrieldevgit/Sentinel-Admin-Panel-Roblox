@@ -30,7 +30,7 @@
 
 	Lifecycle (W07), in Dispatch order:
 		1. permission + owner-only + cooldown checks
-		2. Before hooks   fn(def, ctx) -> string?   a string cancels the
+		2. Before hooks   fn(def, ctx) -> string?   a string (or { Message, ...extra result fields }) cancels the
 		   command (result.Cancelled = true, Message = that string)
 		3. middleware     fn(def, ctx, nextFn) -> CommandResult, outermost
 		   first; call nextFn() to continue, or return your own result
@@ -369,13 +369,23 @@ local function run(def: CommandDefinition, executor: Player, ctx: CommandContext
 		local ok, why = pcall(hook.Fn, def, ctx)
 		if not ok then
 			warn(("[Sentinel.CommandRegistry] before-hook '%s' errored: %s"):format(hook.Name, tostring(why)))
-		elseif type(why) == "string" then
-			local cancelled = { Success = false, Cancelled = true, Message = why, Command = def.Name, DurationMs = 0 }
-			EventBus.Publish("Command.Cancelled", def, executor, ctx, why)
+		elseif type(why) == "string" or (type(why) == "table" and type(why.Message) == "string") then
+			-- A table return carries extra result fields (e.g. Pending = true
+			-- for a command held for the Owner's approval).
+			local message = if type(why) == "table" then why.Message else why
+			local cancelled: { [string]: any } = { Success = false, Cancelled = true, Message = message, Command = def.Name, DurationMs = 0 }
+			if type(why) == "table" then
+				for k, v in pairs(why) do
+					if cancelled[k] == nil then
+						cancelled[k] = v
+					end
+				end
+			end
+			EventBus.Publish("Command.Cancelled", def, executor, ctx, message)
 			writeLog(auditFields(def, executor, ctx, remoteOrigin), {
 				Result = "Cancelled",
 				Severity = "Warning",
-				Message = ("Blocked by %s: %s"):format(hook.Name, why),
+				Message = ("Blocked by %s: %s"):format(hook.Name, message),
 			})
 			return cancelled :: any
 		end

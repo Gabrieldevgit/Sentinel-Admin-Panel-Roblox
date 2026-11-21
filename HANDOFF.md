@@ -4,11 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-20 (mobile pass) — W12 + Roblox-style redesign
-committed and pushed (`0630fd8`). **Mobile pass + `;sentinel` command +
-Players selection -> Commands page** built and verified in Play with an
-emulated phone viewport, **not committed**. Next undone row is still W13.
-Start with §6 "Next session"._
+_Last updated: 2026-11-21 (announcements / approval / PM session) - W13
+and this session's work are built and verified in Play, **not committed**.
+The user asked for an Announcements section, Owner approval of risky
+commands and more ;pm options **before W14**; W14 is next. Start with §6._
 
 ---
 
@@ -479,6 +478,74 @@ Control" UI, all driven by one command grammar
   - `ModerationPage.lua` rewritten: tabs Dashboard / Cases / Bulk (paths in
     its header; `Root.Workspace.ModerationPage.Tabs.Tab_<name>`). Bulk
     builds one `action a,b:dur reason` command.
+- **W13 Offline management:**
+  - `Systems/PlayerProfileService`: DataStore `Sentinel_Profiles_v1` (key
+    UserId: Name, DisplayName, Names = usernames seen (<= 10), FirstSeen,
+    LastSeen, Sessions, PlayTime, LastServer, AccountAge), UpdateAsync on
+    join / leave / close. `Resolve(text)` (online name / display name,
+    UserId, username; cached Roblox lookups), `Profile(text)` = stored
+    profile + where they are (CrossServerService) + rank bindings + ban +
+    warnings + cases + staff notes. Ban.lua / Note.lua hand over their
+    stores with `SetProviders` (Systems can't require Commands).
+  - `Ban.lua`: one write path (`writeBan`) that also keeps a ban index (key
+    `_Index` in `Sentinel_Bans_v1`, UserId -> summary, expired entries
+    dropped); records carry `TargetName` / `BannedByName`; Warn.lua auto-ban
+    and gban go through `BanCommand.SetBan`. `ListBans(rebuild)` (rebuild
+    rescans with ListKeysAsync for bans older than the index). Commands
+    `;unban <user> [reason]` (ub, pardon; revokes the ban case),
+    `;isbanned` (banstatus, checkban), `;banlist [search|rebuild]` (bans),
+    `;profile <user>` (whois, lookup, seen; panel.open).
+  - Remotes `GetOfflineProfileRemote(query)`, `GetBanListRemote()`.
+  - `LookupPage.lua` = Players > **Lookup** (page id `Lookup`, in
+    `UIPrefs.PAGE_IDS` and the Shell Players section): Profile tab (search,
+    identity, ban banner, fields, actions gban / unban / gwarn / caseopen,
+    warnings, cases -> open in Moderation, notes) and Ban list tab (filter,
+    unban per row). Reloads when a CommandResultRemote result arrives (an
+    action may wait on the ConfirmDialog first). `me` resolves to the
+    caller. User info comes from `UserService:GetUserInfosByUserIdsAsync`
+    (not Players).
+  - Roblox's `Players:BanAsync` is **not** wired (it would ban real
+    accounts from the test universe) - ask the user.
+- **Announcements / Owner approval / PM options (2026-11-21, before W14):**
+  - The user installed two other admin panels to compare **features only
+    (never copy their design)**: `Workspace.TRS_Admin_Panel` and
+    `ServerScriptService.Vantage` (both open with **F1**; one hides
+    Sentinel's top bar button - not a bug, F6 still opens Sentinel).
+  - `Systems/AnnouncementService`: scopes server / global / players /
+    staff; leading options `style=banner|full time=3-60 color=<name|#hex>
+    title=Word_Word` (`ParseOptions`); payload carries `Author {UserId,
+    Name, DisplayName}`; history newest-first (100) in DataStore
+    `Sentinel_Announcements_v1` key `History` (flushed 10 s / on close;
+    only the sending server records). Commands: `;announce`, `;tannounce
+    <players>`, `;sannounce` (staff), `;announcements [n]`, `;gannounce`
+    (same options; CrossServerActions `announce` payload `{m,i,d,s,t,c,h}`),
+    `;message` = full-screen style. Remote `GetAnnouncementsRemote`.
+  - Client `SentinelUI/AnnouncementBanner` (ScreenGui
+    `SentinelAnnouncements`, built for **every** player by init.client;
+    replaced the old banner / PM popup there): banner with avatar, display
+    name, @name, scope chip, title, timer; full-screen card; hint pill;
+    right-hand card stack (ZIndex 30, above the full-screen backdrop) for PM
+    and approval cards. Old `(text, color)` AnnounceRemote calls still work.
+  - Panel: nav section **Announcements** (`UIPrefs.NAV_SECTIONS`) with pages
+    `AnnounceHistory`, `AnnounceServer`, `AnnounceGlobal`, `AnnouncePlayers`
+    (`SentinelUI/AnnouncementsPage`; paths in its header). Players whose
+    saved Layout.Tabs predates it must show it in Appearance > Navigation.
+  - `Systems/PrivateMessageService` + `;pm` (aliases privatemessage, dm):
+    several targets, `kind= time=0|5-120 reply=on|off ack=on anon=on
+    style=card|popup title=`; threads with replies (player: 5 per round,
+    10 min window), read receipts, remote `PrivateMessageRemote`. `anon`
+    needs node `utility.pm.anonymous` (not granted to any default rank).
+  - `Systems/ApprovalService` (Before hook "OwnerApproval"): while an Owner
+    is online, a command at or above `;config approvalrisk`
+    (critical|high|medium, default critical) from a non-Owner is held;
+    Owners get an approval card (Approve / Deny, countdown) or use
+    `;approve [id]` / `;deny [id] [reason]` / `;approvals`; no answer in
+    `approvaltimeout` (60 s) = denied; `;config ownerapproval off` disables.
+    Approved commands replay via `CommandProcessor.Process(..., {Confirmed,
+    Source="approval", ApprovalToken})`. Before hooks may now return a
+    table `{Message, ...}` (extra result fields; `Pending = true` shows a
+    warning toast). Studio-only `;approvals test <command>` sends you a
+    test card (approving it runs nothing).
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -624,6 +691,15 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **Announcements / approval / PM - not verified (needs a 2nd player):**
+  the real approval hold (a non-Owner staff member running a critical
+  command while the Owner is online; logic unit-tested in
+  `Announcement.spec`, the Owner card / Approve / Deny / `;deny` were
+  tested with `;approvals test`); a PM reply from a non-staff player; the
+  global announcement on a second server. Not built: announcement
+  scheduling (blueprint item, belongs with W-scheduling), countdown not
+  re-checked. TRS_Admin_Panel / Vantage stay in the testing place - ask
+  the user before removing them.
 - **UI redesign leftovers:** pages still hard-code a few non-palette
   colours and module-level colour tables (they keep the old colour until
   rejoin after a theme change); Esc also opens Roblox's menu when it closes
@@ -748,7 +824,10 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Sentinel server and client boot cleanly in Play. Unit tests **102/102**.
+- Unit tests **113/113** (Edit). **W13** and the **announcements / Owner
+  approval / PM options** work are verified in Play, **not committed**.
+- The test account now has **5 warnings** on record (was 4; added by
+  another session) - still never `;warn` yourself.
 - **Mobile pass / `;sentinel` / selection targets** (see §3) built and
   verified in Play with an emulated viewport, **not committed**.
 - **W12 + Roblox-style redesign** committed and pushed (`0630fd8`).
@@ -762,9 +841,7 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W12 done; next undone row is **W13 - Offline
-  management** (username lookup, offline profiles, offline ban/unban,
-  ban list, is-banned check, `Players:BanAsync`). About 8 weekends
+- **Schedule position:** W13 done; next is **W14 - Reports & appeals**. About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -774,7 +851,10 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **267 bullets ✅**: W12 20 (custom ban / mute
+- Feature blueprint: **281 bullets ✅**: announcements 6 (staff-only,
+  targeted, custom colours, duration, history, notification banner), W13 6 (offline player profiles,
+  offline moderation history, unban x2, temporary ban, secure offline
+  lookups), W12 20 (custom ban / mute
   durations, reason templates, required reasons, ban / mute history, bulk
   punishments, active cases, recent punishments, active bans / mutes,
   moderators online, activity, case search / filtering / details, staff
@@ -802,6 +882,11 @@ Rules that keep it sound:
 
 ### Next session - open items to raise with the user
 
+- **Commit W13 + the announcements / approval / PM work** if the user
+  agrees; ask about wiring Roblox's `Players:BanAsync` (experience-wide
+  Roblox bans) and whether the default approval risk should be `high`
+  (includes bans). Then **W14 - Reports & appeals**.
+
 0. **Ask the user to try the mobile pass on a real phone** (top bar
    buttons, panel, palette) and commit it if they agree.
 1. Ask
@@ -825,6 +910,30 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-21 (announcements / approval / PM)** - Before W14 the user
+  asked for an Announcements section (History, Current server, Global,
+  Some players), a redesigned banner with the admin's display name +
+  avatar, Owner approval of risky commands (configurable) and more ;pm
+  options, comparing features (not design) with TRS_Admin_Panel and
+  Vantage. Built the items in §3. Verified in Play: banner, full screen
+  (`;sannounce`, `;message`), `;gannounce` (Global chip), history page,
+  Some players composer by mouse (select, Full screen, green, Send), PM
+  with kind / title / ack, reply + read receipt, approval test card
+  Approve by mouse, `;approvals` / `;deny`, option errors, Security rows
+  in Administration. Fixed: cards under the full-screen backdrop, reply
+  status on the wrong card. Tests 113/113. ✅ 6 bullets. Not committed.
+
+- **2026-11-20 (W13)** - Built offline management: PlayerProfileService,
+  ban index + `;unban` / `;isbanned` / `;banlist` / `;profile`, two
+  remotes, Lookup page, `Profile.spec` (tests 106/106). First Play boot
+  failed on a malformed string in Ban.lua (escaped newlines lost by the
+  edit script). After a Studio restart, verified in Play: `;profile`
+  (offline Roblox + `me`), `;isbanned`, gban 5m, `;banlist`, `;unban`, the
+  Lookup page by mouse (lookup, ban through the ConfirmDialog, banner
+  update, Ban list + Unban row). Fixed: `GetUserInfosByUserIdsAsync` is on
+  UserService; `me` didn't resolve; page reloaded before the confirmation
+  finished. ✅ 6 bullets. Not committed.
 
 - **2026-11-20 (mobile pass)** - Pushed `0630fd8`. User found the panel
   and top bar buttons not adapted on a phone, asked for `;sentinel` /

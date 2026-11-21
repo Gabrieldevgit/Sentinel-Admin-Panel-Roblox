@@ -315,10 +315,11 @@ end
 -- Navigation (W09): the panel's section tabs and page ids. Shell.lua owns
 -- the icons / labels; these lists are what prefs may name.
 -- ---------------------------------------------------------------------------
-UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Insights" }
+UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Announcements", "Insights" }
 UIPrefs.PAGE_IDS = {
-	"Dashboard", "Players", "Moderation", "Ranks", "Commands", "Library", "Server", "CrossServer",
-	"Economy", "Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
+	"Dashboard", "Players", "Lookup", "Moderation", "Ranks", "Commands", "Library", "Server", "CrossServer",
+	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers",
+	"Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
 }
 UIPrefs.MAX_PINNED = 8
 

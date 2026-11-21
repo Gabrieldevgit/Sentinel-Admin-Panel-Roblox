@@ -27,6 +27,7 @@
 
 	Public API:
 		CommandProcessor.Process(executor, rawInput, options?): {CommandResult}
+			options.ApprovalToken = an Owner's approval (ApprovalService)
 			options.Confirmed = true skips risk confirmation (used by
 			;confirm and by UI dialogs that already asked the user)
 		CommandProcessor.ConfirmPending(executor, id?): {CommandResult}
@@ -108,7 +109,7 @@ local function remainingChain(link: ParsedCommand?): string
 	return table.concat(parts, " && ")
 end
 
-function CommandProcessor.Process(executor: Player, rawInput: string, options: { Confirmed: boolean?, Source: string? }?): { CommandResult }
+function CommandProcessor.Process(executor: Player, rawInput: string, options: { Confirmed: boolean?, Source: string?, ApprovalToken: string? }?): { CommandResult }
 	local results: { CommandResult } = {}
 	local confirmed = options ~= nil and options.Confirmed == true
 	local source = (options and options.Source) or "panel"
@@ -203,6 +204,10 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 			CommandName = current.CommandName, -- the name or alias as typed (lowercased), e.g. "superfling"
 			Source = source,
 		}
+		-- Set when an Owner approved this command (Systems/ApprovalService).
+		if options and type(options.ApprovalToken) == "string" then
+			(ctx :: any).ApprovalToken = options.ApprovalToken
+		end
 
 		local result = CommandRegistry.Dispatch(def, executor, ctx)
 		if blocked > 0 and result.Message then

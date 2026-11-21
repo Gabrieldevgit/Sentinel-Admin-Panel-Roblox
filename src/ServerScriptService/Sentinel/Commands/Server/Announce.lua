@@ -3,7 +3,10 @@
 	Announce.lua
 
 	Purpose:
-		Registers "/announce" and "/countdown". Two separate RemoteEvents
+		Registers ;announce (this server), ;tannounce (some players),
+		;sannounce (staff only), ;announcements (history) - all through
+		Systems/AnnouncementService - and ;countdown.
+		(Original note:) Registers "/announce" and "/countdown". Two separate RemoteEvents
 		drive two separate client UIs: a banner across the top of the
 		screen for /announce, and a large countdown overlay for /countdown
 		(rather than reusing the banner for both, since a countdown needs
@@ -28,6 +31,7 @@ local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sen
 local Sentinel = script.Parent.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
 local TextFilterService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("TextFilterService"))
+local AnnouncementService = require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("AnnouncementService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -42,34 +46,128 @@ local function getOrCreateRemote(name: string): RemoteEvent
 	return remote
 end
 
-local announceRemote = getOrCreateRemote("AnnounceRemote")
 local countdownRemote = getOrCreateRemote("CountdownRemote")
 
-local function broadcast(text: string, color: Color3?)
-	announceRemote:FireAllClients(text, color or Color3.fromRGB(255, 215, 0))
+local OPTION_HELP = "Options: style=banner|full time=3-60 color=gold|red|green|blue|purple|orange|pink|#hex title=Word_Word"
+
+-- Splits options from the message; returns (options, text) or a failure result.
+local function parse(words: { string }, usage: string): (any, string?, Types.CommandResult?)
+	local options, rest, err = AnnouncementService.ParseOptions(words)
+	if err then
+		return nil, nil, { Success = false, Message = ("%s. %s"):format(err, OPTION_HELP) }
+	end
+	local text = table.concat(rest, " ")
+	if text == "" then
+		return nil, nil, { Success = false, Message = ("Usage: %s"):format(usage) }
+	end
+	return options, text, nil
 end
+
+local function send(ctx: Types.CommandContext, scope: string, usage: string, recipients: { Player }?, done: string): Types.CommandResult
+	local options, text, failed = parse(ctx.Arguments, usage)
+	if failed then
+		return failed
+	end
+	local ok, message = AnnouncementService.Send(ctx.Executor, text :: string, scope, options, recipients)
+	if not ok then
+		return { Success = false, Message = message }
+	end
+	return { Success = true, Message = done }
+end
+
+local ANNOUNCE_HINTS = {
+	message = { Description = "Optional style=, time=, color=, title= words, then the text" },
+}
 
 CommandRegistry.Register({
 	Name = "announce",
 	Aliases = { "bc", "broadcast" },
-	Description = "Shows a banner announcement on every player's screen.",
-	Usage = "/announce message",
+	Description = "Shows an announcement (with your name and avatar) on every player's screen in this server.",
+	Usage = "/announce message...",
+	ArgHints = ANNOUNCE_HINTS,
+	Examples = { "announce Event starts in 5 minutes!", "announce style=full color=gold title=Double_XP Double XP is live!" },
 	Permission = "server.announce",
 	Category = "Server",
+	Subcategory = "Announcements",
+	Cooldown = 2,
 	Log = true,
 	Undoable = false,
 	RequiresTarget = false,
 	Execute = function(ctx: Types.CommandContext): Types.CommandResult
-		local text = table.concat(ctx.Arguments, " ")
-		if text == "" then
-			return { Success = false, Message = "Usage: /announce message" }
+		return send(ctx, "server", "/announce [options] message", nil, "Announcement sent.")
+	end,
+})
+
+CommandRegistry.Register({
+	Name = "tannounce",
+	Aliases = { "pannounce", "announceto" },
+	Description = "Shows an announcement to some players only.",
+	Usage = "/tannounce target message...",
+	ArgHints = ANNOUNCE_HINTS,
+	Examples = { "tannounce Alpha,Beta Please meet at spawn.", "tannounce @team Red style=full Your round starts now!" },
+	Permission = "server.announce",
+	TargetProtection = false, -- a message, not a punishment
+	Category = "Server",
+	Subcategory = "Announcements",
+	Cooldown = 2,
+	Log = true,
+	Undoable = false,
+	RequiresTarget = true,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local n = #ctx.Targets
+		return send(ctx, "players", "/tannounce players [options] message", ctx.Targets,
+			("Announcement sent to %d player%s."):format(n, if n == 1 then "" else "s"))
+	end,
+})
+
+CommandRegistry.Register({
+	Name = "sannounce",
+	Aliases = { "staffannounce" },
+	Description = "Shows an announcement to the staff online in this server only.",
+	Usage = "/sannounce message...",
+	ArgHints = ANNOUNCE_HINTS,
+	Examples = { "sannounce Staff meeting in 10 minutes." },
+	Permission = "server.announce",
+	Category = "Server",
+	Subcategory = "Announcements",
+	Cooldown = 2,
+	Log = true,
+	Undoable = false,
+	RequiresTarget = false,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local staff = AnnouncementService.StaffOnline()
+		return send(ctx, "staff", "/sannounce [options] message", staff,
+			("Announcement sent to %d staff member%s."):format(#staff, if #staff == 1 then "" else "s"))
+	end,
+})
+
+local SCOPE_LABEL = { server = "server", global = "global", players = "players", staff = "staff" }
+
+CommandRegistry.Register({
+	Name = "announcements",
+	Aliases = { "announcehistory", "annhistory" },
+	Description = "Lists recent announcements (newest first).",
+	Usage = "/announcements [count]",
+	Permission = "panel.open",
+	Category = "Server",
+	Subcategory = "Announcements",
+	Cooldown = 1,
+	Log = false,
+	Undoable = false,
+	RequiresTarget = false,
+	NoHistory = true,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local count = math.clamp(tonumber(ctx.Arguments[1]) or 5, 1, 20)
+		local list = AnnouncementService.History(count)
+		if #list == 0 then
+			return { Success = true, Message = "No announcements yet." }
 		end
-		local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, text)
-		if not filtered then
-			return { Success = false, Message = TextFilterService.FAILED_MESSAGE }
+		local lines = {}
+		for _, r in ipairs(list) do
+			local author = if type(r.Author) == "table" then r.Author.Name else "?"
+			table.insert(lines, ("[%s] %s (%s): %s"):format(os.date("!%m-%d %H:%M", r.Time or 0), author, SCOPE_LABEL[r.Scope] or "?", tostring(r.Text):sub(1, 80)))
 		end
-		broadcast(filtered)
-		return { Success = true, Message = "Announcement sent." }
+		return { Success = true, Message = table.concat(lines, "\n") }
 	end,
 })
 

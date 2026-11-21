@@ -58,18 +58,18 @@ PunishmentService.RegisterEscalationAction("ban", function(target, warnings, ste
 	local duration = DurationParser.Parse(step.Duration or "1d")
 	local permanent = duration == nil or duration.IsPermanent
 	local issuedAt = os.time()
-	local record = {
+	local record: any = {
 		BannedBy = 0, -- SYSTEM
 		Reason = ("Automatically banned: %d warnings reached (%s)."):format(step.Count, table.concat(reasonSummary, "; ")),
 		IssuedAt = issuedAt,
 		ExpiresAt = if permanent then math.huge else issuedAt + (duration :: any).Seconds,
 	}
-	local DataStoreService = game:GetService("DataStoreService")
-	local ok, err = pcall(function()
-		DataStoreService:GetDataStore("Sentinel_Bans_v1"):SetAsync(tostring(target.UserId), record)
-	end)
-	if not ok then
-		warn(("[Sentinel.Warn] failed to persist auto-ban: %s"):format(tostring(err)))
+	record.TargetName = target.Name
+	record.BannedByName = "SYSTEM"
+	-- Ban.lua owns the ban store (record + ban list index).
+	local BanCommand = require(script.Parent:WaitForChild("Ban")) :: any
+	if not BanCommand.SetBan(target.UserId, record) then
+		warn("[Sentinel.Warn] failed to persist auto-ban")
 	end
 	CaseService.RecordSystem("ban", target, record.Reason, if permanent then "forever" else step.Duration or "1d")
 	target:Kick(("Banned: Automatically banned, %d warnings reached."):format(step.Count))

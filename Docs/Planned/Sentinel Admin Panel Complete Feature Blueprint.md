@@ -232,7 +232,7 @@ Player profile
 Player actions
 - Kick.
 - Ban.
-- Unban.
+- ✅ Unban.
 - ✅ Warn.
 - ✅ Mute.
 - ✅ Unmute.
@@ -276,8 +276,8 @@ Player actions
 - Fling.
 Advanced management
 - ✅ Offline player lookup.
-- Offline player profiles.
-- Offline moderation history.
+- ✅ Offline player profiles.
+- ✅ Offline moderation history.
 - Find player across servers.
 - ✅ See whether a player is banned.
 - View previous usernames when supported.
@@ -305,9 +305,9 @@ devpost.com
 
 Punishment management
 - Kick.
-- Temporary ban.
+- ✅ Temporary ban.
 - Permanent ban.
-- Unban.
+- ✅ Unban.
 - ✅ Offline ban.
 - ✅ Offline unban.
 - ✅ Warning.
@@ -408,14 +408,14 @@ Server controls
 Announcements
 - ✅ Server announcement.
 - ✅ Global announcement.
-- Staff-only announcement.
-- Targeted announcement.
+- ✅ Staff-only announcement.
+- ✅ Targeted announcement.
 - Announcement scheduling.
 - Countdown.
-- Custom announcement colors.
-- Announcement duration.
-- Announcement history.
-- Notification banner.
+- ✅ Custom announcement colors.
+- ✅ Announcement duration.
+- ✅ Announcement history.
+- ✅ Notification banner.
 Advanced server management
 - ✅ Live server list.
 - ✅ Server health overview.
@@ -1056,7 +1056,7 @@ Sentinel should implement:
 - Target validation.
 - Rank hierarchy enforcement.
 - Self-protection rules.
-- Secure offline player lookups.
+- ✅ Secure offline player lookups.
 - Filtered player-generated text.
 - Safe DataStore access.
 - Protected owner-only commands.
