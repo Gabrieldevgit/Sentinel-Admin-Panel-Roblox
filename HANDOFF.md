@@ -61,6 +61,13 @@ animation assets** (emotes, slide, crouch, climbing... are excluded).
 When building W11-W42, keep services reusable so the modules can sit on
 top of them (polls, events, reports, rewards, inventory, webhooks).
 
+### 0.2c HD Admin feature gaps
+
+[`Docs/Planned/HD Admin Feature Gaps.md`](Docs/Planned/HD%20Admin%20Feature%20Gaps.md)
+lists HD Admin features worth adding (chat tags, map snapshots, teams,
+music, server bans, character scaling, ...) and where each fits in the W
+plan. Never add anything that needs custom (non-Roblox) animations.
+
 ### 0.3 General working rules
 
 - **Commit only when the user asks.** The user commits straight to `main`.
