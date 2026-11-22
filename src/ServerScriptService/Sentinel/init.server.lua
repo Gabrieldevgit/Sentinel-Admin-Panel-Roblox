@@ -41,7 +41,10 @@ local CommandProcessor = require(Core:WaitForChild("Parser"):WaitForChild("Comma
 -- Admin/Moderator/VIP). It is required first so roles exist before anything
 -- else loads; the game creator always gets Owner.
 -- ---------------------------------------------------------------------------
-require(Systems:WaitForChild("RankService"))
+local RankServiceModule = require(Systems:WaitForChild("RankService"))
+-- W22: the join gate (lock / maintenance / whitelist / cap / private server)
+-- waits until a joiner's ranks are resolved so group-ranked staff get in.
+require(Systems:WaitForChild("ServerStateService")).SetRankResolvedCheck(RankServiceModule.IsResolved)
 
 -- ---------------------------------------------------------------------------
 -- Load every Systems/** module first (PunishmentService, ChatModerationService,

@@ -4,10 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-22 (sound effects + W15 session) - **Sound
-effects** and **W15 Player Explorer completion** built and verified in
-Play and committed (`8c49504`); W15 then **tested live** with a second
-player. Next is **W16 - Analytics**. Start with §6._
+_Last updated: 2026-11-22 (W22 session) - W16 skipped for now (user's
+call). W17-W21 were already built (2026-11-16). **W22 server management
+built + verified in Studio Play, not committed.** Next: the **live
+2-server test** of W17-W22 (user agreed: Max Players = 1, publish, main +
+alt), then W23 Polls. Start with §6._
 
 ---
 
@@ -707,6 +708,37 @@ Control" UI, all driven by one command grammar
     nodes, SuperAdmin `crossserver.*`. **Saved rank data is not migrated** -
     on an existing place grant them with `;rankpreset <rank> CrossServerStaff
     | CrossServerModeration | CrossServerOperations` (Owner has `*`).
+- **W22 Server management:**
+  - `Systems/ServerStateService` = one join gate: waits (max 10 s) for
+    `RankService.IsResolved(player)` (wired in init.server; group ranks
+    yield), staff with `server.bypass` pass, else pure
+    `EvaluateJoin(info)`: lock (custom message) > maintenance (custom
+    message) > private-server access > whitelist mode > soft cap.
+    `SetLocked(on, msg?)`, `SetMaintenanceMode(on, msg?)`, `GetMessages`,
+    `SetCapacity(n?)` (soft cap; Players.MaxPlayers is read-only at
+    runtime), `SetWhitelistProvider` (AccessList hands over its lookup).
+  - ConfigService keys `WhitelistMode` (was a standalone
+    `WhitelistModeEnabled` key, migrated once; now live on every server,
+    staff bypass) and `PrivateServerAccess` open|friends|staff (VIP servers
+    only; reserved servers untouched) = `;config privateservers`.
+  - `CrossServerService.LocalInfo()` = this server's registry record +
+    ShortId, Uptime, Health, SlowMode, Cap, Whitelist, PrivateAccess,
+    Messages, Reserved, Owner, Location (always nil - Roblox has no region
+    API), Events / Polls (empty until W23 / W24). `GetServerStateRemote`
+    returns it as `Info` for `server.info` holders.
+  - Commands (`Commands/Server/ServerControl.lua`): `;shutdown [seconds]
+    [message]` (countdown via CountdownRemote, then lock + kick),
+    `;lockserver [message]`, `;maintenancemode on|off [message]`,
+    `;kickall` (kickeveryone) / `;kicknonstaff` (kickplayers) (critical,
+    node `server.kickall`, skip players ranked >= you), `;servercap
+    [n|off]` (playercap, node `server.capacity`), `;serverinfo` (sinfo,
+    serverstatus; node `server.info`, added to the default Moderator
+    rank - **saved ranks not migrated**). Messages go through
+    TextFilterService. `;whitelistmode on|off|status` (confirm only for on).
+    Restart / migrate is the existing `;migrateserver` (alias restartserver).
+  - ServerPage: Server Info card, Join Rules (whitelist toggle, message box
+    used by Lock / Maintenance / kicks, soft cap row), Server Actions (Kick
+    non-staff, Kick all, Restart 30s, Shutdown 30s). Paths in its header.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -807,6 +839,21 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **W21 gaps deferred (decided 2026-11-22):** cross-server analytics goes
+  with W16 (one metrics store for both); the global event activation hook
+  goes with W24 (no event system yet; `;global` is the hook point).
+- **W22 not verified live (needs 2 players / servers):** a joiner actually
+  turned away by the custom lock / maintenance message, soft cap,
+  whitelist mode and private-server access; kick all / kick non-staff with
+  a real second player; restart (`;migrateserver`). Server location stays
+  unavailable (no Roblox API); active events / polls wait for W23 / W24.
+- **Live 2-server test plan (W17-W22):** user sets Max Players = 1 in Game
+  Settings + publishes; main account + alt `gabrielgaming_offv1` land in
+  separate servers. Check: server search, join server, follow, gbring,
+  gkick, gban sync, gnotify toast, staff chat, update countdown +
+  migration, W22 items above, global shutdown last. Then set Max Players
+  back and republish.
 
 - **Sound icons are dark grey line art** (SoundIcon / MuteSoundIcon): on
   the dark themes the top-bar speaker, the Sounds page header and its
@@ -1002,8 +1049,11 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Unit tests **122/122** (Edit). **Sound effects** and **W15 Player
-  Explorer** are verified in Play, **not committed**. W14 + icon assets
+- **W22 server management** built and verified in Studio Play, **not
+  committed** (ServerStateService, AccessList, AdminConfig, RankService,
+  CrossServerService, UIBridge, ServerControl, ServerPage, init.server,
+  `Tests/ServerManagement.spec`). Unit tests **127/127** (Edit).
+- **Sound effects** and **W15** committed (`8c49504`). W14 + icon assets
   committed (`5fe2e04`). Test account's sound prefs reset to defaults.
 - The test account now has **5 warnings** on record (was 4; added by
   another session) - still never `;warn` yourself.
@@ -1020,7 +1070,9 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W15 done; next is **W16 - Analytics**. About 8 weekends
+- **Schedule position:** W15 done; W16 skipped for now (user); W17-W21
+  built earlier; W22 built (live test pending); next after the live test
+  is **W23 - Polls**. About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -1030,7 +1082,9 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **325 bullets ✅** (+2 from the W15 live test): sound notifications 1, W15 33
+- Feature blueprint: **337 bullets ✅** (W22 +12: server JobId, uptime,
+  player count, max capacity, version, status, performance, memory,
+  heartbeat, average ping, current staff, shutdown server; +2 from the W15 live test): sound notifications 1, W15 33
   (search by UserId, avatars, thumbnails, rank / health / ping / status
   indicators, recently joined, staff + suspicious filters, 16 profile
   fields, bulk actions, select all / all but me / by rank / attribute /
@@ -1093,6 +1147,16 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-22 (W22)** - User asked for W17-W21; they were already built
+  (2026-11-16), so wrote the full W status plan and moved to W22 (user
+  approved). Built the join gate, custom messages, soft cap, whitelist via
+  config (staff bypass, all servers), private-server access, LocalInfo,
+  `;serverinfo` / `;kickall` / `;kicknonstaff` / `;servercap`, shutdown
+  countdown, Server page sections. Verified in Play: every command by
+  remote (validation, confirmations), info card values, cap Apply by mouse
+  -> "5 of 60", Kick non-staff -> Critical dialog, shutdown 5 s countdown
+  -> player kicked. Tests 127/127. Blueprint +12 ✅. Not committed.
 
 - **2026-11-22 (W15 live test)** - Committed + pushed `8c49504`. The
   published server already had it (Version 192). Tested by desktop control

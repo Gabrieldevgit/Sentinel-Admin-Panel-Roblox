@@ -6,7 +6,8 @@
 		Registers "/blacklist", "/unblacklist", "/whitelist",
 		"/unwhitelist", and enforces both on PlayerAdded — blacklisted
 		players are always kicked; if whitelist mode is turned on (via
-		/whitelistmode on|off) only whitelisted players may join.
+		/whitelistmode on|off, W22: ConfigService key WhitelistMode) only
+		whitelisted players and staff may join (ServerStateService gate).
 
 	Dependencies:
 		Types.lua (Shared)
@@ -19,7 +20,10 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Types = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Types"))
 
-local CommandRegistry = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local Sentinel = script.Parent.Parent.Parent
+local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
+local ConfigService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ConfigService"))
+local ServerStateService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ServerStateService"))
 
 local BlacklistStore = DataStoreService:GetDataStore("Sentinel_Blacklist_v1")
 local WhitelistStore = DataStoreService:GetDataStore("Sentinel_Whitelist_v1")
@@ -27,13 +31,23 @@ local ConfigStore = DataStoreService:GetDataStore("Sentinel_Config_v1")
 
 local AccessList = {}
 
-local whitelistModeEnabled = false
-do
+-- W22: whitelist mode is the ConfigService key WhitelistMode (pushed to every
+-- server live; ServerStateService's join gate enforces it, staff bypass).
+-- Places that used the old standalone key keep their setting once.
+task.spawn(function()
+	if not game:GetService("RunService"):IsRunning() then
+		return
+	end
 	local ok, stored = pcall(function()
 		return ConfigStore:GetAsync("WhitelistModeEnabled")
 	end)
-	whitelistModeEnabled = if ok and stored then stored else false
-end
+	if ok and stored == true and ConfigService.Get("WhitelistMode") ~= true then
+		ConfigService.Set("WhitelistMode", true)
+		pcall(function()
+			ConfigStore:RemoveAsync("WhitelistModeEnabled")
+		end)
+	end
+end)
 
 local function isBlacklisted(userId: number): boolean
 	local ok, value = pcall(function()
@@ -69,13 +83,11 @@ function AccessList.SetWhitelisted(userId: number, value: boolean)
 	end)
 end
 
+ServerStateService.SetWhitelistProvider(isWhitelisted)
+
 Players.PlayerAdded:Connect(function(player: Player)
 	if isBlacklisted(player.UserId) then
 		player:Kick("You are blacklisted from this game.")
-		return
-	end
-	if whitelistModeEnabled and not isWhitelisted(player.UserId) then
-		player:Kick("This game is currently whitelist-only.")
 	end
 end)
 
@@ -155,23 +167,29 @@ CommandRegistry.Register({
 CommandRegistry.Register({
 	Name = "whitelistmode",
 	Aliases = {},
-	Description = "Toggles whitelist-only join mode for the whole game.",
-	Usage = "/whitelistmode on|off",
+	Description = "Whitelist-only join mode for every server (staff with server.bypass still get in). status shows the current mode.",
+	Usage = "/whitelistmode on|off|status",
 	Permission = "moderation.whitelist",
 	Category = "Moderation",
 	Log = true,
 	Undoable = false,
 	RequiresTarget = false,
+	ConfirmWhen = function(arguments: { string }): boolean
+		return (arguments[1] or ""):lower() == "on"
+	end,
 	Execute = function(ctx: Types.CommandContext): Types.CommandResult
-		local setting = ctx.Arguments[1]
-		if setting ~= "on" and setting ~= "off" then
-			return { Success = false, Message = "Usage: /whitelistmode on|off" }
+		local setting = (ctx.Arguments[1] or "status"):lower()
+		if setting == "status" then
+			return { Success = true, Message = ("Whitelist mode is %s."):format(if ServerStateService.IsWhitelistMode() then "on" else "off") }
 		end
-		whitelistModeEnabled = setting == "on"
-		pcall(function()
-			ConfigStore:SetAsync("WhitelistModeEnabled", whitelistModeEnabled)
-		end)
-		return { Success = true, Message = ("Whitelist mode is now %s."):format(setting) }
+		if setting ~= "on" and setting ~= "off" then
+			return { Success = false, Message = "Usage: /whitelistmode on|off|status" }
+		end
+		local ok, err = ConfigService.Set("WhitelistMode", setting == "on", ctx.Executor)
+		if not ok then
+			return { Success = false, Message = "Could not change whitelist mode: " .. tostring(err) }
+		end
+		return { Success = true, Message = ("Whitelist mode is now %s on every server."):format(setting) }
 	end,
 })
 

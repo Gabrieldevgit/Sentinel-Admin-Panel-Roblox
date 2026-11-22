@@ -251,6 +251,8 @@ bindInvoke(getServerStateRemote, function(player: Player)
 		MaintenanceMode = ServerStateService.IsMaintenanceMode(),
 		SlowModeSeconds = ServerStateService.GetSlowMode(),
 		TimeFrozen = EnvironmentService.IsTimeFrozen(),
+		-- W22: the Server page info card + whitelist / cap / message rows.
+		Info = if PermissionSystem.Has(player, "server.info") then require(script.Parent:WaitForChild("CrossServerService")).LocalInfo() else nil,
 	}
 end)
 

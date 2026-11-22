@@ -51,6 +51,7 @@
 		CrossServerService.JoinServer(player, idOrPrefix) -> (ok, message)
 		CrossServerService.StartMigration(seconds, message) -> (ok, count, message)
 		CrossServerService.GetStats() -> { Peak..., Bus... }
+		CrossServerService.LocalInfo() -> this server's record + W22 fields
 --]]
 
 local DataStoreService = game:GetService("DataStoreService")
@@ -188,6 +189,30 @@ local function buildRecord(): any
 		Studio = studio or nil,
 		P = list,
 	}
+end
+
+--[[
+	W22: everything the Server page / ;serverinfo show about THIS server.
+	Location: Roblox has no server-region API, so it stays nil. Events and
+	polls are empty lists until W23 / W24 add those services.
+--]]
+function CrossServerService.LocalInfo(): any
+	local record = buildRecord()
+	record.P = nil
+	record.ShortId = CrossServerService.ShortId(serverId)
+	record.Uptime = os.time() - startedAt
+	record.Health = Node.Health(record, os.time())
+	record.SlowMode = ServerStateService.GetSlowMode()
+	record.Cap = ServerStateService.GetCapacity()
+	record.Whitelist = ServerStateService.IsWhitelistMode()
+	record.PrivateAccess = ServerStateService.GetPrivateServerAccess()
+	record.Messages = ServerStateService.GetMessages()
+	record.Reserved = game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0
+	record.Owner = if game.PrivateServerOwnerId ~= 0 then game.PrivateServerOwnerId else nil
+	record.Location = nil
+	record.Events = {}
+	record.Polls = {}
+	return record
 end
 
 local function writeHeartbeat()

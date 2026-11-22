@@ -136,6 +136,7 @@ local MODERATOR_NODES = {
 	"utility.view",
 	"utility.pm",
 	"server.hint",
+	"server.info", -- W22 ;serverinfo + Server page info card
 	-- Cross-server: see the server list, find players, talk to other staff.
 	"crossserver.view",
 	"crossserver.staffchat",
@@ -460,6 +461,11 @@ function RankService.Refresh(player: Player)
 		end
 	end
 	managed[player.UserId] = desired
+end
+
+-- W22: true once Refresh has run for this player (ranks assigned).
+function RankService.IsResolved(player: Player): boolean
+	return managed[player.UserId] ~= nil
 end
 
 local function refreshAll()

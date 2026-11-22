@@ -29,6 +29,7 @@
 		appealcooldown AppealCooldownDays     "7"   (days before a rejected case can be appealed again, 0-90)
 		newaccount     SuspiciousAccountDays  "7"   (W15: accounts younger than this are flagged suspicious, 0-365)
 		suspectwarnings SuspiciousWarnings    "3"   (W15: this many warnings flags a player suspicious, 0 = off)
+		privateservers PrivateServerAccess    "open" | "friends" | "staff" (W22: who may join VIP servers; key defined by ServerStateService)
 
 		Applied by this module:
 			- CommandRegistry cooldown resolver (scale + overrides)
@@ -56,6 +57,7 @@ local Logger = require(Core:WaitForChild("Logger"))
 local DurationParser = require(Core:WaitForChild("Parser"):WaitForChild("DurationParser"))
 local ConfigService = require(script.Parent:WaitForChild("ConfigService"))
 local PunishmentService = require(script.Parent:WaitForChild("PunishmentService"))
+require(script.Parent:WaitForChild("ServerStateService")) -- defines WhitelistMode / PrivateServerAccess
 
 local AdminConfig = {}
 
@@ -640,6 +642,24 @@ local ENTRIES: { Entry } = {
 		end,
 		Format = function(v)
 			return if v == 0 then "off" else tostring(v)
+		end,
+	},
+	{
+		Key = "privateservers",
+		ConfigKey = "PrivateServerAccess",
+		Label = "Private server access",
+		Group = "Server",
+		Description = "Who may join private (VIP) servers: open (Roblox's own rules), friends (the owner and the owner's friends, plus staff) or staff (the owner and staff only).",
+		Example = "friends",
+		Parse = function(text)
+			local t = text:lower():match("^%s*(.-)%s*$")
+			if t == "open" or t == "friends" or t == "staff" then
+				return t, nil
+			end
+			return nil, "use open, friends or staff"
+		end,
+		Format = function(v)
+			return tostring(v)
 		end,
 	},
 	{

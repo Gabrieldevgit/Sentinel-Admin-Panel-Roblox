@@ -377,18 +377,18 @@ primehost.dk
 
 
 Server information
-- Server JobId.
-- Server uptime.
-- Current player count.
-- Maximum player capacity.
-- Current server version.
-- Server status.
+- ✅ Server JobId.
+- ✅ Server uptime.
+- ✅ Current player count.
+- ✅ Maximum player capacity.
+- ✅ Current server version.
+- ✅ Server status.
 - Server location information when available.
-- Server performance.
-- Server memory.
-- Server heartbeat.
-- Average player ping.
-- Current staff members.
+- ✅ Server performance.
+- ✅ Server memory.
+- ✅ Server heartbeat.
+- ✅ Average player ping.
+- ✅ Current staff members.
 - Active server events.
 - Active polls.
 Server controls
@@ -396,7 +396,7 @@ Server controls
 - ✅ Unlock server.
 - ✅ Maintenance mode.
 - ✅ Disable maintenance mode.
-- Shutdown server.
+- ✅ Shutdown server.
 - Restart/migrate server.
 - Kick all players.
 - Kick non-staff.
