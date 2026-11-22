@@ -829,8 +829,10 @@ Rules that keep it sound:
   newline can send Enter before the last characters - press Return
   separately. The command bar appears ~1 s after the >_ button.
 - Players page re-renders only when row data changes (Recent view: when the
-  lists change or every 20 s) so clicks aren't lost to a rebuild - **not
-  published yet** (publish the place to get it live).
+  lists change or every 20 s) so clicks aren't lost to a rebuild -
+  published as place **version 194** (servers started before it still run
+  v192). Publish = Studio File > Publish (Alt+P); `save_place` never
+  publishes.
 
 - **W14 not verified live:** accepting an appeal (the lifters: unban /
   unmute / unjail / remove warning) is only unit-tested - in solo Play you
