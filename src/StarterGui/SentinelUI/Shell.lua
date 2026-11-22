@@ -25,7 +25,7 @@
 
 	Stable names for Studio MCP input: Root.NavBar.Tabs.<Section>Tab,
 	Root.SubNav.<PageId>NavButton, Root.NavBar.Right.{SearchButton,
-	BellButton, GearButton}, Root.TopBar.{MinimizeButton, CloseButton}.
+	SoundButton, BellButton, GearButton}, Root.TopBar.{MinimizeButton, CloseButton}.
 
 	Public API:
 		Shell.Init(): ScreenGui
@@ -151,6 +151,7 @@ local SECTIONS = {
 			{ Id = "Settings", Label = "Settings", Icon = "⚙" },
 			{ Id = "Appearance", Label = "Appearance", Icon = "🎨" },
 			{ Id = "Keybinds", Label = "Keybinds", Icon = "⌨" },
+			{ Id = "Sounds", Label = "Sounds", Icon = "🔊" },
 			{ Id = "Administration", Label = "Administration", Icon = "🛠" },
 			{ Id = "Notifications", Label = "Notifications", Icon = "🔔" },
 		},
@@ -750,12 +751,49 @@ function Shell.Init(): ScreenGui
 	end)
 	Shell.pinButton = pinButton
 
-	local bellButton = iconButton(right, "BellButton", Icons.text("Bell", ""), 2)
+	-- Sound effects on / off (Sounds.Enabled, saved to personal prefs).
+	-- The speaker icon follows SoundPlayer, so ;sounds and the Sounds page
+	-- update it too.
+	local SoundPlayer = require(script.Parent:WaitForChild("SoundPlayer"))
+	local soundButton = iconButton(right, "SoundButton", Icons.text("SoundOn", ""), 2)
+	local soundIcon = Icons.attach(soundButton, "SoundOn", { Size = 18 })
+	local function showSoundState()
+		local on = SoundPlayer.IsEnabled()
+		local key = if on then "SoundOn" else "SoundOff"
+		if soundIcon then
+			soundIcon.Image = Icons.image(key) or ""
+		else
+			soundButton.Text = Icons.fallback(key)
+		end
+	end
+	showSoundState()
+	SoundPlayer.Changed:Connect(showSoundState)
+	soundButton.MouseButton1Click:Connect(function()
+		local remote = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):FindFirstChild("SetUIPrefsRemote") :: RemoteFunction?
+		if not remote then
+			return
+		end
+		local enable = not SoundPlayer.IsEnabled()
+		-- Show it at once; UIPrefsChangedRemote confirms.
+		local current = table.clone(SoundPlayer.Get())
+		current.Enabled = enable
+		SoundPlayer.ApplyPrefs(current)
+		if enable then
+			SoundPlayer.Play("Success")
+		end
+		task.spawn(function()
+			pcall(function()
+				(remote :: RemoteFunction):InvokeServer("personal", { Sounds = { Enabled = enable } })
+			end)
+		end)
+	end)
+
+	local bellButton = iconButton(right, "BellButton", Icons.text("Bell", ""), 3)
 	Icons.attach(bellButton, "Bell", { Size = 18 })
 	bellButton.MouseButton1Click:Connect(function()
 		Shell.ShowPage("Notifications")
 	end)
-	local gearButton = iconButton(right, "GearButton", Icons.text("Gear", ""), 3)
+	local gearButton = iconButton(right, "GearButton", Icons.text("Gear", ""), 4)
 	Icons.attach(gearButton, "Gear", { Size = 18 })
 	gearButton.MouseButton1Click:Connect(function()
 		Shell.ShowPage("Settings")
@@ -771,7 +809,7 @@ function Shell.Init(): ScreenGui
 
 	local userChip = Instance.new("Frame")
 	userChip.Name = "User"
-	userChip.LayoutOrder = 4
+	userChip.LayoutOrder = 5
 	userChip.BackgroundTransparency = 1
 	userChip.Size = UDim2.new(0, 132, 0, 30)
 	userChip.Parent = right

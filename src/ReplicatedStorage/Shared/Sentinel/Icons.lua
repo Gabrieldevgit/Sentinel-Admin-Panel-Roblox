@@ -78,6 +78,9 @@ Icons.Assets = {
 	ToolsIcon = 104487632589104,
 	Update = 133527861574445,
 	VIP = 101082235932554,
+	-- Speaker icons (Decals 85550394171391 / 124944718313615 -> Image ids)
+	SoundIcon = 137866142678538,
+	MuteSoundIcon = 86539800505739,
 }
 
 type Slot = { Asset: string?, Fallback: string }
@@ -113,6 +116,9 @@ Icons.Slots = {
 	Settings = { Asset = "SettingsButton", Fallback = "⚙" },
 	Appearance = { Asset = "Appearances", Fallback = "🎨" },
 	Keybinds = { Asset = "Keybinds", Fallback = "⌨" },
+	Sounds = { Asset = "SoundIcon", Fallback = "🔊" },
+	SoundOn = { Asset = "SoundIcon", Fallback = "🔊" },
+	SoundOff = { Asset = "MuteSoundIcon", Fallback = "🔇" },
 	Administration = { Asset = "ToolsIcon", Fallback = "🛠" },
 	Notifications = { Asset = "NotificationsCleared", Fallback = "🔔" },
 

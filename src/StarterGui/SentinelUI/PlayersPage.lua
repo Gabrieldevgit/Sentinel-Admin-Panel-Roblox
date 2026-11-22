@@ -30,11 +30,34 @@
 	tab stays open) — switching tabs doesn't fetch all six at once, and
 	an unselected player's data is never requested.
 
+	W15 (Player Explorer completion):
+		- Rows: avatar, display name + @name, rank chip (rank colour), health
+		  bar, ping dot (green < 100 ms, amber < 250, red), status chips
+		  (Idle / Dead / Frozen / Jailed / Muted / God / Fly / Invisible) and a
+		  Suspicious flag (reasons on hover in the Overview tab).
+		- Filters (Toolbar.Filters.Filter_<name>): All, Staff, VIP,
+		  Suspicious, Idle, New (joined < 10 min). Sort (Toolbar.Sort):
+		  Name / Ping / Health / Joined. View (Toolbar.View_Online /
+		  View_Recent): Recent = recently joined + recently left lists.
+		- Bulk selection: each row has a check box (Row.Check); SelectBar has
+		  All / All but me / None, a selector box (SelectBar.Selector +
+		  SelectBar.Go) that resolves "@team Red", "@rank VIP",
+		  "@attribute SentinelFlying", "@walkspeed >30", "all where Health<50"
+		  on the server (ResolveTargetsRemote). Checked players become the
+		  Commands page target (Selection.SetMany) and the BulkBar runs one
+		  command on all of them ("heal a,b,c").
+		- Notes tab: General / Investigation notes (;note / ;investigate).
+
+	Stable names: Table.Row_<UserId>.{Check, Name, Meta},
+	Toolbar.{Filters.Filter_<name>, Sort, View_Online, View_Recent},
+	SelectBar.{All, Others, None, Selector, Go, Count}, BulkBar.Actions.<Cmd>.
+
 	Dependencies:
-		Theme.lua
+		Theme.lua, Selection.lua, BanPromptSystem.lua
 
 	Public API:
-		PlayersPage.Build(container: Frame): ()
+		PlayersPage.Build(container: Frame, options?): ()
+			options.OpenCommands: () -> ()  -- "Command..." in the bulk bar
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -50,10 +73,24 @@ type PlayerRow = {
 	Name: string,
 	DisplayName: string,
 	Team: string?,
+	TeamColor: Color3?,
 	Health: number?,
 	MaxHealth: number?,
 	Ping: number,
 	Roles: { string },
+	Rank: string?,
+	RankColor: { number }?,
+	IsStaff: boolean?,
+	IsVIP: boolean?,
+	AccountAge: number?,
+	JoinedAt: number?,
+	Status: string?,
+	IdleSeconds: number?,
+	Suspicious: { string }?,
+	Warnings: number?,
+	WalkSpeed: number?,
+	JumpPower: number?,
+	Position: { number }?,
 	IsFrozen: boolean,
 	IsJailed: boolean,
 	IsMuted: boolean,
@@ -64,7 +101,30 @@ type PlayerRow = {
 
 local TABS = { "Overview", "Inventory", "Statistics", "Moderation", "Permissions", "Session", "Notes" }
 
-function PlayersPage.Build(container: Frame)
+local FILTERS = { "All", "Staff", "VIP", "Suspicious", "Idle", "New" }
+local SORTS = { "Name", "Ping", "Health", "Joined" }
+local BULK = {
+	{ "Heal", "heal" }, { "Respawn", "respawn" }, { "Bring", "bring" }, { "Freeze", "freeze" },
+	{ "Unfreeze", "unfreeze" }, { "Mute", "mute" }, { "Unmute", "unmute" }, { "Jail", "jail" },
+	{ "Unjail", "unjail" }, { "Kick", "kick" },
+}
+local NEW_SECONDS = 600
+
+local function ago(seconds: number): string
+	if seconds < 60 then
+		return ("%ds"):format(seconds)
+	elseif seconds < 3600 then
+		return ("%dm"):format(seconds // 60)
+	end
+	return ("%dh %dm"):format(seconds // 3600, (seconds % 3600) // 60)
+end
+
+local function pingColor(ping: number): Color3
+	return if ping < 100 then Theme.Colors.Success elseif ping < 250 then Theme.Colors.Warning else Theme.Colors.Error
+end
+
+function PlayersPage.Build(container: Frame, options: any?)
+	options = options or {}
 	local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 	local getPlayerListRemote = SentinelShared:WaitForChild("GetPlayerListRemote", 15) :: RemoteFunction?
 	local executeCommandRemote = SentinelShared:WaitForChild("ExecuteCommandRemote", 15) :: RemoteEvent?
@@ -75,6 +135,8 @@ function PlayersPage.Build(container: Frame)
 	local getPermissionsSnapshotRemote = SentinelShared:WaitForChild("GetPermissionsSnapshotRemote", 15) :: RemoteFunction?
 	local getPlayerSessionRemote = SentinelShared:WaitForChild("GetPlayerSessionRemote", 15) :: RemoteFunction?
 	local getPlayerNotesRemote = SentinelShared:WaitForChild("GetPlayerNotesRemote", 15) :: RemoteFunction?
+	local getPlayerActivityRemote = SentinelShared:WaitForChild("GetPlayerActivityRemote", 15) :: RemoteFunction?
+	local resolveTargetsRemote = SentinelShared:WaitForChild("ResolveTargetsRemote", 15) :: RemoteFunction?
 
 	local header = Instance.new("TextLabel")
 	header.BackgroundTransparency = 1
@@ -102,6 +164,126 @@ function PlayersPage.Build(container: Frame)
 	searchBox.Parent = container
 	Theme.corner(searchBox, Theme.Radius.S)
 	Theme.padding(searchBox, 8)
+	searchBox.PlaceholderText = "Search name, display name or UserId..."
+
+	-- W15 toolbar: filter chips, sort, Online / Recent view.
+	local function chip(parent: Instance, name: string, text: string, order: number, width: number?): TextButton
+		local b = Instance.new("TextButton")
+		b.Name = name
+		b.LayoutOrder = order
+		b.Size = UDim2.new(0, width or (#text * 7 + 22), 0, 26)
+		b.BackgroundColor3 = Theme.Colors.SurfaceRaised
+		b.AutoButtonColor = true
+		b.Font = Theme.Font.Medium
+		b.TextSize = 12
+		b.TextColor3 = Theme.Colors.Text
+		b.Text = text
+		b.Parent = parent
+		Theme.corner(b, Theme.Radius.Pill)
+		return b
+	end
+	local function hlist(frame: Instance, padding: number)
+		local l = Instance.new("UIListLayout")
+		l.FillDirection = Enum.FillDirection.Horizontal
+		l.VerticalAlignment = Enum.VerticalAlignment.Center
+		l.SortOrder = Enum.SortOrder.LayoutOrder
+		l.Padding = UDim.new(0, padding)
+		l.Parent = frame
+	end
+
+	local toolbar = Instance.new("ScrollingFrame")
+	toolbar.Name = "Toolbar"
+	toolbar.BackgroundTransparency = 1
+	toolbar.BorderSizePixel = 0
+	toolbar.ScrollingDirection = Enum.ScrollingDirection.X
+	toolbar.ScrollBarThickness = 0
+	toolbar.AutomaticCanvasSize = Enum.AutomaticSize.X
+	toolbar.CanvasSize = UDim2.new()
+	toolbar.Parent = container
+	hlist(toolbar, 6)
+
+	local filtersFrame = Instance.new("Frame")
+	filtersFrame.Name = "Filters"
+	filtersFrame.LayoutOrder = 1
+	filtersFrame.BackgroundTransparency = 1
+	filtersFrame.AutomaticSize = Enum.AutomaticSize.X
+	filtersFrame.Size = UDim2.new(0, 0, 0, 26)
+	filtersFrame.Parent = toolbar
+	hlist(filtersFrame, 4)
+
+	local activeFilter = "All"
+	local sortBy = "Name"
+	local view = "Online"
+	local filterButtons: { [string]: TextButton } = {}
+	local renderTable: (string) -> ()
+	for i, name in ipairs(FILTERS) do
+		local b = chip(filtersFrame, "Filter_" .. name, name, i)
+		filterButtons[name] = b
+		b.MouseButton1Click:Connect(function()
+			activeFilter = name
+			for n, other in pairs(filterButtons) do
+				other.BackgroundColor3 = if n == name then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+			end
+			renderTable(searchBox.Text)
+		end)
+	end
+	filterButtons.All.BackgroundColor3 = Theme.Colors.Accent
+
+	local sortButton = chip(toolbar, "Sort", "Sort: Name", 2, 104)
+	sortButton.MouseButton1Click:Connect(function()
+		local i = table.find(SORTS, sortBy) or 1
+		sortBy = SORTS[(i % #SORTS) + 1]
+		sortButton.Text = "Sort: " .. sortBy
+		renderTable(searchBox.Text)
+	end)
+	local viewOnline = chip(toolbar, "View_Online", "Online", 3, 70)
+	local viewRecent = chip(toolbar, "View_Recent", "Recent", 4, 70)
+	viewOnline.BackgroundColor3 = Theme.Colors.Accent
+
+	-- Selection bar: bulk selection helpers + selector box.
+	local selectBar = Instance.new("ScrollingFrame")
+	selectBar.Name = "SelectBar"
+	selectBar.BackgroundTransparency = 1
+	selectBar.BorderSizePixel = 0
+	selectBar.ScrollingDirection = Enum.ScrollingDirection.X
+	selectBar.ScrollBarThickness = 0
+	selectBar.AutomaticCanvasSize = Enum.AutomaticSize.X
+	selectBar.CanvasSize = UDim2.new()
+	selectBar.Parent = container
+	hlist(selectBar, 4)
+	local selectAll = chip(selectBar, "All", "Select all", 1, 82)
+	local selectOthers = chip(selectBar, "Others", "All but me", 2, 86)
+	local selectNone = chip(selectBar, "None", "None", 3, 56)
+	local selectorBox = Instance.new("TextBox")
+	selectorBox.Name = "Selector"
+	selectorBox.LayoutOrder = 4
+	selectorBox.Size = UDim2.new(0, 230, 0, 26)
+	selectorBox.BackgroundColor3 = Theme.Colors.Surface
+	selectorBox.Font = Theme.Font.Mono
+	selectorBox.TextSize = 12
+	selectorBox.TextColor3 = Theme.Colors.Text
+	selectorBox.PlaceholderText = "@team Red / @rank VIP / @walkspeed >30"
+	selectorBox.PlaceholderColor3 = Theme.Colors.TextSecondary
+	selectorBox.ClearTextOnFocus = false
+	selectorBox.TextXAlignment = Enum.TextXAlignment.Left
+	selectorBox.Text = ""
+	selectorBox.ClipsDescendants = true
+	selectorBox.Parent = selectBar
+	Theme.corner(selectorBox, Theme.Radius.S)
+	Theme.padding(selectorBox, 6)
+	local selectGo = chip(selectBar, "Go", "Select", 5, 64)
+	selectGo.BackgroundColor3 = Theme.Colors.Accent
+	local countLabel = Instance.new("TextLabel")
+	countLabel.Name = "Count"
+	countLabel.LayoutOrder = 6
+	countLabel.BackgroundTransparency = 1
+	countLabel.Size = UDim2.new(0, 220, 0, 26)
+	countLabel.Font = Theme.Font.Regular
+	countLabel.TextSize = 12
+	countLabel.TextColor3 = Theme.Colors.TextSecondary
+	countLabel.TextXAlignment = Enum.TextXAlignment.Left
+	countLabel.Text = "0 checked"
+	countLabel.Parent = selectBar
 
 	-- ------------------------------------------------------------------
 	-- Table (left) + detail panel (right)
@@ -134,6 +316,39 @@ function PlayersPage.Build(container: Frame)
 	Theme.corner(detailPanel, Theme.Radius.M)
 	Theme.padding(detailPanel, Theme.Spacing.S)
 
+	-- W15 bulk bar: under the list while players are checked.
+	local bulkBar = Instance.new("Frame")
+	bulkBar.Name = "BulkBar"
+	bulkBar.BackgroundColor3 = Theme.Colors.SurfaceRaised
+	bulkBar.BorderSizePixel = 0
+	bulkBar.Visible = false
+	bulkBar.ZIndex = 5
+	bulkBar.Parent = container
+	Theme.corner(bulkBar, Theme.Radius.M)
+	local bulkActions = Instance.new("ScrollingFrame")
+	bulkActions.Name = "Actions"
+	bulkActions.BackgroundTransparency = 1
+	bulkActions.BorderSizePixel = 0
+	bulkActions.Position = UDim2.new(0, 6, 0, 0)
+	bulkActions.Size = UDim2.new(1, -12, 1, 0)
+	bulkActions.ScrollingDirection = Enum.ScrollingDirection.X
+	bulkActions.ScrollBarThickness = 0
+	bulkActions.AutomaticCanvasSize = Enum.AutomaticSize.X
+	bulkActions.CanvasSize = UDim2.new()
+	bulkActions.ZIndex = 5
+	bulkActions.Parent = bulkBar
+	local bulkLayout = Instance.new("UIListLayout")
+	bulkLayout.FillDirection = Enum.FillDirection.Horizontal
+	bulkLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	bulkLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	bulkLayout.Padding = UDim.new(0, 4)
+	bulkLayout.Parent = bulkActions
+	local function bulkHeight(split: number, top: number)
+		bulkBar.Position = UDim2.new(0, 0, 1, -40)
+		bulkBar.Size = UDim2.new(split, -8, 0, 40)
+		tableFrame.Size = UDim2.new(split, -8, 1, -top - (if bulkBar.Visible then 46 else 0))
+	end
+
 	-- W09 reflow: in a narrow panel the detail side gets most of the width
 	-- (the list only needs names), and the search box fills its column.
 	local function reflow()
@@ -146,23 +361,32 @@ function PlayersPage.Build(container: Frame)
 		local narrow = width < 900
 		local short = container.AbsoluteSize.Y > 0 and container.AbsoluteSize.Y < 380
 		local split = if narrow then 0.36 else 0.58
-		local top = if short then 40 else 82
-		tableFrame.Size = UDim2.new(split, -8, 1, -top)
-		tableFrame.Position = UDim2.new(0, 0, 0, top)
-		detailPanel.Position = UDim2.new(split, 8, 0, top)
-		detailPanel.Size = UDim2.new(1 - split, -8, 1, -top)
+		-- rows: [title (+search when short)] [search + toolbar] [select bar]
+		local rowY = if short then 36 else 40
+		local top = rowY + 32 + 30 + 4
 		if short then
 			searchBox.AnchorPoint = Vector2.new(1, 0)
 			searchBox.Position = UDim2.new(1, 0, 0, 0)
 			searchBox.Size = UDim2.new(1 - split, -8, 0, 32)
+			toolbar.Position = UDim2.new(0, 0, 0, rowY)
+			toolbar.Size = UDim2.new(1, 0, 0, 28)
+			top = rowY + 30 + 30 + 4
 		else
 			searchBox.AnchorPoint = Vector2.new(0, 0)
-			searchBox.Position = UDim2.new(0, 0, 0, 40)
-			searchBox.Size = UDim2.new(if narrow then split else 0.4, if narrow then -8 else 0, 0, 32)
+			searchBox.Position = UDim2.new(0, 0, 0, rowY)
+			searchBox.Size = UDim2.new(if narrow then split else 0.3, -8, 0, 32)
+			toolbar.Position = UDim2.new(if narrow then split else 0.3, 0, 0, rowY + 2)
+			toolbar.Size = UDim2.new(if narrow then 1 - split else 0.7, 0, 0, 28)
 		end
+		selectBar.Position = UDim2.new(0, 0, 0, top - 34)
+		selectBar.Size = UDim2.new(1, 0, 0, 28)
+		tableFrame.Size = UDim2.new(split, -8, 1, -top)
+		tableFrame.Position = UDim2.new(0, 0, 0, top)
+		detailPanel.Position = UDim2.new(split, 8, 0, top)
+		detailPanel.Size = UDim2.new(1 - split, -8, 1, -top)
+		bulkHeight(split, top)
 	end
 	container:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow)
-	reflow()
 
 	local detailEmptyLabel = Instance.new("TextLabel")
 	detailEmptyLabel.Name = "EmptyState"
@@ -263,7 +487,8 @@ function PlayersPage.Build(container: Frame)
 	detailInfo.Name = "Info"
 	detailInfo.LayoutOrder = 1
 	detailInfo.BackgroundTransparency = 1
-	detailInfo.Size = UDim2.new(1, 0, 0, 60)
+	detailInfo.Size = UDim2.new(1, 0, 0, 0)
+	detailInfo.AutomaticSize = Enum.AutomaticSize.Y
 	detailInfo.Font = Theme.Font.Regular
 	detailInfo.TextSize = 13
 	detailInfo.TextColor3 = Theme.Colors.TextSecondary
@@ -396,9 +621,35 @@ function PlayersPage.Build(container: Frame)
 	local function renderOverview(row: PlayerRow)
 		local healthText = if row.Health and row.MaxHealth then ("%d / %d"):format(row.Health, row.MaxHealth) else "N/A"
 		local rolesText = if #row.Roles > 0 then table.concat(row.Roles, ", ") else "none"
-		detailInfo.Text = ("Team: %s\nHealth: %s\nPing: %dms\nRoles: %s"):format(
-			row.Team or "none", healthText, row.Ping, rolesText
-		)
+		local lines = {
+			("UserId: %d   Account age: %s days"):format(row.UserId, tostring(row.AccountAge or "?")),
+			("Rank: %s   Roles: %s"):format(row.Rank or "none", rolesText),
+			("Team: %s   Status: %s%s"):format(
+				row.Team or "none",
+				row.Status or "?",
+				if row.Status == "Idle" and row.IdleSeconds then " (" .. ago(row.IdleSeconds) .. ")" else ""
+			),
+			("Health: %s   Ping: %dms"):format(healthText, row.Ping),
+			("WalkSpeed: %s   JumpPower: %s"):format(tostring(row.WalkSpeed or "-"), tostring(row.JumpPower or "-")),
+			("Position: %s"):format(if row.Position then table.concat(row.Position, ", ") else "-"),
+			("Joined: %s   Session: %s   Warnings: %d"):format(
+				if row.JoinedAt then tostring(os.date("%H:%M", row.JoinedAt)) else "?",
+				if row.JoinedAt then ago(math.max(0, os.time() - row.JoinedAt)) else "?",
+				row.Warnings or 0
+			),
+		}
+		local active = {}
+		for _, pair in ipairs({ { row.IsFrozen, "Frozen" }, { row.IsJailed, "Jailed" }, { row.IsMuted, "Muted" } }) do
+			if pair[1] then
+				table.insert(active, pair[2])
+			end
+		end
+		table.insert(lines, "Active punishments: " .. (if #active > 0 then table.concat(active, ", ") else "none"))
+		if row.Suspicious and #row.Suspicious > 0 then
+			table.insert(lines, "Suspicious: " .. table.concat(row.Suspicious, "; "))
+		end
+		detailInfo.Text = table.concat(lines, "\n")
+		detailInfo.TextColor3 = if row.Suspicious and #row.Suspicious > 0 then Theme.Colors.Text else Theme.Colors.TextSecondary
 
 		for _, child in ipairs(actionsRow:GetChildren()) do
 			if child:IsA("TextButton") then
@@ -651,15 +902,36 @@ function PlayersPage.Build(container: Frame)
 			makeEmptyLabel(page, 1, "Session data unavailable.")
 			return
 		end
-		local s = session :: { UserId: number, AccountAgeDays: number, JoinedAt: number?, Ping: number }
+		local s = session :: any
 		local sessionLengthText = if s.JoinedAt then ("%d min"):format(math.floor((os.time() - s.JoinedAt) / 60)) else "unknown"
 		makeInfoCard(
 			page,
 			1,
-			("UserId: %d\nAccount age: %d days\nSession length: %s\nPing: %dms"):format(
-				s.UserId, s.AccountAgeDays, sessionLengthText, s.Ping
+			("UserId: %d\nAccount age: %d days\nMembership: %s\nJoined: %s\nSession length: %s\nPing: %dms\nStatus: %s"):format(
+				s.UserId,
+				s.AccountAgeDays,
+				tostring(s.MembershipType or "?"),
+				if s.JoinedAt then tostring(os.date("%Y-%m-%d %H:%M", s.JoinedAt)) else "unknown",
+				sessionLengthText,
+				s.Ping,
+				tostring(s.Status or "?")
 			)
 		)
+		makeInfoCard(
+			page,
+			2,
+			("Position: %s\nWalkSpeed: %s\nJumpPower: %s"):format(
+				if s.Position then table.concat(s.Position, ", ") else "-",
+				tostring(s.WalkSpeed or "-"),
+				tostring(s.JumpPower or "-")
+			)
+		)
+		local names = if type(s.PreviousNames) == "table" and #s.PreviousNames > 0 then table.concat(s.PreviousNames, ", ") else "none seen"
+		makeInfoCard(page, 3, "Previous usernames: " .. names)
+		if type(s.Suspicious) == "table" and #s.Suspicious > 0 then
+			local card = makeInfoCard(page, 4, "Suspicious: " .. table.concat(s.Suspicious, "; "))
+			card.TextColor3 = Theme.Colors.Warning
+		end
 	end
 
 	-- ------------------------------------------------------------------
@@ -670,13 +942,36 @@ function PlayersPage.Build(container: Frame)
 		clearPage(page)
 
 		local addRow = Instance.new("Frame")
+		addRow.Name = "AddRow" -- .Kind (General / Investigation), .Input, .Add
 		addRow.LayoutOrder = 1
 		addRow.Size = UDim2.new(1, 0, 0, 32)
 		addRow.BackgroundTransparency = 1
 		addRow.Parent = page
 
+		-- W15: General note (;note) or Investigation note (;investigate).
+		local noteKind = "Note"
+		local kindButton = Instance.new("TextButton")
+		kindButton.Name = "Kind"
+		kindButton.Size = UDim2.new(0, 96, 1, 0)
+		kindButton.BackgroundColor3 = Theme.Colors.SurfaceRaised
+		kindButton.Font = Theme.Font.Medium
+		kindButton.TextSize = 12
+		kindButton.TextColor3 = Theme.Colors.Text
+		kindButton.Text = "General"
+		kindButton.Parent = addRow
+		Theme.corner(kindButton, Theme.Radius.S)
+		kindButton.MouseButton1Click:Connect(function()
+			noteKind = if noteKind == "Note" then "Investigation" else "Note"
+			kindButton.Text = if noteKind == "Note" then "General" else "Investigation"
+			kindButton.BackgroundColor3 = if noteKind == "Note" then Theme.Colors.SurfaceRaised else Theme.Colors.Warning
+			kindButton.TextColor3 = if noteKind == "Note" then Theme.Colors.Text else Color3.new(0, 0, 0)
+		end)
+
 		local noteInput = Instance.new("TextBox")
-		noteInput.Size = UDim2.new(1, -70, 1, 0)
+		noteInput.Name = "Input"
+		noteInput.Position = UDim2.new(0, 102, 0, 0)
+		noteInput.Size = UDim2.new(1, -172, 1, 0)
+		noteInput.Text = ""
 		noteInput.BackgroundColor3 = Theme.Colors.Surface
 		noteInput.Font = Theme.Font.Regular
 		noteInput.TextSize = 12
@@ -696,6 +991,7 @@ function PlayersPage.Build(container: Frame)
 		addButton.Font = Theme.Font.Medium
 		addButton.TextSize = 12
 		addButton.TextColor3 = Color3.new(1, 1, 1)
+		addButton.Name = "Add"
 		addButton.Text = "Add"
 		addButton.Parent = addRow
 		Theme.corner(addButton, Theme.Radius.S)
@@ -724,8 +1020,12 @@ function PlayersPage.Build(container: Frame)
 			for i = #list, 1, -1 do
 				local note = list[i]
 				local timeText = os.date("%m/%d %H:%M", note.Timestamp)
-				local card = makeInfoCard(page, 1 + (#list - i) + 1, ("[%s] %s\n%s"):format(note.AddedBy, tostring(timeText), note.Text))
+				local tag = if note.Kind then note.Kind:upper() .. " - " else ""
+				local card = makeInfoCard(page, 1 + (#list - i) + 1, ("%s[%s] %s\n%s"):format(tag, note.AddedBy, tostring(timeText), note.Text))
 				card.Name = "NoteCard"
+				if note.Kind == "Investigation" then
+					card.TextColor3 = Theme.Colors.Warning
+				end
 			end
 		end
 
@@ -734,7 +1034,7 @@ function PlayersPage.Build(container: Frame)
 			if text == "" then
 				return
 			end
-			runQuickAction("note " .. selectedName .. " " .. text)
+			runQuickAction((if noteKind == "Investigation" then "investigate " else "note ") .. selectedName .. " " .. text)
 			noteInput.Text = ""
 			task.wait(0.5) -- give the write a moment to land before re-reading
 			reloadNotesList()
@@ -802,68 +1102,391 @@ function PlayersPage.Build(container: Frame)
 	end
 
 	local allRows: { PlayerRow } = {}
+	local recent: any = nil
+	local checked: { [number]: string } = {} -- UserId -> Name
 
-	local function renderTable(filter: string)
-		for _, child in ipairs(tableFrame:GetChildren()) do
-			if child:IsA("TextButton") then
+	local function checkedList(): { { UserId: number, Name: string } }
+		local list = {}
+		for _, row in ipairs(allRows) do
+			if checked[row.UserId] then
+				table.insert(list, { UserId = row.UserId, Name = row.Name })
+			end
+		end
+		return list
+	end
+
+	local function rebuildBulk()
+		for _, child in ipairs(bulkActions:GetChildren()) do
+			if child:IsA("GuiObject") then
 				child:Destroy()
 			end
 		end
+		local list = checkedList()
+		bulkBar.Visible = #list > 0
+		countLabel.Text = if #list > 0 then ("%d checked"):format(#list) else "0 checked"
+		Selection.SetMany(list)
+		reflow()
+		if #list == 0 then
+			return
+		end
+		local names = {}
+		for _, pick in ipairs(list) do
+			table.insert(names, pick.Name)
+		end
+		local targetText = table.concat(names, ",")
+		local label = Instance.new("TextLabel")
+		label.Name = "Count"
+		label.LayoutOrder = 0
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(0, 70, 0, 28)
+		label.Font = Theme.Font.Bold
+		label.TextSize = 12
+		label.TextColor3 = Theme.Colors.Text
+		label.Text = ("%d player%s"):format(#list, if #list == 1 then "" else "s")
+		label.ZIndex = 5
+		label.Parent = bulkActions
+		for i, action in ipairs(BULK) do
+			local b = chip(bulkActions, action[1], action[1], i, #action[1] * 7 + 20)
+			b.ZIndex = 5
+			b.BackgroundColor3 = Theme.Colors.Surface
+			if action[2] == "kick" then
+				b.TextColor3 = Theme.Colors.Error
+			end
+			b.MouseButton1Click:Connect(function()
+				runQuickAction(action[2] .. " " .. targetText)
+			end)
+		end
+		if options.OpenCommands then
+			local more = chip(bulkActions, "Command", "Other command...", #BULK + 1, 120)
+			more.ZIndex = 5
+			more.BackgroundColor3 = Theme.Colors.Accent
+			more.MouseButton1Click:Connect(function()
+				-- The Commands page's Run / Fill / Build target the checked players.
+				options.OpenCommands()
+			end)
+		end
+	end
 
+	local function setChecked(userId: number, name: string?, value: boolean)
+		checked[userId] = if value then name else nil
+	end
+
+	local function passesFilter(row: PlayerRow, lowered: string): boolean
+		if lowered ~= "" then
+			local hit = row.Name:lower():find(lowered, 1, true)
+				or row.DisplayName:lower():find(lowered, 1, true)
+				or tostring(row.UserId):find(lowered, 1, true)
+			if not hit then
+				return false
+			end
+		end
+		if activeFilter == "Staff" then
+			return row.IsStaff == true
+		elseif activeFilter == "VIP" then
+			return row.IsVIP == true
+		elseif activeFilter == "Suspicious" then
+			return row.Suspicious ~= nil and #row.Suspicious > 0
+		elseif activeFilter == "Idle" then
+			return row.Status == "Idle"
+		elseif activeFilter == "New" then
+			return row.JoinedAt ~= nil and os.time() - row.JoinedAt < NEW_SECONDS
+		end
+		return true
+	end
+
+	local function sorted(rows: { PlayerRow }): { PlayerRow }
+		local list = table.clone(rows)
+		table.sort(list, function(a, b)
+			if sortBy == "Ping" then
+				return a.Ping < b.Ping
+			elseif sortBy == "Health" then
+				return (a.Health or 0) < (b.Health or 0)
+			elseif sortBy == "Joined" then
+				return (a.JoinedAt or 0) > (b.JoinedAt or 0)
+			end
+			return a.DisplayName:lower() < b.DisplayName:lower()
+		end)
+		return list
+	end
+
+	local function tag(parent: Instance, text: string, color: Color3, order: number)
+		local t = Instance.new("TextLabel")
+		t.Name = "Tag_" .. text
+		t.LayoutOrder = order
+		t.BackgroundColor3 = color
+		t.BackgroundTransparency = 0.75
+		t.Size = UDim2.new(0, 0, 0, 16)
+		t.AutomaticSize = Enum.AutomaticSize.X
+		t.Font = Theme.Font.Medium
+		t.TextSize = 11
+		t.TextColor3 = color
+		t.Text = text
+		t.Parent = parent
+		Theme.corner(t, Theme.Radius.Pill)
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 6)
+		pad.PaddingRight = UDim.new(0, 6)
+		pad.Parent = t
+	end
+
+	local function clearTable()
+		for _, child in ipairs(tableFrame:GetChildren()) do
+			if child:IsA("GuiObject") then
+				child:Destroy()
+			end
+		end
+	end
+
+	local function sectionLabel(text: string, order: number)
+		local l = Instance.new("TextLabel")
+		l.Name = "Section_" .. text
+		l.LayoutOrder = order
+		l.BackgroundTransparency = 1
+		l.Size = UDim2.new(1, 0, 0, 22)
+		l.Font = Theme.Font.Bold
+		l.TextSize = 12
+		l.TextColor3 = Theme.Colors.TextSecondary
+		l.TextXAlignment = Enum.TextXAlignment.Left
+		l.Text = text:upper()
+		l.Parent = tableFrame
+	end
+
+	local function renderRecent()
+		clearTable()
+		if not recent then
+			sectionLabel("Loading...", 1)
+			return
+		end
+		local now = recent.Now or os.time()
+		local order = 0
+		for _, part in ipairs({ { "Recently joined", recent.Joined }, { "Recently left", recent.Left } }) do
+			order += 1
+			sectionLabel(("%s (%d)"):format(part[1], #part[2]), order)
+			for _, entry in ipairs(part[2]) do
+				order += 1
+				local leftList = part[2] == recent.Left
+				local line = Instance.new("Frame")
+				line.Name = (if leftList then "Left_" else "Joined_") .. entry.UserId
+				line.LayoutOrder = order
+				line.BackgroundColor3 = Theme.Colors.SurfaceRaised
+				line.Size = UDim2.new(1, 0, 0, 36)
+				line.Parent = tableFrame
+				Theme.corner(line, Theme.Radius.S)
+				local avatar = Instance.new("ImageLabel")
+				avatar.BackgroundTransparency = 1
+				avatar.Position = UDim2.new(0, 6, 0.5, -12)
+				avatar.Size = UDim2.fromOffset(24, 24)
+				avatar.Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(entry.UserId)
+				avatar.Parent = line
+				Theme.corner(avatar, UDim.new(1, 0))
+				local text = Instance.new("TextLabel")
+				text.BackgroundTransparency = 1
+				text.Position = UDim2.new(0, 38, 0, 0)
+				text.Size = UDim2.new(1, -120, 1, 0)
+				text.Font = Theme.Font.Regular
+				text.TextSize = 12
+				text.TextColor3 = Theme.Colors.Text
+				text.TextXAlignment = Enum.TextXAlignment.Left
+				text.TextTruncate = Enum.TextTruncate.AtEnd
+				text.RichText = true
+				text.Text = ("<b>%s</b> @%s  <font color=\"#%s\">%s ago%s</font>"):format(
+					entry.DisplayName,
+					entry.Name,
+					Theme.Colors.TextSecondary:ToHex(),
+					ago(math.max(0, now - entry.At)),
+					if entry.SessionSeconds then ", stayed " .. ago(entry.SessionSeconds) else ""
+				)
+				text.Parent = line
+				local button = chip(line, "Profile", if leftList then "Profile" else "Open", 1, 64)
+				button.AnchorPoint = Vector2.new(1, 0.5)
+				button.Position = UDim2.new(1, -6, 0.5, 0)
+				button.MouseButton1Click:Connect(function()
+					if leftList then
+						runQuickAction("profile " .. entry.Name)
+					else
+						view = "Online"
+						viewOnline.BackgroundColor3 = Theme.Colors.Accent
+						viewRecent.BackgroundColor3 = Theme.Colors.SurfaceRaised
+						searchBox.Text = entry.Name
+					end
+				end)
+			end
+		end
+	end
+
+	renderTable = function(filter: string)
+		if view == "Recent" then
+			renderRecent()
+			return
+		end
+		clearTable()
 		local lowered = filter:lower()
 		local order = 0
-		for _, row in ipairs(allRows) do
-			if lowered == "" or row.Name:lower():find(lowered, 1, true) or row.DisplayName:lower():find(lowered, 1, true) then
+		for _, row in ipairs(sorted(allRows)) do
+			if passesFilter(row, lowered) then
 				order += 1
+				local isSelected = row.UserId == selectedUserId
 				local button = Instance.new("TextButton")
-				button.Name = row.Name
+				button.Name = "Row_" .. row.UserId
 				button.LayoutOrder = order
-				button.Size = UDim2.new(1, 0, 0, 44)
-				button.BackgroundColor3 = if row.UserId == selectedUserId then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+				button.Size = UDim2.new(1, 0, 0, 54)
+				button.BackgroundColor3 = if isSelected then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
 				button.AutoButtonColor = false
 				button.Text = ""
 				button.Parent = tableFrame
 				Theme.corner(button, Theme.Radius.S)
 
+				-- check box (bulk selection)
+				local check = Instance.new("TextButton")
+				check.Name = "Check"
+				check.Position = UDim2.new(0, 6, 0.5, -10)
+				check.Size = UDim2.fromOffset(20, 20)
+				check.BackgroundColor3 = if checked[row.UserId] then Theme.Colors.Success else Theme.Colors.Surface
+				check.Font = Theme.Font.Bold
+				check.TextSize = 13
+				check.TextColor3 = Color3.new(1, 1, 1)
+				check.Text = ""
+				check.ZIndex = 3
+				check.Parent = button
+				Theme.corner(check, Theme.Radius.S)
+				Theme.stroke(check, Theme.Colors.Border, 1)
+				check.MouseButton1Click:Connect(function()
+					setChecked(row.UserId, row.Name, not checked[row.UserId])
+					rebuildBulk()
+					renderTable(searchBox.Text)
+				end)
+
+				local avatar = Instance.new("ImageLabel")
+				avatar.Name = "Avatar"
+				avatar.BackgroundColor3 = Theme.Colors.Surface
+				avatar.Position = UDim2.new(0, 32, 0.5, -17)
+				avatar.Size = UDim2.fromOffset(34, 34)
+				avatar.Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(row.UserId)
+				avatar.Parent = button
+				Theme.corner(avatar, UDim.new(1, 0))
+				-- status dot on the avatar
+				local dot = Instance.new("Frame")
+				dot.Name = "StatusDot"
+				dot.AnchorPoint = Vector2.new(1, 1)
+				dot.Position = UDim2.new(1, 1, 1, 1)
+				dot.Size = UDim2.fromOffset(11, 11)
+				dot.BackgroundColor3 = if row.Status == "Dead" then Theme.Colors.Error
+					elseif row.Status == "Idle" then Theme.Colors.Warning
+					else Theme.Colors.Success
+				dot.Parent = avatar
+				Theme.corner(dot, UDim.new(1, 0))
+				Theme.stroke(dot, Theme.Colors.SurfaceRaised, 2)
+
 				local nameLabel = Instance.new("TextLabel")
+				nameLabel.Name = "Name"
 				nameLabel.BackgroundTransparency = 1
-				nameLabel.Position = UDim2.new(0, 10, 0, 4)
-				nameLabel.Size = UDim2.new(0.5, 0, 0, 18)
+				nameLabel.Position = UDim2.new(0, 74, 0, 6)
+				nameLabel.Size = UDim2.new(1, -150, 0, 18)
 				nameLabel.Font = Theme.Font.Medium
 				nameLabel.TextSize = 14
 				nameLabel.TextColor3 = Theme.Colors.Text
 				nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-				nameLabel.Text = row.DisplayName
+				nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+				nameLabel.RichText = true
+				nameLabel.Text = ("%s <font color=\"#%s\" size=\"12\">@%s</font>"):format(row.DisplayName, (if isSelected then Color3.new(1, 1, 1) else Theme.Colors.TextSecondary):ToHex(), row.Name)
 				nameLabel.Parent = button
 
-				local metaLabel = Instance.new("TextLabel")
-				metaLabel.BackgroundTransparency = 1
-				metaLabel.Position = UDim2.new(0, 10, 0, 22)
-				metaLabel.Size = UDim2.new(1, -20, 0, 16)
-				metaLabel.Font = Theme.Font.Regular
-				metaLabel.TextSize = 12
-				metaLabel.TextColor3 = Theme.Colors.TextSecondary
-				metaLabel.TextXAlignment = Enum.TextXAlignment.Left
-				metaLabel.Text = ("Ping %dms · %s"):format(row.Ping, if #row.Roles > 0 then row.Roles[1] else "no role")
-				metaLabel.Parent = button
+				-- right side: rank chip + ping
+				local right = Instance.new("Frame")
+				right.Name = "Right"
+				right.BackgroundTransparency = 1
+				right.AnchorPoint = Vector2.new(1, 0)
+				right.Position = UDim2.new(1, -8, 0, 6)
+				right.Size = UDim2.new(0, 120, 0, 18)
+				right.Parent = button
+				local rightLayout = Instance.new("UIListLayout")
+				rightLayout.FillDirection = Enum.FillDirection.Horizontal
+				rightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+				rightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+				rightLayout.SortOrder = Enum.SortOrder.LayoutOrder
+				rightLayout.Padding = UDim.new(0, 6)
+				rightLayout.Parent = right
+				if row.Rank then
+					local c = row.RankColor
+					tag(right, row.Rank, if c then Color3.fromRGB(c[1], c[2], c[3]) else Theme.Colors.Accent, 1)
+				end
+				local ping = Instance.new("TextLabel")
+				ping.Name = "Ping"
+				ping.LayoutOrder = 2
+				ping.BackgroundTransparency = 1
+				ping.Size = UDim2.new(0, 0, 0, 16)
+				ping.AutomaticSize = Enum.AutomaticSize.X
+				ping.Font = Theme.Font.Mono
+				ping.TextSize = 11
+				ping.TextColor3 = pingColor(row.Ping)
+				ping.Text = ("%dms"):format(row.Ping)
+				ping.Parent = right
 
-				if row.UserId == selectedUserId then
+				-- second line: health bar + status chips
+				local meta = Instance.new("Frame")
+				meta.Name = "Meta"
+				meta.BackgroundTransparency = 1
+				meta.Position = UDim2.new(0, 74, 0, 30)
+				meta.Size = UDim2.new(1, -82, 0, 18)
+				meta.ClipsDescendants = true
+				meta.Parent = button
+				local metaLayout = Instance.new("UIListLayout")
+				metaLayout.FillDirection = Enum.FillDirection.Horizontal
+				metaLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+				metaLayout.SortOrder = Enum.SortOrder.LayoutOrder
+				metaLayout.Padding = UDim.new(0, 4)
+				metaLayout.Parent = meta
+				local healthTrack = Instance.new("Frame")
+				healthTrack.Name = "Health"
+				healthTrack.LayoutOrder = 0
+				healthTrack.BackgroundColor3 = Theme.Colors.Surface
+				healthTrack.Size = UDim2.fromOffset(56, 6)
+				healthTrack.Parent = meta
+				Theme.corner(healthTrack, UDim.new(1, 0))
+				local fraction = if row.Health and row.MaxHealth and row.MaxHealth > 0 then math.clamp(row.Health / row.MaxHealth, 0, 1) else 0
+				local fill = Instance.new("Frame")
+				fill.Name = "Fill"
+				fill.BackgroundColor3 = if fraction > 0.6 then Theme.Colors.Success elseif fraction > 0.3 then Theme.Colors.Warning else Theme.Colors.Error
+				fill.Size = UDim2.new(fraction, 0, 1, 0)
+				fill.Parent = healthTrack
+				Theme.corner(fill, UDim.new(1, 0))
+				local n = 0
+				local function status(on: boolean?, text: string, color: Color3)
+					if on then
+						n += 1
+						tag(meta, text, color, n)
+					end
+				end
+				status(row.Suspicious ~= nil and #row.Suspicious > 0, "Suspicious", Theme.Colors.Warning)
+				status(row.Status == "Dead", "Dead", Theme.Colors.Error)
+				status(row.Status == "Idle", "Idle " .. ago(row.IdleSeconds or 0), Theme.Colors.Warning)
+				status(row.IsJailed, "Jailed", Theme.Colors.Error)
+				status(row.IsFrozen, "Frozen", Theme.Colors.Accent)
+				status(row.IsMuted, "Muted", Theme.Colors.Error)
+				status(row.IsGod, "God", Theme.Colors.Success)
+				status(row.IsFlying, "Fly", Theme.Colors.Accent)
+				status(row.IsInvisible, "Invisible", Theme.Colors.TextSecondary)
+				status(row.IsStaff, "Staff", Theme.Colors.TextSecondary)
+				if row.Team then
+					status(true, row.Team, row.TeamColor or Theme.Colors.TextSecondary)
+				end
+
+				if isSelected then
 					selectedRow = button
 				end
 
 				button.MouseButton1Click:Connect(function()
-					if selectedRow then
-						selectedRow.BackgroundColor3 = Theme.Colors.SurfaceRaised
-					end
-					button.BackgroundColor3 = Theme.Colors.Accent
-					selectedRow = button
 					selectedUserId = row.UserId
 					selectedName = row.Name
 					-- Shared with the Commands page (Run / Fill target).
 					Selection.Set(row.UserId, row.Name)
 					showDetail(row)
+					renderTable(searchBox.Text)
 				end)
 			end
+		end
+		if order == 0 then
+			sectionLabel(if #allRows == 0 then "No players" else "No players match", 1)
 		end
 	end
 
@@ -871,21 +1494,136 @@ function PlayersPage.Build(container: Frame)
 		renderTable(searchBox.Text)
 	end)
 
+	local function loadRecent()
+		if not getPlayerActivityRemote then
+			return
+		end
+		local ok, result = pcall(function()
+			return getPlayerActivityRemote:InvokeServer()
+		end)
+		if ok and type(result) == "table" then
+			recent = result
+		end
+	end
+
+	local function setView(name: string)
+		view = name
+		viewOnline.BackgroundColor3 = if name == "Online" then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+		viewRecent.BackgroundColor3 = if name == "Recent" then Theme.Colors.Accent else Theme.Colors.SurfaceRaised
+		if name == "Recent" then
+			renderRecent()
+			task.spawn(function()
+				loadRecent()
+				if view == "Recent" then
+					renderRecent()
+				end
+			end)
+		else
+			renderTable(searchBox.Text)
+		end
+	end
+	viewOnline.MouseButton1Click:Connect(function()
+		setView("Online")
+	end)
+	viewRecent.MouseButton1Click:Connect(function()
+		setView("Recent")
+	end)
+
+	-- Bulk selection helpers.
+	selectAll.MouseButton1Click:Connect(function()
+		for _, row in ipairs(allRows) do
+			if passesFilter(row, searchBox.Text:lower()) then
+				setChecked(row.UserId, row.Name, true)
+			end
+		end
+		rebuildBulk()
+		renderTable(searchBox.Text)
+	end)
+	selectOthers.MouseButton1Click:Connect(function()
+		local me = game:GetService("Players").LocalPlayer.UserId
+		for _, row in ipairs(allRows) do
+			setChecked(row.UserId, row.Name, row.UserId ~= me and passesFilter(row, searchBox.Text:lower()))
+		end
+		rebuildBulk()
+		renderTable(searchBox.Text)
+	end)
+	selectNone.MouseButton1Click:Connect(function()
+		checked = {}
+		rebuildBulk()
+		renderTable(searchBox.Text)
+	end)
+	local function runSelector()
+		local text = selectorBox.Text:match("^%s*(.-)%s*$") or ""
+		if text == "" or not resolveTargetsRemote then
+			return
+		end
+		local ok, result = pcall(function()
+			return resolveTargetsRemote:InvokeServer(text)
+		end)
+		if not (ok and type(result) == "table") then
+			countLabel.Text = "Couldn't resolve that."
+			return
+		end
+		if result.Error then
+			countLabel.Text = tostring(result.Error)
+			return
+		end
+		checked = {}
+		local byId = {}
+		for _, row in ipairs(allRows) do
+			byId[row.UserId] = row
+		end
+		for _, id in ipairs(result.UserIds or {}) do
+			local row = byId[id]
+			if row then
+				setChecked(id, row.Name, true)
+			end
+		end
+		rebuildBulk()
+		renderTable(searchBox.Text)
+		if #(result.UserIds or {}) == 0 then
+			countLabel.Text = "No players match " .. text
+		end
+	end
+	selectGo.MouseButton1Click:Connect(runSelector)
+	selectorBox.FocusLost:Connect(function(enter: boolean)
+		if enter then
+			runSelector()
+		end
+	end)
+
+	reflow()
+
 	task.spawn(function()
 		while true do
-			if getPlayerListRemote then
+			if getPlayerListRemote and container.Visible ~= false then
 				local ok, result = pcall(function()
 					return getPlayerListRemote:InvokeServer()
 				end)
 				if ok and result then
 					allRows = result :: { PlayerRow }
+					-- Drop checks for players who left.
+					local present = {}
+					for _, row in ipairs(allRows) do
+						present[row.UserId] = true
+					end
+					local changedChecks = false
+					for id in pairs(checked) do
+						if not present[id] then
+							checked[id] = nil
+							changedChecks = true
+						end
+					end
+					if changedChecks then
+						rebuildBulk()
+					end
+					if view == "Recent" then
+						loadRecent()
+					end
 					renderTable(searchBox.Text)
 
-					-- Keep the selected player's Overview tab (and the
-					-- table row highlight — see the known selection-
-					-- highlight bug logged in PHASE7-KNOWN-ISSUES.md)
-					-- truthful: re-render whichever tab is open using
-					-- fresh row data, not just re-poll Overview alone.
+					-- Keep the selected player's open tab truthful with
+					-- fresh row data.
 					if selectedUserId then
 						local found = false
 						for _, row in ipairs(allRows) do

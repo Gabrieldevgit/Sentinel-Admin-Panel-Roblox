@@ -188,35 +188,35 @@ Player explorer
 - Live player list.
 - Search by username.
 - Search by display name.
-- Search by UserId.
-- Player avatars.
-- Player thumbnails.
+- ✅ Search by UserId.
+- ✅ Player avatars.
+- ✅ Player thumbnails.
 - Team indicators.
-- Rank indicators.
-- Health indicators.
-- Ping indicators.
-- Player status indicators.
+- ✅ Rank indicators.
+- ✅ Health indicators.
+- ✅ Ping indicators.
+- ✅ Player status indicators.
 - Sorting and filtering.
-- Recently joined players.
+- ✅ Recently joined players.
 - Recently left players.
-- Staff-only filters.
+- ✅ Staff-only filters.
 - VIP-only filters.
-- Suspicious-player filters.
+- ✅ Suspicious-player filters.
 Player profile
-- Username.
-- Display name.
-- UserId.
-- Avatar.
-- Account age.
+- ✅ Username.
+- ✅ Display name.
+- ✅ UserId.
+- ✅ Avatar.
+- ✅ Account age.
 - Current team.
-- Current rank.
-- Session duration.
-- Join time.
-- Ping.
-- Character health.
-- Character position.
-- WalkSpeed.
-- JumpPower.
+- ✅ Current rank.
+- ✅ Session duration.
+- ✅ Join time.
+- ✅ Ping.
+- ✅ Character health.
+- ✅ Character position.
+- ✅ WalkSpeed.
+- ✅ JumpPower.
 - Inventory.
 - Currency.
 - Gems.
@@ -225,9 +225,9 @@ Player profile
 - Badges.
 - Moderation history.
 - Staff notes.
-- Warnings.
-- Active punishments.
-- Session information.
+- ✅ Warnings.
+- ✅ Active punishments.
+- ✅ Session information.
 - Permission information.
 Player actions
 - Kick.
@@ -281,14 +281,14 @@ Advanced management
 - Find player across servers.
 - ✅ See whether a player is banned.
 - View previous usernames when supported.
-- Bulk player actions.
-- Select all players.
-- Select everyone except yourself.
+- ✅ Bulk player actions.
+- ✅ Select all players.
+- ✅ Select everyone except yourself.
 - Select players by team.
-- Select players by rank.
-- Select players by attribute.
-- Select players by property.
-- Save player investigation notes.
+- ✅ Select players by rank.
+- ✅ Select players by attribute.
+- ✅ Select players by property.
+- ✅ Save player investigation notes.
 4. Moderation Center
 Essential
 This should be a complete moderation workspace.
@@ -820,7 +820,7 @@ Additional tools
 - Dismiss all.
 - ✅ Individual dismissal.
 - Notification preferences.
-- Sound notifications.
+- ✅ Sound notifications.
 - Priority notifications.
 - Custom notification duration.
 13. Settings & Customization

@@ -4,10 +4,9 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-21 (W14 session) - **W14 Reports & appeals** built
-and verified in Play, plus the icon-asset system from earlier today; both
-**not committed**. Next is **W15 - Player Explorer completion**. Start
-with §6._
+_Last updated: 2026-11-22 (sound effects + W15 session) - **Sound
+effects** and **W15 Player Explorer completion** built and verified in
+Play, **not committed**. Next is **W16 - Analytics**. Start with §6._
 
 ---
 
@@ -608,6 +607,61 @@ Control" UI, all driven by one command grammar
     chips + query, list / detail (narrow < 620 px = one column with Back),
     actions are commands. init.client toasts "New report / appeal" with a
     Review button.
+- **Sound effects (2026-11-22, before W15):**
+  - `Shared/SoundLibrary.lua`: the user's 8 uploads (`Success1-4`,
+    `Fail1-4` -> Audio ids), `EVENTS` = Success / Error / Warning / Info,
+    `Normalize` (built-in name, `Off`, or a custom
+    `rbxassetid://<id>` parsed from a Creator Store / library link,
+    `rbxassetid://` or a bare id), `Resolve`, `Label`, `IsCustom`.
+  - `Shared/UIPrefs` section **Sounds** (Enabled, Volume 0-1, Success,
+    Error, Warning, Info; Kind `sound`); BUILTIN on, 50 %, Success1 / Fail1
+    / Fail2 / Success2. Number settings with Max 1 accept `70%` / `70`.
+    The old `Notifications.Sound` boolean was removed (Sanitize drops it).
+  - `SentinelUI/SoundPlayer.lua`: `ApplyPrefs`, `Play(event|kind)` (per
+    event 0.12 s debounce), `Preview(value)`, `Check(id)` (asset type must
+    be Audio via MarketplaceService - **PreloadAsync reports Success for
+    any asset type** - and the Sound must load), `Changed`.
+    NotificationCenter plays the toast kind's sound (`Notify{Sound=false}`
+    to skip) and Warning for `NeedsConfirmation`. init.client `applyPrefs`
+    feeds it.
+  - UI: System > **Sounds** page (= AppearancePage generator with
+    `{Sections={"Sounds"}, Title="Sounds"}`; sound rows
+    `Body.Row_Sounds_<Event>.Controls.{Prev,Value,Next,Play}` +
+    `.Custom.{Link,Use}`), speaker toggle `Root.NavBar.Right.SoundButton`
+    (SoundIcon / MuteSoundIcon). `;sounds [setting] [value]` (sfx,
+    soundeffects; server also rejects non-Audio ids).
+  - Icons.lua: `SoundIcon` 137866142678538 / `MuteSoundIcon`
+    86539800505739 (Image ids from Decals 85550394171391 /
+    124944718313615); slots Sounds / SoundOn / SoundOff.
+- **W15 Player Explorer completion:**
+  - `Systems/PlayerExplorerService`: `Row(p)` (GetPlayerListRemote now
+    returns these): original fields + Rank, RankColor, TeamColor, IsStaff,
+    IsVIP, AccountAge, JoinedAt, Status (Active / Idle / Dead; idle = no
+    movement for 120 s, sampled every 3 s), IdleSeconds, Suspicious
+    (reasons: account < `;config newaccount` days (7), >= `;config
+    suspectwarnings` warnings (3), open reports via new
+    `ReportService.PendingAgainst`), Warnings, WalkSpeed, JumpPower,
+    Position. `Recent()` = last 50 joins / leaves (memory).
+  - `TargetResolver`: @team / @role / @rank case-insensitive and **@rank
+    now works** (matched the player's ranks; it had no provider before);
+    `@attribute Name`, `Name=value`, `Name!=value` (player then
+    character); `GetProperty` = Health, MaxHealth, Ping, WalkSpeed,
+    JumpPower, AccountAge, Session (min) then any leaderstat or numeric
+    attribute (case-insensitive) for `@prop >n` and `where`; `!=` compare.
+  - UIBridge: `GetPlayerActivityRemote`, `ResolveTargetsRemote(text)`
+    (selector -> UserIds, dry run, no `&&`); `GetPlayerSessionRemote` adds
+    PreviousNames (W13 profile), Status, Position, WalkSpeed, JumpPower,
+    Warnings, Suspicious, MembershipType.
+  - `;investigate <player> <text>` (inote, investigation; node
+    `moderation.notes`): notes get `Kind = "Investigation"` (same store
+    as `;note`, max 200 per player).
+  - `Selection.SetMany / GetMany`: checked players; `TargetText()` =
+    `a,b,c` when any are checked (Commands page shows "N players").
+  - PlayersPage: rows (avatar + status dot, rank chip, ping colour, health
+    bar, tags), Toolbar filters / sort / Online-Recent, SelectBar (All, All
+    but me, None, selector box), BulkBar (Heal ... Kick, "Other command..."
+    -> Commands page), richer Overview / Session, Notes kind toggle. Paths
+    in the file header. `PlayersPage.Build(container, {OpenCommands})`.
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -752,6 +806,19 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **Sound icons are dark grey line art** (SoundIcon / MuteSoundIcon): on
+  the dark themes the top-bar speaker, the Sounds page header and its
+  sidebar entry are nearly invisible (ImageColor3 can only darken). Ask the
+  user for white versions; then only the two ids in `Icons.Assets` change.
+- Sounds not verified by ear (Studio MCP can't hear); verified that the
+  right Sound ids are created, loaded and playing at the set volume.
+  Non-staff players get the BUILTIN sound prefs (no personal prefs).
+- **W15 not verified (needs a 2nd player / teams):** recently *left* list,
+  team indicators + select by team, VIP filter with a real VIP, sort order
+  with several players, Dead status, previous usernames (none recorded for
+  the test account). Not built: badges (Roblox can't list a user's badges
+  in-game). Testing place: 2 investigation notes on the test account.
 
 - **W14 not verified live:** accepting an appeal (the lifters: unban /
   unmute / unjail / remove warning) is only unit-tested - in solo Play you
@@ -921,9 +988,9 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Unit tests **120/120** (Edit; new `Reports.spec`). **W14 Reports &
-  appeals** and the **icon assets** work are verified in Play, **not
-  committed**. W13 + announcements are committed (`ef2509f`).
+- Unit tests **122/122** (Edit). **Sound effects** and **W15 Player
+  Explorer** are verified in Play, **not committed**. W14 + icon assets
+  committed (`5fe2e04`). Test account's sound prefs reset to defaults.
 - The test account now has **5 warnings** on record (was 4; added by
   another session) - still never `;warn` yourself.
 - **Mobile pass / `;sentinel` / selection targets** (see §3) built and
@@ -939,7 +1006,7 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W14 done; next is **W15 - Player Explorer completion**. About 8 weekends
+- **Schedule position:** W15 done; next is **W16 - Analytics**. About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -949,7 +1016,11 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **289 bullets ✅**: W14 8 (pending reports, player report system, report management, evidence attachment, report assignment, report status, appeal submission, appeal review), announcements 6 (staff-only,
+- Feature blueprint: **323 bullets ✅**: sound notifications 1, W15 33
+  (search by UserId, avatars, thumbnails, rank / health / ping / status
+  indicators, recently joined, staff + suspicious filters, 16 profile
+  fields, bulk actions, select all / all but me / by rank / attribute /
+  property, investigation notes), W14 8 (pending reports, player report system, report management, evidence attachment, report assignment, report status, appeal submission, appeal review), announcements 6 (staff-only,
   targeted, custom colours, duration, history, notification banner), W13 6 (offline player profiles,
   offline moderation history, unban x2, temporary ban, secure offline
   lookups), W12 20 (custom ban / mute
@@ -1008,6 +1079,17 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-22 (sound effects + W15)** - User asked for configurable sound
+  effects first (8 uploads + 2 icons; ids read off Creator Hub by desktop
+  control, verified in Studio; icons resolved Decal -> Image). Built
+  SoundLibrary, UIPrefs Sounds, SoundPlayer, Sounds page, speaker toggle,
+  `;sounds`. Found + fixed: PreloadAsync accepted an image id as a sound.
+  Then W15: PlayerExplorerService, selector fixes (@rank was dead),
+  ResolveTargets / Activity remotes, `;investigate`, multi Selection,
+  Players page rework. Fixed: note box showed "TextBox", UIStroke outlined
+  note text. Verified in Play by remote / mouse / keyboard. Tests 122/122.
+  Blueprint +34 ✅. Left: white sound icons (ask user), 2-player checks.
 
 - **2026-11-21 (W14 reports & appeals)** - User chose the pre-kick ban
   screen and bans + mutes/jails/warnings as appealable. Built ReportService,

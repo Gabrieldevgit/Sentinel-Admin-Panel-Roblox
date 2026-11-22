@@ -256,6 +256,17 @@ local function isPending(r: Report): boolean
 	return r.Status == "Open" or r.Status == "InProgress"
 end
 
+-- W15 Player Explorer: open / in-progress reports filed against a player.
+function ReportService.PendingAgainst(userId: number): number
+	local n = 0
+	for _, r in ipairs(allKnown()) do
+		if r.TargetId == userId and isPending(r) then
+			n += 1
+		end
+	end
+	return n
+end
+
 -- ---------------------------------------------------------------------------
 -- Chat capture (evidence): the last few messages of every player, filtered
 -- for broadcast the moment they are captured (staff are other users).

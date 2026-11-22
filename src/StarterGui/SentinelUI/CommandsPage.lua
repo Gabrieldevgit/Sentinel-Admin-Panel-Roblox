@@ -146,6 +146,14 @@ function CommandsPage.Build(container: Frame, commandPalette: any, commandBuilde
 		local userId = if selected then selected.UserId else Players.LocalPlayer.UserId
 		targetAvatar.Image = ("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48"):format(userId)
 		local strong = Theme.Colors.Text:ToHex()
+		local checked = Selection.GetMany()
+		if #checked > 1 then
+			targetLabel.Text = ('Target: <font color="#%s"><b>%d players</b></font>  (checked on the Players page)'):format(strong, #checked)
+			clearTarget.Visible = true
+			return
+		elseif #checked == 1 then
+			selected = checked[1]
+		end
 		if selected then
 			targetLabel.Text = ('Target: <font color="#%s"><b>@%s</b></font>  (selected on the Players page)'):format(strong, selected.Name)
 		else

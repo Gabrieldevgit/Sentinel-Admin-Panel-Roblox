@@ -27,6 +27,8 @@
 		appeals        AppealsEnabled         "on" | "off"   (W14 appeals + ban screen)
 		appealwindow   AppealWindow           "120" (seconds a banned player may stay to appeal, 30-600)
 		appealcooldown AppealCooldownDays     "7"   (days before a rejected case can be appealed again, 0-90)
+		newaccount     SuspiciousAccountDays  "7"   (W15: accounts younger than this are flagged suspicious, 0-365)
+		suspectwarnings SuspiciousWarnings    "3"   (W15: this many warnings flags a player suspicious, 0 = off)
 
 		Applied by this module:
 			- CommandRegistry cooldown resolver (scale + overrides)
@@ -201,6 +203,8 @@ ConfigService.Define("ReportCooldown", 60, intRange(10, 600))
 ConfigService.Define("AppealsEnabled", true, isBool)
 ConfigService.Define("AppealWindow", 120, intRange(30, 600))
 ConfigService.Define("AppealCooldownDays", 7, intRange(0, 90))
+ConfigService.Define("SuspiciousAccountDays", 7, intRange(0, 365))
+ConfigService.Define("SuspiciousWarnings", 3, intRange(0, 50))
 
 -- ---------------------------------------------------------------------------
 -- Text <-> value
@@ -600,6 +604,42 @@ local ENTRIES: { Entry } = {
 		end,
 		Format = function(v)
 			return tostring(v) .. " days"
+		end,
+	},
+	{
+		Key = "newaccount",
+		ConfigKey = "SuspiciousAccountDays",
+		Label = "New account age",
+		Group = "Player explorer",
+		Description = "Accounts younger than this many days are flagged suspicious on the Players page (0 = off, max 365).",
+		Example = "7",
+		Parse = function(text)
+			local n = tonumber((text:gsub("d%s*$", "")))
+			if not n or n % 1 ~= 0 or n < 0 or n > 365 then
+				return nil, "give a whole number of days from 0 to 365"
+			end
+			return n, nil
+		end,
+		Format = function(v)
+			return if v == 0 then "off" else tostring(v) .. " days"
+		end,
+	},
+	{
+		Key = "suspectwarnings",
+		ConfigKey = "SuspiciousWarnings",
+		Label = "Suspicious warnings",
+		Group = "Player explorer",
+		Description = "Players with at least this many warnings are flagged suspicious (0 = off, max 50).",
+		Example = "3",
+		Parse = function(text)
+			local n = tonumber(text)
+			if not n or n % 1 ~= 0 or n < 0 or n > 50 then
+				return nil, "give a whole number from 0 to 50"
+			end
+			return n, nil
+		end,
+		Format = function(v)
+			return if v == 0 then "off" else tostring(v)
 		end,
 	},
 	{

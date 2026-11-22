@@ -157,6 +157,8 @@ local LIMITS: { [string]: { number } } = {
 	GetAutocompleteDataRemote = { 4, 1 },
 	PreviewCommandRemote = { 10, 5 },
 	GetPlayerListRemote = { 6, 2 },
+	GetPlayerActivityRemote = { 4, 1 },
+	ResolveTargetsRemote = { 8, 3 },
 	GetCommandHistoryRemote = { 6, 2 },
 	GetCommandLibraryRemote = { 4, 1 },
 	UpdateCommandLibraryRemote = { 6, 1 },
@@ -335,36 +337,52 @@ bindInvoke(getServerStatsRemote, function(player: Player)
 	return DeveloperService.GetServerStats()
 end)
 
+-- W15: rows come from PlayerExplorerService (status, rank, suspicion,
+-- join time, movement stats... on top of the original fields).
+local PlayerExplorerService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PlayerExplorerService"))
 bindInvoke(getPlayerListRemote, function(player: Player)
 	if not isStaff(player) then
 		return {}
 	end
-	local list = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		local character = p.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		table.insert(list, {
-			UserId = p.UserId,
-			Name = p.Name,
-			DisplayName = p.DisplayName,
-			Team = if p.Team then p.Team.Name else nil,
-			Health = if humanoid then math.floor(humanoid.Health) else nil,
-			MaxHealth = if humanoid then math.floor(humanoid.MaxHealth) else nil,
-			Ping = DeveloperService.GetPing(p),
-			Roles = PermissionSystem.GetRoles(p),
-			-- Read directly via attributes rather than importing Freeze/Jail
-			-- modules — those attributes ("SentinelFrozen"/"SentinelJailed")
-			-- are the actual, single source of truth those commands already
-			-- use, so this stays in sync automatically with no extra coupling.
-			IsFrozen = p:GetAttribute("SentinelFrozen") == true,
-			IsJailed = p:GetAttribute("SentinelJailed") == true,
-			IsMuted = ChatModerationService.IsMuted(p.UserId),
-			IsGod = p:GetAttribute("SentinelGod") == true,
-			IsFlying = p:GetAttribute("SentinelFlying") == true,
-			IsInvisible = p:GetAttribute("SentinelInvisible") == true,
-		})
+	return PlayerExplorerService.Rows()
+end)
+
+-- W15: recently joined / left players in this server.
+local getPlayerActivityRemote = getOrCreate("GetPlayerActivityRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getPlayerActivityRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
 	end
-	return list
+	return PlayerExplorerService.Recent()
+end)
+
+-- W15 "select by team / rank / attribute / property": resolves a target
+-- expression with the command grammar (e.g. "@team Red", "@rank VIP",
+-- "@attribute SentinelFlying", "@walkspeed >30", "all where Health<50")
+-- without running anything. Returns the matching UserIds.
+local ResolveCommandParser = require(Sentinel:WaitForChild("Core"):WaitForChild("Parser"):WaitForChild("CommandParser"))
+local ResolveTargetResolver = require(Sentinel:WaitForChild("Core"):WaitForChild("Parser"):WaitForChild("TargetResolver"))
+local resolveTargetsRemote = getOrCreate("ResolveTargetsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(resolveTargetsRemote, function(player: Player, text: any)
+	if not isStaff(player) or type(text) ~= "string" or #text == 0 or #text > 200 or text:find("&&", 1, true) then
+		return nil
+	end
+	local parsed = ResolveCommandParser.ParseLine("select " .. text)
+	if not parsed or #parsed.TargetSelectors == 0 then
+		return { UserIds = {}, Error = "Not a target expression." }
+	end
+	-- ParseLine strips "where ..." clauses; read them separately.
+	local tokens = {}
+	for token in text:gmatch("%S+") do
+		table.insert(tokens, token)
+	end
+	local filters = ResolveCommandParser.ParseFilters(tokens)
+	local targets = ResolveTargetResolver.Resolve(player, parsed.TargetSelectors, filters, true)
+	local ids = {}
+	for _, p in ipairs(targets) do
+		table.insert(ids, p.UserId)
+	end
+	return { UserIds = ids }
 end)
 
 bindInvoke(getModerationLogRemote, function(player: Player, count: number?)
@@ -545,11 +563,35 @@ bindInvoke(getPlayerSessionRemote, function(player: Player, userId: number?)
 	if not target then
 		return nil
 	end
+	-- W15: usernames seen before (W13 offline profile), cached after the
+	-- first read.
+	local previousNames = {}
+	local okProfile, PlayerProfileService = pcall(require, Sentinel:WaitForChild("Systems"):WaitForChild("PlayerProfileService"))
+	if okProfile then
+		local stored = PlayerProfileService.GetStored(target.UserId)
+		if stored and type(stored.Names) == "table" then
+			for _, name in ipairs(stored.Names) do
+				if name ~= target.Name then
+					table.insert(previousNames, name)
+				end
+			end
+		end
+	end
+	local row = PlayerExplorerService.Row(target)
 	return {
 		UserId = target.UserId,
 		AccountAgeDays = target.AccountAge,
 		JoinedAt = sessionStartedAt[target.UserId],
 		Ping = DeveloperService.GetPing(target),
+		PreviousNames = previousNames,
+		Status = row.Status,
+		IdleSeconds = row.IdleSeconds,
+		Position = row.Position,
+		WalkSpeed = row.WalkSpeed,
+		JumpPower = row.JumpPower,
+		Warnings = row.Warnings,
+		Suspicious = row.Suspicious,
+		MembershipType = target.MembershipType.Name,
 	}
 end)
 

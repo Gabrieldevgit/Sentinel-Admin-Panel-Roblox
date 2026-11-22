@@ -27,6 +27,7 @@ export type NoteRecord = {
 	AddedBy: string,
 	Text: string,
 	Timestamp: number,
+	Kind: string?, -- nil = general staff note, "Investigation" (W15)
 }
 
 local function getNotes(userId: number): { NoteRecord }
@@ -36,9 +37,14 @@ local function getNotes(userId: number): { NoteRecord }
 	return if ok and stored then stored else {}
 end
 
-local function addNote(userId: number, addedBy: string, text: string)
+local MAX_NOTES = 200
+
+local function addNote(userId: number, addedBy: string, text: string, kind: string?)
 	local notes = getNotes(userId)
-	table.insert(notes, { AddedBy = addedBy, Text = text, Timestamp = os.time() })
+	table.insert(notes, { AddedBy = addedBy, Text = text, Timestamp = os.time(), Kind = kind })
+	while #notes > MAX_NOTES do
+		table.remove(notes, 1)
+	end
 	local ok, err = pcall(function()
 		NoteStore:SetAsync(tostring(userId), notes)
 	end)
@@ -82,6 +88,34 @@ CommandRegistry.Register({
 	end,
 })
 
+-- W15: investigation notes - kept with the staff notes (same store, same
+-- node) but tagged, so the Player Explorer can show an investigation trail.
+CommandRegistry.Register({
+	Name = "investigate",
+	Aliases = { "inote", "investigation" },
+	Description = "Saves an investigation note on a player (shown on the Players page Notes tab, tagged Investigation).",
+	Usage = "/investigate target text...",
+	Permission = "moderation.notes",
+	Category = "Moderation",
+	TargetProtection = false, -- a private record, not an action on the player
+	Log = true,
+	Undoable = false,
+	RequiresTarget = true,
+	Examples = { "investigate Player1 Teleports between plots, check speed logs" },
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local target = ctx.Targets[1]
+		if not target then
+			return { Success = false, Message = "No target found." }
+		end
+		local text = table.concat(ctx.Arguments, " ")
+		if text == "" then
+			return { Success = false, Message = "Investigation note text cannot be empty." }
+		end
+		addNote(target.UserId, ctx.Executor.Name, text, "Investigation")
+		return { Success = true, Message = ("Investigation note saved for %s."):format(target.Name) }
+	end,
+})
+
 CommandRegistry.Register({
 	Name = "notes",
 	TargetProtection = false, -- harmless/read-only: allowed on higher ranks
@@ -104,7 +138,7 @@ CommandRegistry.Register({
 		end
 		local lines = {}
 		for _, note in ipairs(notes) do
-			table.insert(lines, ("[%s] %s"):format(note.AddedBy, note.Text))
+			table.insert(lines, ("[%s%s] %s"):format(if note.Kind then note.Kind .. " - " else "", note.AddedBy, note.Text))
 		end
 		return { Success = true, Message = table.concat(lines, " | ") }
 	end,

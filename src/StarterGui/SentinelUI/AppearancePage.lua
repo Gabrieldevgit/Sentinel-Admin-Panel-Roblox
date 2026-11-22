@@ -17,10 +17,15 @@
 
 	Stable names: Body.Row_<Section>_<Field>.Controls.{Choice_<value>,
 	Minus, Plus, Toggle}, Toolbar.{ResetMine, SaveDefault, ResetDefault,
-	OpenBar}.
+	OpenBar}. Sound rows (Kind "sound"): Body.Row_Sounds_<Event>.Controls.
+	{Prev, Value, Next, Play} and .Custom.{Link, Use}.
+
+	The same generator builds the System > Sounds page (sound effects) with
+	options { Sections = { "Sounds" }, Title = "Sounds" }; there
+	"Use server default" only resets that page's sections.
 
 	Public API:
-		AppearancePage.Build(container, commandBar?)
+		AppearancePage.Build(container, commandBar?, options?)
 --]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -28,10 +33,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Theme = require(script.Parent:WaitForChild("Theme"))
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 local UIPrefs = require(SentinelShared:WaitForChild("UIPrefs"))
+local SoundLibrary = require(SentinelShared:WaitForChild("SoundLibrary"))
+local Icons = require(SentinelShared:WaitForChild("Icons"))
+local SoundPlayer = require(script.Parent:WaitForChild("SoundPlayer"))
 
 local AppearancePage = {}
 
-local SECTION_TITLES = { Panel = "Panel", Layout = "Layout", CommandBar = "Command bar", Notifications = "Notifications" }
+local SECTION_TITLES = { Panel = "Panel", Layout = "Layout", CommandBar = "Command bar", Notifications = "Notifications", Sounds = "Sound effects" }
 local FIELD_LABELS = {
 	Theme = "Theme",
 	Accent = "Accent colour",
@@ -42,7 +50,12 @@ local FIELD_LABELS = {
 	ReducedMotion = "Reduced motion",
 	HighContrast = "High contrast",
 	Toasts = "Pop-ups",
-	Sound = "Sound",
+	Enabled = "Sound effects",
+	Volume = "Volume",
+	Success = "Success",
+	Error = "Error",
+	Warning = "Warning",
+	Info = "Info",
 	Duration = "Duration",
 	Preset = "Look",
 	Position = "Position",
@@ -90,14 +103,17 @@ local function button(parent: Instance, name: string, text: string, width: numbe
 	return b
 end
 
-function AppearancePage.Build(container: Frame, commandBar: any?)
+function AppearancePage.Build(container: Frame, commandBar: any?, options: any?)
+	options = options or {}
+	local sections: { string } = options.Sections or { "Panel", "Layout", "CommandBar", "Notifications" }
+	local pageTitle: string = options.Title or "Appearance"
 	local getRemote = SentinelShared:WaitForChild("GetUIPrefsRemote", 15) :: RemoteFunction
 	local setRemote = SentinelShared:WaitForChild("SetUIPrefsRemote", 15) :: RemoteFunction
 	local changedRemote = SentinelShared:WaitForChild("UIPrefsChangedRemote", 15) :: RemoteEvent
 
 	local snapshot: any = nil
 
-	make("TextLabel", {
+	local header = make("TextLabel", {
 		Name = "Header",
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 28),
@@ -105,8 +121,11 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 		TextSize = 20,
 		TextColor3 = Theme.Colors.Text,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "Appearance",
+		Text = pageTitle,
 	}, container)
+	if options.Sections and Icons.Slots[pageTitle] then
+		Icons.prefix(header, pageTitle, pageTitle, 22)
+	end
 	local status = make("TextLabel", {
 		Name = "SubHeader",
 		BackgroundTransparency = 1,
@@ -173,6 +192,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 	end
 
 	local render: () -> ()
+	local buildSoundControls: (Frame, Frame, string, string, any) -> ()
 
 	local function buildToolbar()
 		for _, child in ipairs(toolbar:GetChildren()) do
@@ -181,7 +201,13 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 			end
 		end
 		button(toolbar, "ResetMine", "Use server default", 150, 1).MouseButton1Click:Connect(function()
-			request("reset", nil)
+			if options.Sections then
+				for _, section in ipairs(sections) do
+					request("reset", section)
+				end
+			else
+				request("reset", nil)
+			end
 		end)
 		if commandBar then
 			button(toolbar, "OpenBar", "Open command bar", 150, 2).MouseButton1Click:Connect(function()
@@ -505,6 +531,121 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 		end
 	end
 
+	-- Sound row: Prev / name / Next / Play, and a box for a custom Roblox
+	-- audio link or id underneath.
+	buildSoundControls = function(row: Frame, controls: Frame, section: string, field: string, value: any)
+		local cycle = { "Off" }
+		for _, name in ipairs(SoundLibrary.ORDER) do
+			table.insert(cycle, name)
+		end
+		if SoundLibrary.IsCustom(value) then
+			table.insert(cycle, value)
+		end
+		local index = table.find(cycle, value) or 1
+		local function choose(delta: number)
+			local nextValue = cycle[((index - 1 + delta) % #cycle) + 1]
+			set(section, field, nextValue)
+			render()
+			task.spawn(SoundPlayer.Preview, nextValue)
+		end
+		button(controls, "Prev", "<", 32, 1).MouseButton1Click:Connect(function()
+			choose(-1)
+		end)
+		local label = make("TextLabel", {
+			Name = "Value",
+			LayoutOrder = 2,
+			BackgroundColor3 = Theme.Colors.SurfaceRaised,
+			Size = UDim2.new(0, 150, 0, 28),
+			Font = Theme.Font.Medium,
+			TextSize = 12,
+			TextColor3 = if value == "Off" then Theme.Colors.TextSecondary else Theme.Colors.Text,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = SoundLibrary.Label(value),
+		}, controls)
+		Theme.corner(label, Theme.Radius.S)
+		button(controls, "Next", ">", 32, 3).MouseButton1Click:Connect(function()
+			choose(1)
+		end)
+		local play = button(controls, "Play", "", 40, 4)
+		play.BackgroundColor3 = Theme.Colors.Accent
+		local image = Icons.image("SoundOn")
+		if image then
+			make("ImageLabel", {
+				Name = "Icon",
+				BackgroundTransparency = 1,
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(18, 18),
+				Image = image,
+			}, play)
+		else
+			play.Text = "Play"
+		end
+		play.MouseButton1Click:Connect(function()
+			task.spawn(function()
+				local ok, message = SoundPlayer.Preview(value)
+				say(message, ok)
+			end)
+		end)
+
+		local custom = make("Frame", {
+			Name = "Custom",
+			BackgroundTransparency = 1,
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -10, 0, 50),
+			Size = UDim2.new(1, -24, 0, 28),
+		}, row)
+		make("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			Padding = UDim.new(0, 4),
+		}, custom)
+		local link: TextBox = make("TextBox", {
+			Name = "Link",
+			LayoutOrder = 1,
+			BackgroundColor3 = Theme.Colors.SurfaceRaised,
+			Size = UDim2.new(1, -78, 0, 28),
+			Font = Theme.Font.Mono,
+			TextSize = 12,
+			TextColor3 = Theme.Colors.Text,
+			PlaceholderColor3 = Theme.Colors.TextSecondary,
+			PlaceholderText = "Custom sound: paste a Roblox audio link or id",
+			ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = if SoundLibrary.IsCustom(value) then value else "",
+		}, custom)
+		Theme.corner(link, Theme.Radius.S)
+		local linkPad = Instance.new("UIPadding")
+		linkPad.PaddingLeft = UDim.new(0, 8)
+		linkPad.Parent = link
+		local use = button(custom, "Use", "Use", 70, 2)
+		local function applyLink()
+			local normalized = SoundLibrary.Normalize(link.Text)
+			if not normalized or not SoundLibrary.IsCustom(normalized) then
+				say("Paste a Roblox audio link (create.roblox.com/store/asset/<id>/...) or its id.", false)
+				return
+			end
+			say("Checking that sound...", nil)
+			task.spawn(function()
+				local ok, message = SoundPlayer.Preview(normalized)
+				if not ok then
+					say(message, false)
+					return
+				end
+				set(section, field, normalized)
+				render()
+				say(("%s now plays %s."):format(FIELD_LABELS[field] or field, normalized), true)
+			end)
+		end
+		use.MouseButton1Click:Connect(applyLink)
+		link.FocusLost:Connect(function(enter: boolean)
+			if enter then
+				applyLink()
+			end
+		end)
+	end
+
 	render = function()
 		local scroll = body.CanvasPosition
 		for _, child in ipairs(body:GetChildren()) do
@@ -516,7 +657,7 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 			return
 		end
 		local order = 0
-		for _, section in ipairs({ "Panel", "Layout", "CommandBar", "Notifications" }) do
+		for _, section in ipairs(sections) do
 			order += 1
 			make("TextLabel", {
 				Name = "Section_" .. section,
@@ -538,11 +679,12 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 					value = UIPrefs.BUILTIN[section][field]
 				end
 				local personal = snapshot.Personal[section] ~= nil and snapshot.Personal[section][field] ~= nil
+				local isSound = spec.Kind == "sound"
 				local row = make("Frame", {
 					Name = ("Row_%s_%s"):format(section, field),
 					LayoutOrder = order,
 					BackgroundColor3 = Theme.Colors.Surface,
-					Size = UDim2.new(1, -8, 0, 52),
+					Size = UDim2.new(1, -8, 0, if isSound then 88 else 52),
 				}, body)
 				Theme.corner(row, Theme.Radius.S)
 				make("TextLabel", {
@@ -571,8 +713,8 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 				local controls = make("Frame", {
 					Name = "Controls",
 					BackgroundTransparency = 1,
-					AnchorPoint = Vector2.new(1, 0.5),
-					Position = UDim2.new(1, -10, 0.5, 0),
+					AnchorPoint = Vector2.new(1, if isSound then 0 else 0.5),
+					Position = UDim2.new(1, -10, if isSound then 0 else 0.5, if isSound then 12 else 0),
 					Size = UDim2.new(1, -270, 0, 28),
 				}, row)
 				make("UIListLayout", {
@@ -582,7 +724,9 @@ function AppearancePage.Build(container: Frame, commandBar: any?)
 					Padding = UDim.new(0, 4),
 				}, controls)
 
-				if spec.Kind == "choice" then
+				if isSound then
+					buildSoundControls(row, controls, section, field, value)
+				elseif spec.Kind == "choice" then
 					for i, option in ipairs(spec.Choices) do
 						local hasSwatch = field == "Accent" or field == "Theme"
 						local chip = button(controls, "Choice_" .. option, option, math.max(50, #option * 7 + 22) + (if hasSwatch then 14 else 0), i)

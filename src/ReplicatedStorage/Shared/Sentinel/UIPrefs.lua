@@ -19,7 +19,10 @@
 		               Rows, Key
 		Keys (W08)     Panel, ClosePanel, Palette, QuickFly, QuickNoclip,
 		               QuickGod, NextPage, PrevPage, Custom (key -> command)
-		Notifications  Toasts, Sound, Duration, Position (W08)
+		Notifications  Toasts, Duration, Position (W08)
+		Sounds         Enabled, Volume, Success, Error, Warning, Info
+		               (each event: Off, a built-in sound or a custom
+		               rbxassetid - see Shared/SoundLibrary)
 		Layout (W09)   Mode (Auto/Desktop/Mobile), Compact, StatusBar, Labels,
 		               Tabs (order + which section tabs show), Pinned (pages)
 
@@ -43,6 +46,8 @@
 		UIPrefs.MatchKey(key, keyCodeName, ctrl, shift, alt) -> boolean
 		UIPrefs.HexToColor(hex) -> Color3?, UIPrefs.ColorToHex(color) -> hex
 --]]
+
+local SoundLibrary = require(script.Parent:WaitForChild("SoundLibrary"))
 
 local UIPrefs = {}
 
@@ -319,7 +324,7 @@ UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Serv
 UIPrefs.PAGE_IDS = {
 	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "Ranks", "Commands", "Library", "Server", "CrossServer",
 	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers",
-	"Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Administration", "Notifications",
+	"Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Sounds", "Administration", "Notifications",
 }
 UIPrefs.MAX_PINNED = 8
 
@@ -390,9 +395,16 @@ UIPrefs.SPEC = {
 	},
 	Notifications = {
 		Toasts = { Kind = "boolean", Description = "Show pop-up notifications" },
-		Sound = { Kind = "boolean", Description = "Play a sound with each notification" },
 		Duration = number(2, 15, 1, "Seconds a notification stays", true),
 		Position = choice({ "BottomRight", "TopRight", "BottomLeft", "TopLeft" }, "Where notifications appear"),
+	},
+	Sounds = {
+		Enabled = { Kind = "boolean", Description = "Play Sentinel sound effects" },
+		Volume = number(0, 1, 0.1, "Sound effect volume"),
+		Success = { Kind = "sound", Description = SoundLibrary.EVENT_INFO.Success },
+		Error = { Kind = "sound", Description = SoundLibrary.EVENT_INFO.Error },
+		Warning = { Kind = "sound", Description = SoundLibrary.EVENT_INFO.Warning },
+		Info = { Kind = "sound", Description = SoundLibrary.EVENT_INFO.Info },
 	},
 	Layout = {
 		Mode = choice({ "Auto", "Desktop", "Mobile" }, "Window layout (Auto = Mobile on touch screens and small screens)"),
@@ -404,7 +416,7 @@ UIPrefs.SPEC = {
 	},
 }
 
-UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications", "Layout" }
+UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications", "Sounds", "Layout" }
 
 -- Display order for settings screens and ;commandbar / ;theme / ;keybind
 -- listings (Panel.Custom and Keys.Custom have their own editors).
@@ -412,7 +424,8 @@ UIPrefs.ORDER = {
 	Panel = { "Theme", "Accent", "Font", "Animations", "AnimationSpeed", "ReducedMotion", "HighContrast", "Scale" },
 	CommandBar = { "Preset", "Position", "Width", "Opacity", "FontSize", "MaxLines", "Rows", "Key" },
 	Keys = { "Panel", "ClosePanel", "Palette", "QuickFly", "QuickNoclip", "QuickGod", "NextPage", "PrevPage" },
-	Notifications = { "Toasts", "Sound", "Duration", "Position" },
+	Notifications = { "Toasts", "Duration", "Position" },
+	Sounds = { "Enabled", "Volume", "Success", "Error", "Warning", "Info" },
 	Layout = { "Mode", "Compact", "StatusBar", "Labels" },
 }
 
@@ -448,7 +461,8 @@ UIPrefs.BUILTIN = {
 		PrevPage = "Ctrl+PageUp",
 		Custom = {},
 	},
-	Notifications = { Toasts = true, Sound = false, Duration = 5, Position = "BottomRight" },
+	Notifications = { Toasts = true, Duration = 5, Position = "BottomRight" },
+	Sounds = { Enabled = true, Volume = 0.5, Success = "Success1", Error = "Fail1", Warning = "Fail2", Info = "Success2" },
 	Layout = {
 		Mode = "Auto",
 		Compact = false,
@@ -485,6 +499,8 @@ local function validValue(spec: any, value: any): any
 		return v
 	elseif spec.Kind == "key" then
 		return UIPrefs.ParseKey(value)
+	elseif spec.Kind == "sound" then
+		return SoundLibrary.Normalize(value)
 	elseif spec.Kind == "palette" then
 		if type(value) ~= "table" then
 			return nil
@@ -603,10 +619,21 @@ function UIPrefs.Parse(section: string, field: string, text: string): (any, stri
 			return nil, "use a key like F6, K, Ctrl+K or Ctrl+Alt+P (or none; Shift+P is Roblox Freecam)"
 		end
 		return k, nil
+	elseif spec.Kind == "sound" then
+		local v = SoundLibrary.Normalize(text)
+		if not v then
+			return nil, "use off, " .. table.concat(SoundLibrary.ORDER, ", ") .. ", or a Roblox audio link / id"
+		end
+		return v, nil
 	elseif spec.Kind == "palette" or spec.Kind == "binds" or spec.Kind == "sections" or spec.Kind == "pages" then
 		return nil, "this setting has its own editor"
 	elseif spec.Kind == "number" then
-		raw = tonumber(text)
+		local percent = text:match("^%s*([%d%.]+)%s*%%%s*$")
+		raw = tonumber(percent or text)
+		-- 0-1 settings (volume, opacity...) also take percentages: 70% or 70.
+		if raw and spec.Max == 1 and (percent or raw > 1) and raw <= 100 then
+			raw /= 100
+		end
 		if not raw then
 			return nil, ("give a number from %s to %s"):format(tostring(spec.Min), tostring(spec.Max))
 		end
@@ -626,7 +653,7 @@ end
 function UIPrefs.Find(name: string, preferSection: string?): (string?, string?)
 	local wantedSection, wantedField = name:lower():match("^(%a+)%.(%a+)$")
 	local wanted = wantedField or name:lower()
-	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel", "Keys", "Notifications", "Layout" }
+	local sections = if preferSection then { preferSection } else { "CommandBar", "Panel", "Keys", "Notifications", "Sounds", "Layout" }
 	if wantedSection then
 		sections = {}
 		for _, section in ipairs(UIPrefs.SECTIONS) do
@@ -655,6 +682,8 @@ function UIPrefs.Describe(section: string, field: string): string
 		return spec.Description .. " (a key like F6, Ctrl+K, or none)"
 	elseif spec.Kind == "boolean" then
 		return spec.Description .. " (on | off)"
+	elseif spec.Kind == "sound" then
+		return spec.Description .. " (off | Success1-4 | Fail1-4 | a Roblox audio link or id)"
 	end
 	return spec.Description
 end

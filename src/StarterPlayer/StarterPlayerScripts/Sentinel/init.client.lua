@@ -523,6 +523,11 @@ if sentinelUIFolder then
 		if NotificationCenterRef and type(newPrefs.Notifications) == "table" then
 			NotificationCenterRef.ApplyPrefs(newPrefs.Notifications)
 		end
+		-- Sound effects (SentinelUI/SoundPlayer) follow the Sounds section.
+		local soundModule = sentinelUIFolder and sentinelUIFolder:FindFirstChild("SoundPlayer")
+		if soundModule then
+			require(soundModule :: ModuleScript).ApplyPrefs(newPrefs.Sounds)
+		end
 		if CommandBar then
 			CommandBar.ApplyPrefs(newPrefs)
 		end
@@ -586,7 +591,11 @@ if sentinelUIFolder then
 		CommandBuilder.Init(CommandPalette)
 
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
-		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
+		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"), {
+			OpenCommands = function()
+				Shell.ShowPage("Commands")
+			end,
+		})
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
 		-- W14: Reports + Appeals queues (Moderation section).
 		local ReportsPage = require(loadedModules.ReportsPage)
@@ -655,6 +664,8 @@ if sentinelUIFolder then
 		SettingsPage.Build(Shell.RegisterPage("Settings", "Settings", "⚙"), CommandPalette, NotificationCenter)
 		require(loadedModules.AppearancePage).Build(Shell.RegisterPage("Appearance", "Appearance", "🎨"), CommandBar)
 		require(loadedModules.KeybindsPage).Build(Shell.RegisterPage("Keybinds", "Keybinds", "⌨"))
+		-- Sound effects page = the Appearance page generator limited to the Sounds section.
+		require(loadedModules.AppearancePage).Build(Shell.RegisterPage("Sounds", "Sounds", "🔊"), nil, { Sections = { "Sounds" }, Title = "Sounds" })
 		require(loadedModules.InGameSettingsPage).Build(Shell.RegisterPage("Administration", "Administration", "🛠"))
 
 		-- Page visibility permissions: hide pages the player's ranks

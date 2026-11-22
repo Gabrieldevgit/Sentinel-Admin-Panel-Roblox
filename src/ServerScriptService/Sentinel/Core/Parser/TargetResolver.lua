@@ -32,6 +32,20 @@
 		TargetResolver.RegisterTagProvider(fn: (Player, tag: string) -> boolean): ()
 		TargetResolver.RegisterAttributeAlias(alias: string, attributeName: string): ()
 
+	W15 (Player Explorer selection):
+		- @team / @role / @rank match names case-insensitively; @rank
+		  matches the player's Sentinel ranks (then any group provider).
+		- @attribute Name           players whose attribute is truthy
+		  @attribute Name=value     ... equal to value (numbers compared as
+		                            numbers, true/false as booleans)
+		  @attribute Name!=value    ... not equal
+		- @<property> <op><n> and `where <property><op><n>`: built-in
+		  Health, MaxHealth, Ping, WalkSpeed, JumpPower, AccountAge (days),
+		  Session (minutes in this server); otherwise any leaderstat
+		  (Coins, Level, ...) or numeric player attribute of that name.
+		  Property names are case-insensitive.
+		TargetResolver.GetProperty(player, name) -> number?
+
 	Example usage:
 		-- /heal @team Red where Health<50
 		TargetResolver.Resolve(executor, {
@@ -71,6 +85,68 @@ propertyProviders["Ping"] = function(p: Player): number
 		return p:GetNetworkPing() * 1000
 	end)
 	return if ok then stats else 0
+end
+local function humanoidOf(p: Player): Humanoid?
+	local character = p.Character
+	return character and character:FindFirstChildOfClass("Humanoid")
+end
+propertyProviders["MaxHealth"] = function(p: Player): number
+	local h = humanoidOf(p)
+	return if h then h.MaxHealth else 0
+end
+propertyProviders["WalkSpeed"] = function(p: Player): number
+	local h = humanoidOf(p)
+	return if h then h.WalkSpeed else 0
+end
+propertyProviders["JumpPower"] = function(p: Player): number
+	local h = humanoidOf(p)
+	return if h then (if h.UseJumpPower then h.JumpPower else h.JumpHeight) else 0
+end
+propertyProviders["AccountAge"] = function(p: Player): number
+	return p.AccountAge
+end
+-- Minutes since the player joined this server.
+local joinedAt: { [Player]: number } = {}
+propertyProviders["Session"] = function(p: Player): number
+	return (os.clock() - (joinedAt[p] or os.clock())) / 60
+end
+for _, p in ipairs(Players:GetPlayers()) do
+	joinedAt[p] = os.clock()
+end
+Players.PlayerAdded:Connect(function(p)
+	joinedAt[p] = os.clock()
+end)
+
+-- Provider by name (case-insensitive), else a leaderstat or a numeric
+-- player attribute with that name.
+function TargetResolver.GetProperty(p: Player, name: string): number?
+	local provider = propertyProviders[name]
+	if not provider then
+		local lower = name:lower()
+		for key, fn in pairs(propertyProviders) do
+			if key:lower() == lower then
+				provider = fn
+				break
+			end
+		end
+	end
+	if provider then
+		return provider(p)
+	end
+	local stats = p:FindFirstChild("leaderstats")
+	if stats then
+		for _, v in ipairs(stats:GetChildren()) do
+			if v.Name:lower() == name:lower() and (v:IsA("IntValue") or v:IsA("NumberValue")) then
+				return (v :: any).Value
+			end
+		end
+	end
+	for attrName, value in pairs(p:GetAttributes()) do
+		if attrName:lower() == name:lower() and type(value) == "number" then
+			return value
+		end
+	end
+	return nil
 end
 
 function TargetResolver.RegisterPropertyProvider(name: string, fn: (Player) -> number)
@@ -157,8 +233,9 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 		return if found then { found } else {}
 	elseif kind == "Team" then
 		local list = {}
+		local wanted = (selector.Value or ""):lower()
 		for _, p in ipairs(allPlayers()) do
-			if p.Team and p.Team.Name == selector.Value then
+			if p.Team and p.Team.Name:lower() == wanted then
 				table.insert(list, p)
 			end
 		end
@@ -173,7 +250,7 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 				continue
 			end
 			for _, roleName in ipairs(roles) do
-				if roleName == selector.Value then
+				if roleName:lower() == (selector.Value or ""):lower() then
 					table.insert(list, p)
 					break
 				end
@@ -182,7 +259,22 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 		return list
 	elseif kind == "Group" or kind == "Rank" then
 		local list = {}
+		local wanted = (selector.Value or ""):lower()
 		for _, p in ipairs(allPlayers()) do
+			-- @rank: Sentinel ranks are the player's PermissionSystem roles.
+			if kind == "Rank" then
+				local matched = false
+				for _, roleName in ipairs(PermissionSystem.GetRoles(p)) do
+					if roleName:lower() == wanted then
+						matched = true
+						break
+					end
+				end
+				if matched then
+					table.insert(list, p)
+					continue
+				end
+			end
 			for _, provider in ipairs(groupProviders) do
 				if provider(p, selector.Value or "") then
 					table.insert(list, p)
@@ -203,23 +295,37 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 		end
 		return list
 	elseif kind == "Attribute" then
-		local attrName = attributeAliases[selector.Value or ""] or (selector.Value or "")
+		local raw = selector.Value or ""
+		local name, op, wanted = raw:match("^([%w_]+)%s*([!~]?=)%s*(.+)$")
+		name = name or raw
+		local attrName = attributeAliases[name] or name
 		local list = {}
 		for _, p in ipairs(allPlayers()) do
-			if p:GetAttribute(attrName) then
+			local value = p:GetAttribute(attrName)
+			if value == nil then
+				-- also look on the character (some games keep state there)
+				local character = p.Character
+				value = character and character:GetAttribute(attrName)
+			end
+			local hit
+			if op then
+				hit = TargetResolver._equals(value, wanted :: string)
+				if op ~= "=" then
+					hit = not hit
+				end
+			else
+				hit = value ~= nil and value ~= false and value ~= 0 and value ~= ""
+			end
+			if hit then
 				table.insert(list, p)
 			end
 		end
 		return list
 	elseif kind == "Property" then
-		local provider = propertyProviders[selector.Value or ""]
-		if not provider then
-			return {}
-		end
 		local list = {}
 		for _, p in ipairs(allPlayers()) do
-			local value = provider(p)
-			if TargetResolver._compare(value, selector.Operator, selector.Comparand) then
+			local value = TargetResolver.GetProperty(p, selector.Value or "")
+			if value and TargetResolver._compare(value, selector.Operator, selector.Comparand) then
 				table.insert(list, p)
 			end
 		end
@@ -227,6 +333,21 @@ local function resolveOne(executor: Player, selector: TargetSelector): { Player 
 	end
 
 	return {}
+end
+
+-- Attribute value vs typed text: numbers as numbers, true/false as booleans,
+-- otherwise case-insensitive text.
+function TargetResolver._equals(value: any, text: string): boolean
+	if value == nil then
+		return false
+	end
+	local lower = text:lower()
+	if type(value) == "boolean" then
+		return (lower == "true") == value and (lower == "true" or lower == "false")
+	elseif type(value) == "number" then
+		return tonumber(text) == value
+	end
+	return tostring(value):lower() == lower
 end
 
 function TargetResolver._compare(value: number, operator: string?, comparandStr: string?): boolean
@@ -244,6 +365,8 @@ function TargetResolver._compare(value: number, operator: string?, comparandStr:
 		return value <= comparand
 	elseif operator == "=" or operator == "==" then
 		return value == comparand
+	elseif operator == "!=" or operator == "~=" then
+		return value ~= comparand
 	end
 	return false
 end
@@ -256,8 +379,7 @@ local function applyFilters(players: { Player }, filters: { CommandFilter }?): {
 	for _, p in ipairs(players) do
 		local passesAll = true
 		for _, filter in ipairs(filters) do
-			local provider = propertyProviders[filter.Property]
-			local value = if provider then provider(p) else nil
+			local value = TargetResolver.GetProperty(p, filter.Property)
 			if not value or not TargetResolver._compare(value, filter.Operator, filter.Comparand) then
 				passesAll = false
 				break
@@ -299,6 +421,7 @@ end
 
 Players.PlayerRemoving:Connect(function(player: Player)
 	lastTargets[player.UserId] = nil
+	joinedAt[player] = nil
 end)
 
 return TargetResolver

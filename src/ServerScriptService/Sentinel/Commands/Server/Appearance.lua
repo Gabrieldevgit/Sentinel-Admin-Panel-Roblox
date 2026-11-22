@@ -40,6 +40,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 local Types = require(SentinelShared:WaitForChild("Types"))
 local UIPrefs = require(SentinelShared:WaitForChild("UIPrefs"))
+local SoundLibrary = require(SentinelShared:WaitForChild("SoundLibrary"))
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Sentinel = script.Parent.Parent.Parent
 local CommandRegistry = require(Sentinel:WaitForChild("Core"):WaitForChild("CommandRegistry"))
@@ -302,6 +304,15 @@ local function run(ctx: Ctx, section: string, commandName: string): Result
 	if value == nil then
 		return { Success = false, Message = ("%s: %s."):format(field:lower(), err or "invalid value") }
 	end
+	-- Custom sound: must really be an Audio asset (the panel also checks it loads).
+	if section == "Sounds" and SoundLibrary.IsCustom(value) then
+		local okInfo, info = pcall(function()
+			return MarketplaceService:GetProductInfo(SoundLibrary.ParseId(value) :: number, Enum.InfoType.Asset)
+		end)
+		if okInfo and type(info) == "table" and info.AssetTypeId ~= 3 then
+			return { Success = false, Message = ("%s: %s is not an Audio asset."):format(field:lower(), value) }
+		end
+	end
 	local ok, message
 	if forDefault then
 		ok, message = PrefsService.SetDefaults({ [section] = { [field] = value } }, ctx.Executor)
@@ -414,9 +425,33 @@ CommandRegistry.Register({
 	Log = false,
 	Undoable = false,
 	RequiresTarget = false,
-	Examples = { "notifyprefs", "notifyprefs sound on", "notifyprefs position topright" },
+	Examples = { "notifyprefs", "notifyprefs toasts off", "notifyprefs position topright" },
 	Execute = function(ctx: Ctx): Result
 		return run(ctx, "Notifications", "notifyprefs")
+	end,
+} :: any)
+
+CommandRegistry.Register({
+	Name = "sounds",
+	Aliases = { "sfx", "soundeffects" },
+	Description = "Shows or changes your Sentinel sound effects: on / off, volume, and the sound for each event (a built-in sound or any Roblox audio link).",
+	Usage = "/sounds [setting] [value] [extra]",
+	ArgHints = {
+		setting = { Type = "choice", Choices = settingNames("Sounds"), Description = "enabled, volume, success, error, warning, info, reset, or default" },
+		value = { Type = "string", Description = "on / off, a volume (0.5 or 50%), or off | Success1-4 | Fail1-4 | a Roblox audio link or id" },
+		extra = { Type = "string", Description = "The value, when changing the server default" },
+	},
+	Permission = "panel.open",
+	Public = true, -- checked in run()
+	Category = "Utility",
+	Subcategory = "Appearance",
+	Cooldown = 0.5,
+	Log = false,
+	Undoable = false,
+	RequiresTarget = false,
+	Examples = { "sounds", "sounds enabled off", "sounds volume 70%", "sounds error Fail3", "sounds success https://create.roblox.com/store/asset/71846104869252" },
+	Execute = function(ctx: Ctx): Result
+		return run(ctx, "Sounds", "sounds")
 	end,
 } :: any)
 

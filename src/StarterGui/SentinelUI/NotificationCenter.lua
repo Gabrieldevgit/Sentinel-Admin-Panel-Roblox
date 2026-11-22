@@ -48,6 +48,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local SoundPlayer = require(script.Parent:WaitForChild("SoundPlayer"))
 
 local NotificationCenter = {}
 
@@ -70,6 +71,7 @@ export type NotifyOptions = {
 	Action: { Text: string, Callback: () -> () }?,
 	Duration: number?,
 	Record: boolean?, -- keep in the Notifications page (default true)
+	Sound: boolean?, -- false = no sound effect (default: the kind's sound)
 }
 
 local MAX_HISTORY = 100
@@ -88,11 +90,9 @@ local reducedMotion = false
 
 -- W08 notification preferences (UIPrefs "Notifications", personal or the
 -- Owner's server default): toasts on/off, sound, duration, corner.
-local soundEnabled = false
 local toastDuration: number? = nil
 local toastPosition = "BottomRight"
 local toastStack: Frame? = nil
-local NOTIFY_SOUND = "rbxasset://sounds/electronicpingshort.wav"
 
 local function placeStack()
 	local stack = toastStack
@@ -117,25 +117,11 @@ function NotificationCenter.ApplyPrefs(prefs: any)
 	if type(prefs.Toasts) == "boolean" then
 		mutedToasts = not prefs.Toasts
 	end
-	soundEnabled = prefs.Sound == true
 	toastDuration = if type(prefs.Duration) == "number" then math.clamp(prefs.Duration, 1, 30) else nil
 	if type(prefs.Position) == "string" then
 		toastPosition = prefs.Position
 	end
 	placeStack()
-end
-
-local function playSound()
-	if not soundEnabled then
-		return
-	end
-	local sound = Instance.new("Sound")
-	sound.SoundId = NOTIFY_SOUND
-	sound.Volume = 0.5
-	game:GetService("SoundService"):PlayLocalSound(sound)
-	task.delay(2, function()
-		sound:Destroy()
-	end)
 end
 
 function NotificationCenter.SetMuted(muted: boolean)
@@ -587,7 +573,9 @@ function NotificationCenter.Init()
 			}):Play()
 		end
 
-		playSound()
+		if options.Sound ~= false then
+			SoundPlayer.Play(kind)
+		end
 		task.spawn(function()
 			while not dismissed and holder.Parent do
 				local dt = task.wait()
@@ -630,6 +618,9 @@ function NotificationCenter.Init()
 					-- Pending confirmations get the ConfirmDialog instead of a
 					-- red "Failed" toast (they haven't failed, they're waiting).
 					local success = result.Success == true
+					if result.NeedsConfirmation then
+						SoundPlayer.Play("Warning")
+					end
 					if not mutedToasts and not result.NeedsConfirmation then
 						-- Pending = held for the Owner's approval (ApprovalService): not a failure.
 						showToast({
