@@ -53,10 +53,31 @@ screenGui.Parent = playerGui
 -- Announcements, private messages and Owner approval cards live in
 -- SentinelUI/AnnouncementBanner (built for every player, staff or not).
 -- ---------------------------------------------------------------------------
+-- StarterGui content is copied into PlayerGui when the character first
+-- spawns, which can take well over 15 s on a slow join (seen live: 30+ s).
+-- A timeout here used to skip the whole Sentinel UI silently (no panel, no
+-- top bar buttons, no F6), so wait for as long as it takes.
+local function waitForSentinelUI(): Instance
+	local folder = playerGui:FindFirstChild("SentinelUI")
+	if folder then
+		return folder
+	end
+	local warned = false
+	local started = os.clock()
+	while not folder do
+		folder = playerGui:WaitForChild("SentinelUI", 5)
+		if not folder and not warned and os.clock() - started > 15 then
+			warned = true
+			warn("[Sentinel] PlayerGui.SentinelUI hasn't arrived after 15 s (slow join) - still waiting.")
+		end
+	end
+	return folder :: Instance
+end
+
 local AnnouncementBanner: any = nil
 do
-	local folder = playerGui:WaitForChild("SentinelUI", 15)
-	local module = folder and folder:WaitForChild("AnnouncementBanner", 15)
+	local folder = waitForSentinelUI()
+	local module = folder:WaitForChild("AnnouncementBanner", 15)
 	if module and module:IsA("ModuleScript") then
 		local ok, result = pcall(require, module)
 		if ok then
@@ -411,7 +432,7 @@ end
 -- other StarterGui content.
 -- ---------------------------------------------------------------------------
 
-local sentinelUIFolder = playerGui:WaitForChild("SentinelUI", 15)
+local sentinelUIFolder = waitForSentinelUI()
 if sentinelUIFolder then
 	local moduleWaitList = {
 		{ Name = "Theme" },

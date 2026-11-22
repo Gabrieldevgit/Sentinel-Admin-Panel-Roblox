@@ -278,7 +278,7 @@ Advanced management
 - ✅ Offline player lookup.
 - ✅ Offline player profiles.
 - ✅ Offline moderation history.
-- Find player across servers.
+- ✅ Find player across servers.
 - ✅ See whether a player is banned.
 - View previous usernames when supported.
 - ✅ Bulk player actions.
@@ -360,8 +360,8 @@ Advanced moderation
 - ✅ Moderator notes.
 - ✅ Internal staff discussion.
 - ✅ Moderation collaboration.
-- Shared punishment database.
-- Cross-server punishment synchronization.
+- ✅ Shared punishment database.
+- ✅ Cross-server punishment synchronization.
 - Discord moderation notifications.
 5. Server Management
 Essential
@@ -397,13 +397,13 @@ Server controls
 - ✅ Maintenance mode.
 - ✅ Disable maintenance mode.
 - ✅ Shutdown server.
-- Restart/migrate server.
-- Kick all players.
+- ✅ Restart/migrate server.
+- ✅ Kick all players.
 - Kick non-staff.
-- Enable whitelist mode.
-- Disable whitelist mode.
+- ✅ Enable whitelist mode.
+- ✅ Disable whitelist mode.
 - Custom maintenance message.
-- Change server capacity where supported.
+- ✅ Change server capacity where supported.
 - Manage private-server restrictions.
 Announcements
 - ✅ Server announcement.
@@ -411,7 +411,7 @@ Announcements
 - ✅ Staff-only announcement.
 - ✅ Targeted announcement.
 - Announcement scheduling.
-- Countdown.
+- ✅ Countdown.
 - ✅ Custom announcement colors.
 - ✅ Announcement duration.
 - ✅ Announcement history.
@@ -424,10 +424,10 @@ Advanced server management
 - ✅ Find a player in another server.
 - ✅ Execute cross-server actions.
 - ✅ Global lockdown.
-- Global shutdown.
+- ✅ Global shutdown.
 - Global notifications.
-- Server update countdown.
-- Graceful server migration.
+- ✅ Server update countdown.
+- ✅ Graceful server migration.
 6. Cross-Server Management
 Major competitive feature
 This deserves its own page rather than being hidden inside Server Management.
@@ -454,7 +454,7 @@ ortcloud.space
 - Join another server.
 - Teleport to a player in another server.
 - Bring players across servers.
-- Global kick.
+- ✅ Global kick.
 - ✅ Global ban.
 - ✅ Global unban.
 - ✅ Global warn.

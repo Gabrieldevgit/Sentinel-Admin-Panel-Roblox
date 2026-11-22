@@ -4,11 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-22 (W22 session) - W16 skipped for now (user's
-call). W17-W21 were already built (2026-11-16). **W22 server management
-built + verified in Studio Play, not committed.** Next: the **live
-2-server test** of W17-W22 (user agreed: Max Players = 1, publish, main +
-alt), then W23 Polls. Start with §6._
+_Last updated: 2026-11-22 (W17-W22 live test) - **W22 committed**
+(`11c0736`). Live 2-server test of W17-W22 done on the published place
+(v201+); fixes from it (slow-join UI, gbring full server, gban name:dur,
+;global confirm) are **published, not committed**. Next: commit, then
+**W23 Polls** (W16 still skipped by the user). Start with §6._
 
 ---
 
@@ -843,17 +843,32 @@ Rules that keep it sound:
 - **W21 gaps deferred (decided 2026-11-22):** cross-server analytics goes
   with W16 (one metrics store for both); the global event activation hook
   goes with W24 (no event system yet; `;global` is the hook point).
-- **W22 not verified live (needs 2 players / servers):** a joiner actually
-  turned away by the custom lock / maintenance message, soft cap,
-  whitelist mode and private-server access; kick all / kick non-staff with
-  a real second player; restart (`;migrateserver`). Server location stays
-  unavailable (no Roblox API); active events / polls wait for W23 / W24.
-- **Live 2-server test plan (W17-W22):** user sets Max Players = 1 in Game
-  Settings + publishes; main account + alt `gabrielgaming_offv1` land in
-  separate servers. Check: server search, join server, follow, gbring,
-  gkick, gban sync, gnotify toast, staff chat, update countdown +
-  migration, W22 items above, global shutdown last. Then set Max Players
-  back and republish.
+- **Live 2-server test (2026-11-22, main + alt `gabrielgaming_offv1`):**
+  - How: Creator Hub > Configurations > Places > the place > **Access >
+    Maximum Visitor Count** (normally **50**; Players.MaxPlayers is
+    read-only in scripts). 1 = each account gets its own server; a
+    server's size is fixed when it starts, so join order matters.
+  - Passed: `;servers` (2 servers), `;findplayer`, `;xping` 2/2, `;gnotify`
+    / `;staffchat` sent (alt had no crossserver perms then - toast not
+    seen), `;gkick`, `;gban` / `;gunban` across servers, lock with custom
+    message, soft cap, whitelist mode (each turned the alt away),
+    `;kickall`, `;follow` refuses a full server, `;gupdate` countdown +
+    migration (reserved server -> both back in a fresh public server in
+    ~10 s), `;gshutdown`.
+  - Not done: a successful `;follow` / `;joinserver` / `;gbring`
+    teleport, server search box, `;kicknonstaff` with a non-staff
+    player, maintenance custom message, private-server access (needs a
+    VIP server), gnotify / staff chat toast on the receiving side.
+  - Fixed + published (not committed): Sentinel UI never appeared on a
+    slow join (client waited only 15 s for PlayerGui.SentinelUI - now
+    waits); `;gbring` said "1 affected" when this server was full (now
+    refused up front); `;gban` accepts `name:duration`; `;global <unknown>`
+    no longer asks to confirm first.
+  - Testing place changes: SuperAdmin got the CrossServerOperations
+    preset; `!server.bypass` was added then removed again. Whitelist mode
+    off, cap off, max visitors back to 50.
+- Server location stays unavailable (no Roblox API); active events / polls
+  wait for W23 / W24.
 
 - **Sound icons are dark grey line art** (SoundIcon / MuteSoundIcon): on
   the dark themes the top-bar speaker, the Sounds page header and its
@@ -1049,10 +1064,9 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- **W22 server management** built and verified in Studio Play, **not
-  committed** (ServerStateService, AccessList, AdminConfig, RankService,
-  CrossServerService, UIBridge, ServerControl, ServerPage, init.server,
-  `Tests/ServerManagement.spec`). Unit tests **127/127** (Edit).
+- **W22 server management** committed (`11c0736`). Live-test fixes in
+  `init.client.lua` and `Commands/CrossServer/CrossServer.lua` are
+  published but **not committed**. Unit tests **127/127** (Edit).
 - **Sound effects** and **W15** committed (`8c49504`). W14 + icon assets
   committed (`5fe2e04`). Test account's sound prefs reset to defaults.
 - The test account now has **5 warnings** on record (was 4; added by
@@ -1082,7 +1096,10 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **337 bullets ✅** (W22 +12: server JobId, uptime,
+- Feature blueprint: **350 bullets ✅** (live test +13: find player
+  across servers, shared punishment DB, punishment sync, restart/migrate,
+  kick all, whitelist on/off, capacity, countdown, global shutdown, update
+  countdown, graceful migration, global kick; W22 +12: server JobId, uptime,
   player count, max capacity, version, status, performance, memory,
   heartbeat, average ping, current staff, shutdown server; +2 from the W15 live test): sound notifications 1, W15 33
   (search by UserId, avatars, thumbnails, rank / health / ping / status
@@ -1147,6 +1164,13 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-22 (W17-W22 live test)** - Committed + pushed W22
+  (`11c0736`). Set max visitors via Creator Hub by desktop control, ran the
+  2-server test with the user's alt (results in §5). Found + fixed: slow
+  join = no Sentinel UI, gbring into a full server, gban `name:dur`,
+  ;global confirm on unknown command; verified in Studio, published.
+  Blueprint +13 ✅. Restored max visitors 50. Not committed.
 
 - **2026-11-22 (W22)** - User asked for W17-W21; they were already built
   (2026-11-16), so wrote the full W status plan and moved to W22 (user

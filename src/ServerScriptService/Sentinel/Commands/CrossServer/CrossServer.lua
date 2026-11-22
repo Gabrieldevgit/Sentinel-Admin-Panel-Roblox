@@ -457,8 +457,16 @@ register({
 	Permission = "crossserver.ban",
 	Subcategory = "Moderation",
 	Cooldown = 2,
-	Examples = { "gban Player1 7d Exploiting", "gban 123456 perm Alt account" },
+	Examples = { "gban Player1 7d Exploiting", "gban Player1:7d Exploiting", "gban 123456 perm Alt account" },
 	Execute = function(ctx: Ctx): Result
+		-- Live test 2026-11-22: accept the local ;ban form "name:duration" too.
+		local first = ctx.Arguments[1]
+		local namePart, durationPart = (first or ""):match("^([^:]+):(.+)$")
+		if namePart and DurationParser.Parse(durationPart) then
+			table.remove(ctx.Arguments, 1)
+			table.insert(ctx.Arguments, 1, durationPart)
+			table.insert(ctx.Arguments, 1, namePart)
+		end
 		local user, err = resolveUser(ctx.Arguments[1])
 		if not user then
 			return { Success = false, Message = err }
@@ -639,6 +647,12 @@ register({
 		end
 		if game.PrivateServerId ~= "" then
 			return { Success = false, Message = "Players can't be brought into a private or reserved server." }
+		end
+		-- Live test 2026-11-22: a full server made the teleport fail silently
+		-- on the other side (Roblox reports it later), yet "1 affected" came
+		-- back. Refuse up front when there is no free slot.
+		if #Players:GetPlayers() >= Players.MaxPlayers then
+			return { Success = false, Message = ("This server is full (%d/%d) - %s can't be brought here."):format(#Players:GetPlayers(), Players.MaxPlayers, user.Name) }
 		end
 		local result = sendAndReport("bring", { u = user.UserId, tn = user.Name, j = CrossServerService.ServerId, pl = game.PlaceId }, {
 			To = user.ServerId,
@@ -855,6 +869,12 @@ register({
 	Subcategory = "Operations",
 	Cooldown = 3,
 	Examples = { "global weather foggy", "global slowmode 5", "global countdown 10 Event" },
+	-- Only ask for confirmation when the inner command exists; an unknown one
+	-- fails straight away instead of after ;confirm (live test 2026-11-22).
+	ConfirmWhen = function(arguments: { string }): boolean
+		local name = ((arguments[1] or ""):gsub("^[;:!%./]", "")):lower()
+		return name ~= "" and CommandRegistry.Resolve(name) ~= nil
+	end,
 	Execute = function(ctx: Ctx): Result
 		local line = (ctx.RawInput:match("^%s*%S+%s+(.+)$") or ""):gsub("^[;:!%./]", "")
 		if line == "" then
