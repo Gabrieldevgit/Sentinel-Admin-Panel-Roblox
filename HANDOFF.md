@@ -6,7 +6,8 @@
 
 _Last updated: 2026-11-22 (sound effects + W15 session) - **Sound
 effects** and **W15 Player Explorer completion** built and verified in
-Play, **not committed**. Next is **W16 - Analytics**. Start with §6._
+Play and committed (`8c49504`); W15 then **tested live** with a second
+player. Next is **W16 - Analytics**. Start with §6._
 
 ---
 
@@ -814,11 +815,22 @@ Rules that keep it sound:
 - Sounds not verified by ear (Studio MCP can't hear); verified that the
   right Sound ids are created, loaded and playing at the set volume.
   Non-staff players get the BUILTIN sound prefs (no personal prefs).
-- **W15 not verified (needs a 2nd player / teams):** recently *left* list,
-  team indicators + select by team, VIP filter with a real VIP, sort order
-  with several players, Dead status, previous usernames (none recorded for
-  the test account). Not built: badges (Roblox can't list a user's badges
-  in-game). Testing place: 2 investigation notes on the test account.
+- **W15 live test (2026-11-22, published place, alt `gabrielgaming_offv1`
+  = SuperAdmin):** verified 2-player bulk Freeze / Unfreeze, Select all /
+  All but me, `@rank superadmin`, Idle + Dead status, VIP filter (temporary
+  `;assignrank gabrielgaming_offv1:5m VIP`), Recently left + its Profile
+  button. Still open: team indicators / select by team (the place has no
+  teams), sort order, previous usernames. Not built: badges. Testing
+  place: 2 investigation notes on the test account. Something in the game
+  kills the alt repeatedly (Dead -> Active -> Dead) - not Sentinel.
+- **Desktop-control testing in the Roblox client:** a click where the cursor
+  already rests is ignored (move the mouse first); the first click after
+  typing / Esc often only refocuses; typing a command with a trailing
+  newline can send Enter before the last characters - press Return
+  separately. The command bar appears ~1 s after the >_ button.
+- Players page re-renders only when row data changes (Recent view: when the
+  lists change or every 20 s) so clicks aren't lost to a rebuild - **not
+  published yet** (publish the place to get it live).
 
 - **W14 not verified live:** accepting an appeal (the lifters: unban /
   unmute / unjail / remove warning) is only unit-tested - in solo Play you
@@ -1016,7 +1028,7 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **323 bullets ✅**: sound notifications 1, W15 33
+- Feature blueprint: **325 bullets ✅** (+2 from the W15 live test): sound notifications 1, W15 33
   (search by UserId, avatars, thumbnails, rank / health / ping / status
   indicators, recently joined, staff + suspicious filters, 16 profile
   fields, bulk actions, select all / all but me / by rank / attribute /
@@ -1079,6 +1091,12 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-22 (W15 live test)** - Committed + pushed `8c49504`. The
+  published server already had it (Version 192). Tested by desktop control
+  with the user's alt: see §5 "W15 live test". Fixed: Players page rows
+  rebuilt every 4 s (could swallow clicks). Blueprint +2 ✅ (recently left,
+  VIP filters).
 
 - **2026-11-22 (sound effects + W15)** - User asked for configurable sound
   effects first (8 uploads + 2 icons; ids read off Creator Hub by desktop

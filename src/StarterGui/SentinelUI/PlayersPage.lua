@@ -1102,6 +1102,9 @@ function PlayersPage.Build(container: Frame, options: any?)
 	end
 
 	local allRows: { PlayerRow } = {}
+	local lastSignature = ""
+	local lastRecentSignature = ""
+	local lastRecentRender = 0
 	local recent: any = nil
 	local checked: { [number]: string } = {} -- UserId -> Name
 
@@ -1601,6 +1604,23 @@ function PlayersPage.Build(container: Frame, options: any?)
 					return getPlayerListRemote:InvokeServer()
 				end)
 				if ok and result then
+					-- Rebuild the rows only when something shown changed, so a
+					-- click isn't lost to a rebuild every 4 s.
+					local function signature(rows: { any }): string
+						local parts = {}
+						for _, row in ipairs(rows) do
+							table.insert(parts, table.concat({
+								row.UserId, row.Ping // 10, row.Health or -1, row.MaxHealth or -1, row.Status or "",
+								row.IdleSeconds and row.IdleSeconds // 60 or 0, row.Rank or "", row.Team or "",
+								tostring(row.IsFrozen), tostring(row.IsJailed), tostring(row.IsMuted), tostring(row.IsGod),
+								tostring(row.IsFlying), tostring(row.IsInvisible), row.Suspicious and #row.Suspicious or 0,
+							}, "|"))
+						end
+						return table.concat(parts, ";")
+					end
+					local newSignature = signature(result :: { any })
+					local rowsChanged = newSignature ~= lastSignature
+					lastSignature = newSignature
 					allRows = result :: { PlayerRow }
 					-- Drop checks for players who left.
 					local present = {}
@@ -1619,8 +1639,23 @@ function PlayersPage.Build(container: Frame, options: any?)
 					end
 					if view == "Recent" then
 						loadRecent()
+						-- Same idea: only when the lists change (or every 20 s,
+						-- for the "ago" times).
+						local ids = {}
+						for _, part in ipairs({ recent and recent.Joined or {}, recent and recent.Left or {} }) do
+							for _, entry in ipairs(part) do
+								table.insert(ids, entry.UserId .. ":" .. entry.At)
+							end
+						end
+						local recentSignature = table.concat(ids, ",")
+						if recentSignature ~= lastRecentSignature or os.clock() - lastRecentRender > 20 then
+							lastRecentSignature = recentSignature
+							lastRecentRender = os.clock()
+							renderTable(searchBox.Text)
+						end
+					elseif rowsChanged then
+						renderTable(searchBox.Text)
 					end
-					renderTable(searchBox.Text)
 
 					-- Keep the selected player's open tab truthful with
 					-- fresh row data.

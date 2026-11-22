@@ -198,9 +198,9 @@ Player explorer
 - ✅ Player status indicators.
 - Sorting and filtering.
 - ✅ Recently joined players.
-- Recently left players.
+- ✅ Recently left players.
 - ✅ Staff-only filters.
-- VIP-only filters.
+- ✅ VIP-only filters.
 - ✅ Suspicious-player filters.
 Player profile
 - ✅ Username.
