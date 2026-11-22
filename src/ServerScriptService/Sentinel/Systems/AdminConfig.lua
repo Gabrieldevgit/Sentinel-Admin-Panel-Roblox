@@ -22,6 +22,11 @@
 		ownerapproval  OwnerApproval          "on" | "off"
 		approvalrisk   ApprovalRisk           "critical" | "high" | "medium"
 		approvaltimeout ApprovalTimeout       "60"  (seconds, 15-300)
+		reports        ReportsEnabled         "on" | "off"   (W14 player reports)
+		reportcooldown ReportCooldown         "60"  (seconds between reports, 10-600)
+		appeals        AppealsEnabled         "on" | "off"   (W14 appeals + ban screen)
+		appealwindow   AppealWindow           "120" (seconds a banned player may stay to appeal, 30-600)
+		appealcooldown AppealCooldownDays     "7"   (days before a rejected case can be appealed again, 0-90)
 
 		Applied by this module:
 			- CommandRegistry cooldown resolver (scale + overrides)
@@ -182,6 +187,20 @@ end)
 ConfigService.Define("ApprovalTimeout", 60, function(v)
 	return type(v) == "number" and v % 1 == 0 and v >= 15 and v <= 300
 end)
+-- Reports & appeals (W14: Systems/ReportService, Systems/AppealService).
+local function isBool(v)
+	return type(v) == "boolean"
+end
+local function intRange(lo: number, hi: number)
+	return function(v)
+		return type(v) == "number" and v % 1 == 0 and v >= lo and v <= hi
+	end
+end
+ConfigService.Define("ReportsEnabled", true, isBool)
+ConfigService.Define("ReportCooldown", 60, intRange(10, 600))
+ConfigService.Define("AppealsEnabled", true, isBool)
+ConfigService.Define("AppealWindow", 120, intRange(30, 600))
+ConfigService.Define("AppealCooldownDays", 7, intRange(0, 90))
 
 -- ---------------------------------------------------------------------------
 -- Text <-> value
@@ -298,6 +317,30 @@ end
 
 local function formatList(v: any): string
 	return if #v == 0 then "none" else table.concat(v, " ")
+end
+
+local function parseOnOff(text: string): (any, string?)
+	local t = text:lower():match("^%s*(.-)%s*$")
+	if t == "on" or t == "true" or t == "yes" then
+		return true, nil
+	elseif t == "off" or t == "false" or t == "no" then
+		return false, nil
+	end
+	return nil, "use on or off"
+end
+
+local function formatOnOff(v: any): string
+	return if v then "on" else "off"
+end
+
+local function parseSeconds(lo: number, hi: number)
+	return function(text: string): (any, string?)
+		local n = tonumber((text:gsub("s%s*$", "")))
+		if not n or n % 1 ~= 0 or n < lo or n > hi then
+			return nil, ("give a whole number of seconds from %d to %d"):format(lo, hi)
+		end
+		return n, nil
+	end
 end
 
 type Entry = {
@@ -495,6 +538,68 @@ local ENTRIES: { Entry } = {
 		end,
 		Format = function(v)
 			return tostring(v) .. "s"
+		end,
+	},
+	{
+		Key = "reports",
+		ConfigKey = "ReportsEnabled",
+		Label = "Player reports",
+		Group = "Reports & appeals",
+		Description = "Players can report other players with ;report (on / off).",
+		Example = "on",
+		Parse = parseOnOff,
+		Format = formatOnOff,
+	},
+	{
+		Key = "reportcooldown",
+		ConfigKey = "ReportCooldown",
+		Label = "Report cooldown",
+		Group = "Reports & appeals",
+		Description = "Seconds a player must wait between two reports (10-600).",
+		Example = "60",
+		Parse = parseSeconds(10, 600),
+		Format = function(v)
+			return tostring(v) .. "s"
+		end,
+	},
+	{
+		Key = "appeals",
+		ConfigKey = "AppealsEnabled",
+		Label = "Appeals",
+		Group = "Reports & appeals",
+		Description = "Punished players can appeal (on / off). When on, banned players see an appeal screen before they are disconnected.",
+		Example = "on",
+		Parse = parseOnOff,
+		Format = formatOnOff,
+	},
+	{
+		Key = "appealwindow",
+		ConfigKey = "AppealWindow",
+		Label = "Appeal window",
+		Group = "Reports & appeals",
+		Description = "Seconds a banned player may stay on the appeal screen before being disconnected (30-600).",
+		Example = "120",
+		Parse = parseSeconds(30, 600),
+		Format = function(v)
+			return tostring(v) .. "s"
+		end,
+	},
+	{
+		Key = "appealcooldown",
+		ConfigKey = "AppealCooldownDays",
+		Label = "Appeal cooldown",
+		Group = "Reports & appeals",
+		Description = "Days before a case whose appeal was rejected can be appealed again (0-90).",
+		Example = "7",
+		Parse = function(text)
+			local n = tonumber((text:gsub("d%s*$", "")))
+			if not n or n % 1 ~= 0 or n < 0 or n > 90 then
+				return nil, "give a whole number of days from 0 to 90"
+			end
+			return n, nil
+		end,
+		Format = function(v)
+			return tostring(v) .. " days"
 		end,
 	},
 	{

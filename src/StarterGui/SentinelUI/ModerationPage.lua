@@ -279,6 +279,7 @@ function ModerationPage.Build(container: Frame)
 		{ "ActiveBans", "Active bans" },
 		{ "ActiveMutes", "Active mutes" },
 		{ "Reports", "Pending reports" },
+		{ "Appeals", "Pending appeals" },
 		{ "Online", "Moderators online" },
 		{ "Today", "Actions (24 h)" },
 	}) do
@@ -423,6 +424,7 @@ function ModerationPage.Build(container: Frame)
 		cardValues.ActiveBans.Text = tostring(counts.ActiveBans or 0)
 		cardValues.ActiveMutes.Text = tostring(counts.ActiveMutes or 0)
 		cardValues.Reports.Text = if data.PendingReports then tostring(data.PendingReports) else "-"
+		cardValues.Appeals.Text = if data.PendingAppeals then tostring(data.PendingAppeals) else "-"
 		cardValues.Online.Text = tostring(#(data.ModeratorsOnline or {}))
 		cardValues.Today.Text = tostring(counts.Today or 0)
 

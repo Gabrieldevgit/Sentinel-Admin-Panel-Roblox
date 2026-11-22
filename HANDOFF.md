@@ -4,10 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-21 (announcements / approval / PM session) - W13
-and this session's work are built and verified in Play, **not committed**.
-The user asked for an Announcements section, Owner approval of risky
-commands and more ;pm options **before W14**; W14 is next. Start with §6._
+_Last updated: 2026-11-21 (W14 session) - **W14 Reports & appeals** built
+and verified in Play, plus the icon-asset system from earlier today; both
+**not committed**. Next is **W15 - Player Explorer completion**. Start
+with §6._
 
 ---
 
@@ -546,6 +546,68 @@ Control" UI, all driven by one command grammar
     table `{Message, ...}` (extra result fields; `Pending = true` shows a
     warning toast). Studio-only `;approvals test <command>` sends you a
     test card (approving it runs nothing).
+- **W14 Reports & appeals** (appeal flow decided with the user: **pre-kick
+  ban screen**; appealable = active bans / mutes / jails + warnings < 30 d):
+  - `Systems/ReportService`: DataStore `Sentinel_Reports_v1` (`Counter`,
+    `Report_<id>`, `Index` <= 500 summaries; flushed 10 s / close; memory
+    outside a game). Status Open / InProgress / Resolved / Dismissed
+    ("pending" = first two). Evidence: target's last 15 chat lines (captured
+    on `Player.Chatted`, filtered ForBroadcast at capture, commands shown as
+    "(command)"), position + distance, reporter links/text, staff evidence.
+    Limits: `ReportCooldown` per reporter, <= 5 pending per reporter, no
+    self, no duplicate pending report on the same target. `ParseQuery`
+    (`status: player: target: reporter: assignee:(me|none) category: #id
+    mine all`), `OnChanged(fn)`.
+  - `Systems/AppealService`: DataStore `Sentinel_Appeals_v1` (`Counter`,
+    `Appeal_<id>`, `Index`, `User_<userId>` = {Id, Key, Status, DecidedAt,
+    Seen} merged by id). Key = `case:<id>` or `ban` (a ban without a case).
+    One pending appeal per case; rejected = blocked `AppealCooldownDays`.
+    `Decide` checks `moderation.appeals` + the type's node (ban ->
+    moderation.ban, mute, warn, jail -> player.jail) and refuses your own
+    appeal; accept runs the lifter and revokes the case. Lifters are set by
+    `Commands/Moderation/Reports.lua` (`SetLifters`, `SetBanReader`) since
+    Systems can't require Commands: ban -> `BanCommand.SetBan(nil)` +
+    `Player.Unbanned`; mute -> `ChatModerationService.UnmuteUserId` (new,
+    works offline); jail -> `;unjail` via CommandProcessor; warn ->
+    `PunishmentService.RemoveWarningNear(userId, case.CreatedAt)` (new).
+  - `Systems/PlayerFormsService`: remotes `PlayerFormsRemote` (RF: reportInfo,
+    submitReport, appealInfo, submitAppeal, seen) and `PlayerFormsEvent` (RE:
+    report, appeal, banscreen, notice, release). `HoldBanned(player, ban)`
+    replaces the instant kick in init.server: attribute `SentinelBanHold`,
+    character destroyed on spawn, chat silenced (`ChatModerationService.
+    SetSilenced`, not a saved mute), panel + commands refused (UIBridge
+    `isStaff`, execute remote, chat hook), kicked after `AppealWindow` s,
+    12 s after submitting, or 30 s if nothing can be appealed. A lifted ban
+    (`Player.Unbanned`) releases them + `LoadCharacter`. Decision notices go
+    to the player live or on next join (`Seen`). `;config appeals off` =
+    old instant kick. init.server now also checks players already in the
+    server when it connects PlayerAdded (the first Studio player was never
+    ban-checked before - pre-existing gap).
+  - Config keys (AdminConfig, group "Reports & appeals"): `reports`,
+    `reportcooldown` (60), `appeals`, `appealwindow` (120), `appealcooldown`
+    (7 days).
+  - Commands (`Commands/Moderation/Reports.lua`): Public `;report [player]
+    [category] [text]` (no args = form), `;appeal` (form); staff (node
+    `moderation.reports`) `;reports`, `;reportview`, `;reportclaim`,
+    `;reportassign`, `;reportstatus`, `;reportresolve <id> [#case] [note]`,
+    `;reportdismiss`, `;reportnote`, `;reportevidence`; (node
+    `moderation.appeals`) `;appeals`, `;appealview`, `;appealaccept`,
+    `;appealreject`, `;appealnote`, `;appealassign`. Both nodes added to the
+    default Moderator rank + Moderation preset (**saved ranks not migrated**).
+  - Remotes (UIBridge): `SearchReportsRemote`, `GetReportRemote` (+ other
+    reports on the target, linked case), `SearchAppealsRemote`,
+    `GetAppealRemote` (+ case, player's cases, CanDecide), push
+    `ModerationQueueEvent(kind, what, summary)`; dashboard gets
+    `PendingReports` / `PendingAppeals` (cards on the Moderation dashboard).
+  - Client: `StarterPlayerScripts/Sentinel/PlayerForms.lua` (self-contained,
+    loaded first by init.client for every player - a held player never
+    spawns so StarterGui never arrives): ScreenGui `SentinelForms` (report
+    form, appeal form, ban screen, notices bottom-left).
+    `StarterGui/SentinelUI/ReportsPage.lua` = Moderation > **Reports** and
+    **Appeals** pages (ids in `UIPrefs.PAGE_IDS`; paths in its header):
+    chips + query, list / detail (narrow < 620 px = one column with Back),
+    actions are commands. init.client toasts "New report / appeal" with a
+    Review button.
 - **Cross-server (W17-W21):**
   - `Core/CrossServerNode` = the protocol with no Roblox calls (envelopes
     under MessagingService's 1 kB, broadcast / direct, acknowledgements,
@@ -691,6 +753,41 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **W14 not verified live:** accepting an appeal (the lifters: unban /
+  unmute / unjail / remove warning) is only unit-tested - in solo Play you
+  can't decide your own appeal. "Appeal acceptance/rejection" stays
+  unchecked in the blueprint until a second account accepts one. Also
+  untested live: release from the ban screen when the ban is lifted
+  meanwhile, decision notice on next join, reporting a real second player
+  (needs 2 players; the test report was filed server-side).
+- Test data left in the testing place: report #1 (Dismissed), appeals #1
+  and #2 (Rejected, "Test cleanup"), case #26 (mute, Revoked) and a
+  "Ban screen test" ban case (expires by itself; the ban was removed).
+- Studio MCP: `start_stop_play` can get stuck on "Start play hasn't
+  finished yet" when a modal (e.g. the Disconnected / kick dialog) is open
+  in Studio - close it (desktop control) and press Play in Studio.
+
+- **Icon assets (2026-11-21):** `src/ReplicatedStorage/Shared/Sentinel/Icons.lua`
+  holds `Assets` (user's upload name -> **Image** id; 52 filled in) and
+  `Slots` (UI slot -> asset + emoji fallback). Helpers: `Icons.prefix(label,
+  key, text, size)` for "[icon]  text" labels (centered labels follow the
+  text via `Icons.follow`, measured with TextService because TextBounds
+  includes the shell's UIScale). Creator Hub shows *Decal*
+  ids, which fail ("Asset type does not match"); resolve with
+  `InsertService:LoadAsset(decalId)` -> `Decal.Texture` in Edit.
+  Wired: sidebar sections/pages + nav tabs (Shell), bell/gear buttons,
+  Quick Action cards, Server page toggle rows. Also wired (2nd pass): Settings
+  page (section headers, Mute/Reduce motion/history rows, Not Implemented
+  rows, Refresh), Appearance/Keybinds nav, Search button, clock, Command
+  Palette risk tags (icon placed after the measured name), Server page
+  Weather/Lighting/Slow Mode rows. Config.NOTIFICATIONS.TYPES `icon` is now
+  an Icons slot key (that table has no consumers). Unused uploads ready to wire: rank badges
+  (OwnerIcon/DevIcon/SuperAdmin/Admins/Moderator/VIP), status dots,
+  utility (Delete/Copy/Download/Export/Refresh/ThreeDots2/Fullscreen/
+  HalfArrow), Search, Star, QuickActions, NotificationsAwaiting (unread bell).
+  Not converted: inline text glyphs (✓ ✗ ★ ⚠ in sentences), Players page
+  toggles, Economy/Settings/Developer labels, RankService rank icons.
+
 - **Announcements / approval / PM - not verified (needs a 2nd player):**
   the real approval hold (a non-Owner staff member running a critical
   command while the Owner is online; logic unit-tested in
@@ -824,8 +921,9 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- Unit tests **113/113** (Edit). **W13** and the **announcements / Owner
-  approval / PM options** work are verified in Play, **not committed**.
+- Unit tests **120/120** (Edit; new `Reports.spec`). **W14 Reports &
+  appeals** and the **icon assets** work are verified in Play, **not
+  committed**. W13 + announcements are committed (`ef2509f`).
 - The test account now has **5 warnings** on record (was 4; added by
   another session) - still never `;warn` yourself.
 - **Mobile pass / `;sentinel` / selection targets** (see §3) built and
@@ -841,7 +939,7 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W13 done; next is **W14 - Reports & appeals**. About 8 weekends
+- **Schedule position:** W14 done; next is **W15 - Player Explorer completion**. About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -851,7 +949,7 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **281 bullets ✅**: announcements 6 (staff-only,
+- Feature blueprint: **289 bullets ✅**: W14 8 (pending reports, player report system, report management, evidence attachment, report assignment, report status, appeal submission, appeal review), announcements 6 (staff-only,
   targeted, custom colours, duration, history, notification banner), W13 6 (offline player profiles,
   offline moderation history, unban x2, temporary ban, secure offline
   lookups), W12 20 (custom ban / mute
@@ -910,6 +1008,29 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-21 (W14 reports & appeals)** - User chose the pre-kick ban
+  screen and bans + mutes/jails/warnings as appealable. Built ReportService,
+  AppealService, PlayerFormsService, Reports.lua commands, 5 config keys,
+  UIBridge remotes + queue push, PlayerForms client (report / appeal forms,
+  ban screen, notices), ReportsPage (Reports + Appeals pages), dashboard
+  cards, `Reports.spec` (120/120). Play-verified: report form, report queue
+  + detail + claim + dismiss with note, mute -> appeal form -> appeal ->
+  staff toast -> Appeals page, self-decision refused, ban -> ban screen
+  (no character, countdown) -> appeal from it -> kick. Fixed the missing
+  ban check for players who join before init.server connects PlayerAdded.
+  Cleaned up the test ban / appeals. Blueprint +8 ✅. Left: live accept test.
+
+- **2026-11-21 (icon assets)** - Cut the user's icon sheet into 37
+  transparent 256px PNGs in `assets/icons/`; added `Icons.lua` config with
+  `image/text/attach/place` helpers; Shell, QuickActionsPanel, ServerPage
+  use slot keys. Verified in Play with a temporary rbxasset placeholder on
+  home/settings/freeze (tab, gear, nav, card all render; emoji slots
+  unchanged), then reverted. Then read the user's 52 uploaded Decal ids
+  off Creator Hub via desktop control, resolved them to Image ids in
+  Studio (all 52 preload OK), filled `Assets`, remapped slots; Play shows
+  real icons. 2nd pass: read 9 more uploads, wired the remaining emoji
+  spots the user flagged, verified in Play. Left: W14.
 
 - **2026-11-21 (announcements / approval / PM)** - Before W14 the user
   asked for an Announcements section (History, Current server, Global,

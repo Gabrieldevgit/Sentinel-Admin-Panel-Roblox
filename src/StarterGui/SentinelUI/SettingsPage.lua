@@ -38,6 +38,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
 local ToggleSwitch = require(script.Parent:WaitForChild("ToggleSwitch"))
+local Icons = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 
 local SettingsPage = {}
 
@@ -51,7 +52,7 @@ type PermissionsSnapshot = {
 	Roles: { [string]: RoleDefinition },
 }
 
-local function makeSectionHeader(parent: Frame, order: number, text: string): (Frame, Frame)
+local function makeSectionHeader(parent: Frame, order: number, text: string, iconKey: string?): (Frame, Frame)
 	local section = Instance.new("Frame")
 	section.LayoutOrder = order
 	section.Size = UDim2.new(1, 0, 0, 0)
@@ -77,7 +78,11 @@ local function makeSectionHeader(parent: Frame, order: number, text: string): (F
 	title.TextSize = 15
 	title.TextColor3 = Theme.Colors.Text
 	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Text = text
+	if iconKey then
+		Icons.prefix(title, iconKey, text, 18)
+	else
+		title.Text = text
+	end
 	title.Parent = titleRow
 
 	return section, titleRow
@@ -125,7 +130,7 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	-- ------------------------------------------------------------------
 	-- Section: Your Permissions (read-only)
 	-- ------------------------------------------------------------------
-	local permSection, permTitleRow = makeSectionHeader(body, 1, "🔐 Your Permissions")
+	local permSection, permTitleRow = makeSectionHeader(body, 1, "Your Permissions", "Permissions")
 
 	local myRolesLabel = Instance.new("TextLabel")
 	myRolesLabel.LayoutOrder = 2
@@ -228,7 +233,7 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	-- ------------------------------------------------------------------
 	-- Section: Preferences (real, session-only)
 	-- ------------------------------------------------------------------
-	local prefsSection = makeSectionHeader(body, 2, "⚙ Preferences")
+	local prefsSection = makeSectionHeader(body, 2, "Preferences", "Preferences")
 
 	local muteRow = makeRow(prefsSection, 2, 40)
 	local muteLabel = Instance.new("TextLabel")
@@ -238,8 +243,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	muteLabel.TextSize = 14
 	muteLabel.TextColor3 = Theme.Colors.Text
 	muteLabel.TextXAlignment = Enum.TextXAlignment.Left
-	muteLabel.Text = "🔕  Mute notification toasts"
 	muteLabel.Parent = muteRow
+	Icons.prefix(muteLabel, "MuteToasts", "Mute notification toasts", 18)
 	ToggleSwitch.Create(muteRow, {
 		Position = UDim2.new(1, 0, 0.5, 0),
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -259,8 +264,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	motionLabel.TextSize = 14
 	motionLabel.TextColor3 = Theme.Colors.Text
 	motionLabel.TextXAlignment = Enum.TextXAlignment.Left
-	motionLabel.Text = "🎞  Reduce motion (skip toast animations)"
 	motionLabel.Parent = motionRow
+	Icons.prefix(motionLabel, "ReduceMotion", "Reduce motion (skip toast animations)", 18)
 	ToggleSwitch.Create(motionRow, {
 		Position = UDim2.new(1, 0, 0.5, 0),
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -281,8 +286,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	historyLabel.TextSize = 14
 	historyLabel.TextColor3 = Theme.Colors.Text
 	historyLabel.TextXAlignment = Enum.TextXAlignment.Left
-	historyLabel.Text = "📜  Command Palette history"
 	historyLabel.Parent = historyRow
+	Icons.prefix(historyLabel, "PaletteHistory", "Command Palette history", 18)
 
 	local clearHistoryButton = Instance.new("TextButton")
 	clearHistoryButton.AnchorPoint = Vector2.new(1, 0.5)
@@ -298,14 +303,14 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	clearHistoryButton.MouseButton1Click:Connect(function()
 		if commandPalette then
 			commandPalette.ClearHistory()
-			historyLabel.Text = "📜  Command Palette history (cleared)"
+			Icons.prefix(historyLabel, "PaletteHistory", "Command Palette history (cleared)", 18)
 		end
 	end)
 
 	-- ------------------------------------------------------------------
 	-- Section: Not Implemented (honest, inert — no dead toggles)
 	-- ------------------------------------------------------------------
-	local notImplementedSection = makeSectionHeader(body, 3, "🚧 Not Implemented")
+	local notImplementedSection = makeSectionHeader(body, 3, "Not Implemented", "NotImplemented")
 
 	local function makeNotImplementedRow(order: number, icon: string, label: string)
 		local row = makeRow(notImplementedSection, order, 40)
@@ -318,8 +323,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 		rowLabel.TextSize = 14
 		rowLabel.TextColor3 = Theme.Colors.TextSecondary
 		rowLabel.TextXAlignment = Enum.TextXAlignment.Left
-		rowLabel.Text = icon .. "  " .. label
 		rowLabel.Parent = row
+		Icons.prefix(rowLabel, icon, label, 18) -- icon is an Icons.lua slot key
 
 		local tag = Instance.new("TextLabel")
 		tag.AnchorPoint = Vector2.new(1, 0.5)
@@ -334,8 +339,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 		Theme.corner(tag, Theme.Radius.S)
 	end
 
-	makeNotImplementedRow(2, "💬", "Discord/Slack integration")
-	makeNotImplementedRow(3, "🔒", "Two-Factor Authentication (2FA)")
+	makeNotImplementedRow(2, "Discord", "Discord/Slack integration")
+	makeNotImplementedRow(3, "TwoFactor", "Two-Factor Authentication (2FA)")
 
 	-- ------------------------------------------------------------------
 	-- Load the permissions snapshot once — role definitions don't churn
@@ -365,8 +370,8 @@ function SettingsPage.Build(container: Frame, commandPalette: any, notificationC
 	refreshButton.Font = Theme.Font.Medium
 	refreshButton.TextSize = 11
 	refreshButton.TextColor3 = Theme.Colors.TextSecondary
-	refreshButton.Text = "↻ Refresh"
 	refreshButton.Parent = permTitleRow
+	Icons.prefix(refreshButton, "Refresh", "Refresh", 14, 10)
 	Theme.corner(refreshButton, Theme.Radius.S)
 	refreshButton.MouseButton1Click:Connect(loadPermissions)
 

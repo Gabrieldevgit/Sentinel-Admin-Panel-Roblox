@@ -76,15 +76,24 @@ loadCommandsRecursive(Commands)
 -- ---------------------------------------------------------------------------
 local BanCommand = require(Commands:WaitForChild("Moderation"):WaitForChild("Ban"))
 
-Players.PlayerAdded:Connect(function(player: Player)
+-- W14: banned players get the ban / appeal screen first (Systems/
+-- PlayerFormsService.HoldBanned), then are kicked. ;config appeals off
+-- restores the instant kick.
+local PlayerFormsService = require(Systems:WaitForChild("PlayerFormsService"))
+
+local function enforceBan(player: Player)
 	local activeBan = BanCommand.GetActiveBan(player.UserId)
 	if activeBan then
-		local expiryText = if activeBan.ExpiresAt == math.huge
-			then "permanently"
-			else ("until %s"):format(os.date("!%Y-%m-%d %H:%M UTC", activeBan.ExpiresAt))
-		player:Kick(("You are banned %s. Reason: %s"):format(expiryText, activeBan.Reason))
+		PlayerFormsService.HoldBanned(player, activeBan)
 	end
-end)
+end
+Players.PlayerAdded:Connect(enforceBan)
+-- Players who joined while the modules above were loading (always the
+-- first player in Studio; possible on a live server too) were missed by
+-- PlayerAdded: check them now.
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(enforceBan, player)
+end
 
 -- ---------------------------------------------------------------------------
 -- Chat-based invocation. This is a bridge for launch day; Phase 7 replaces
@@ -121,7 +130,7 @@ local RateLimiter = require(Core:WaitForChild("RateLimiter"))
 local chatCommandLimiter = RateLimiter.new("ChatCommands", 6, 2)
 
 local function handleCommandText(player: Player, text: string)
-	if #text > 500 or not ConfigService.MatchPrefix(text) then
+	if #text > 500 or not ConfigService.MatchPrefix(text) or player:GetAttribute("SentinelBanHold") then
 		return
 	end
 	local allowed, firstDrop = chatCommandLimiter:Allow(player)

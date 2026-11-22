@@ -43,6 +43,7 @@ local Theme = require(script.Parent:WaitForChild("Theme", 15))
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared", 15):WaitForChild("Sentinel", 15)
 local ArgumentTypes = require(SentinelShared:WaitForChild("ArgumentTypes", 15))
 local UsageSpec = require(SentinelShared:WaitForChild("UsageSpec", 15))
+local Icons = require(SentinelShared:WaitForChild("Icons", 15))
 local CommandDocs = require(script.Parent:WaitForChild("CommandDocs", 15))
 
 local CommandPalette = {}
@@ -60,16 +61,19 @@ local MAX_HISTORY = 30
 local MAX_ROWS = 40
 
 -- Risk badge text/color for a command (from Core/CommandPolicy).
-local function riskTag(meta: any): (string, Color3?)
+-- Third return: the Icons.lua slot for the badge icon. With `plain`, the
+-- badge keeps its emoji (for plain text lines that can't hold an image);
+-- otherwise the emoji becomes blank room for an ImageLabel when one exists.
+local function riskTag(meta: any, plain: boolean?): (string, Color3?, string?)
 	local owner = if meta.OwnerOnly then "  · OWNER ONLY" else ""
-	if meta.Risk == "critical" then
-		return "  ⛔ CRITICAL" .. owner, Theme.Colors.Error
-	elseif meta.Risk == "high" then
-		return "  ⚠ HIGH RISK" .. owner, Theme.Colors.Error
-	elseif meta.Risk == "medium" then
-		return "  ⚠ medium" .. owner, Theme.Colors.Warning
+	local key = if meta.Risk == "critical" then "RiskCritical" elseif meta.Risk == "high" or meta.Risk == "medium" then "RiskWarning" else nil
+	if not key then
+		return owner, nil, nil
 	end
-	return owner, nil
+	local glyph = if plain then Icons.fallback(key) else Icons.text(key, "     ")
+	local word = if meta.Risk == "critical" then "CRITICAL" elseif meta.Risk == "high" then "HIGH RISK" else "medium"
+	local color = if meta.Risk == "medium" then Theme.Colors.Warning else Theme.Colors.Error
+	return "  " .. glyph .. " " .. word .. owner, color, key
 end
 
 local function hex(c: Color3): string
@@ -696,6 +700,12 @@ function CommandPalette.Init()
 				Text = s.Label or s.Text,
 			})
 			main.RichText = (s :: any).Rich == true
+			-- Risk badge icon sits in the blank gap after the name.
+			local riskIcon, riskAt = (s :: any).RiskIcon, (s :: any).RiskAt
+			if riskIcon and riskAt and Icons.image(riskIcon) then
+				local w = TextService:GetTextSize(riskAt .. "  ", main.TextSize, main.Font, Vector2.new(10000, 100)).X
+				Icons.attach(main, riskIcon, { Size = 15, X = w })
+			end
 			label(row, "Detail", {
 				Position = UDim2.new(0.45, 0, 0, 0),
 				Size = UDim2.new(0.55, -10, 1, 0),
@@ -740,12 +750,15 @@ function CommandPalette.Init()
 			end
 			local rest = {}
 			for _, meta in ipairs(cmds) do
-				local tag, tagColor = riskTag(meta)
+				local tag, tagColor, riskIcon = riskTag(meta)
 				local fav = isFavorite(meta.Name)
+				local head = (if fav then "★ " else "") .. meta.Name
 				table.insert(if fav then out else rest, {
 					Text = meta.Name,
-					Label = (if fav then "★ " else "") .. meta.Name .. tag,
+					Label = head .. tag,
 					LabelColor = tagColor,
+					RiskIcon = riskIcon,
+					RiskAt = head,
 					Detail = meta.Description,
 				} :: any)
 			end
@@ -777,7 +790,7 @@ function CommandPalette.Init()
 		end)
 		for _, entry in ipairs(scored) do
 			local meta = entry.Meta
-			local tag, tagColor = riskTag(meta)
+			local tag, tagColor, riskIcon = riskTag(meta)
 			local aliasNote = if entry.Via then ("  (alias %s)"):format(entry.Via) else ""
 			if isFavorite(meta.Name) then
 				aliasNote = "  ★" .. aliasNote
@@ -787,6 +800,8 @@ function CommandPalette.Init()
 				Text = entry.Via or meta.Name,
 				Label = meta.Name .. aliasNote .. tag,
 				LabelColor = tagColor,
+				RiskIcon = riskIcon,
+				RiskAt = meta.Name .. aliasNote,
 				Detail = meta.Description,
 			} :: any)
 		end
@@ -919,7 +934,7 @@ function CommandPalette.Init()
 				validation.Text = "Still needed: " .. table.concat(names, " ")
 				validation.TextColor3 = Theme.Colors.Warning
 			else
-				local tag = riskTag(meta)
+				local tag = riskTag(meta, true)
 				validation.Text = ("✓ Ready — Enter to run · needs %s%s"):format(meta.Permission, tag)
 				validation.TextColor3 = if meta.Risk == "high" or meta.Risk == "critical"
 					then Theme.Colors.Warning

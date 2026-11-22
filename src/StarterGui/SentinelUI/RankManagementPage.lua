@@ -28,6 +28,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 
 local RankManagementPage = {}
 
@@ -168,7 +169,8 @@ function RankManagementPage.Build(container: Frame, pageIds: { string }?)
 	local pendingRefresh = false
 	local render: () -> ()
 
-	local header = label(container, "👑 Ranks", 20, Theme.Colors.Text, Theme.Font.Bold)
+	local header = label(container, "Ranks", 20, Theme.Colors.Text, Theme.Font.Bold)
+	Icons.prefix(header, "Ranks", "Ranks", 22)
 	header.Size = UDim2.new(1, -110, 0, 28)
 	local subtitle = label(container, "Loading…", 13, Theme.Colors.TextSecondary)
 	subtitle.Position = UDim2.new(0, 0, 0, 28)
@@ -263,14 +265,18 @@ function RankManagementPage.Build(container: Frame, pageIds: { string }?)
 			item.TextSize = 13
 			item.TextColor3 = Theme.Colors.Text
 			item.TextXAlignment = Enum.TextXAlignment.Left
+			local badge = Icons.rankKey(r)
 			item.Text = ("      %s %s  ·  %d%s"):format(
-				r.Icon,
+				if badge then "       " else r.Icon,
 				r.Name,
 				r.Priority,
 				if #r.OnlineHolders > 0 then ("  ·  %d online"):format(#r.OnlineHolders) else ""
 			)
 			item.Name = "Rank_" .. r.Name
 			item.Parent = list
+			if badge then
+				Icons.attach(item, badge, { Size = 18, X = 22 })
+			end
 			Theme.corner(item, Theme.Radius.S)
 			local dot = Instance.new("Frame")
 			dot.Size = UDim2.new(0, 10, 0, 10)
@@ -328,6 +334,10 @@ function RankManagementPage.Build(container: Frame, pageIds: { string }?)
 		end
 
 		local title = label(detail, ("%s %s"):format(rank.Icon, rank.Name), 18, Theme.Colors.Text, Theme.Font.Bold)
+		local titleBadge = Icons.rankKey(rank)
+		if titleBadge then
+			Icons.prefix(title, titleBadge, rank.Name, 22)
+		end
 		title.LayoutOrder = 1
 		local meta = label(
 			detail,
@@ -355,7 +365,7 @@ function RankManagementPage.Build(container: Frame, pageIds: { string }?)
 			{ Key = "name", Label = "Name", Value = rank.Name },
 			{ Key = "priority", Label = "Priority", Value = tostring(rank.Priority) },
 			{ Key = "color", Label = "Color (R,G,B or #hex)", Value = ("%d,%d,%d"):format(rank.Color[1], rank.Color[2], rank.Color[3]) },
-			{ Key = "icon", Label = "Icon", Value = rank.Icon },
+			{ Key = "icon", Label = "Icon (emoji, icon name or rbxassetid://)", Value = rank.Icon },
 			{ Key = "description", Label = "Description", Value = rank.Description },
 			{ Key = "inherits", Label = "Inherits (comma list)", Value = table.concat(rank.Inherits, ",") },
 		}

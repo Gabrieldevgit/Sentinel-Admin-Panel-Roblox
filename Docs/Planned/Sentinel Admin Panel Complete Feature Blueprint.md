@@ -337,7 +337,7 @@ Punishment configuration
 - ✅ Bulk punishments.
 Moderation dashboard
 - ✅ Active cases.
-- Pending reports.
+- ✅ Pending reports.
 - ✅ Recent punishments.
 - Recent warnings.
 - ✅ Active bans.
@@ -349,13 +349,13 @@ Moderation dashboard
 - ✅ Case details.
 - ✅ Staff responsible for a case.
 Advanced moderation
-- Player report system.
-- Report management.
-- Evidence attachment.
-- Report assignment.
-- Report status.
-- Appeal submission.
-- Appeal review.
+- ✅ Player report system.
+- ✅ Report management.
+- ✅ Evidence attachment.
+- ✅ Report assignment.
+- ✅ Report status.
+- ✅ Appeal submission.
+- ✅ Appeal review.
 - Appeal acceptance/rejection.
 - ✅ Moderator notes.
 - ✅ Internal staff discussion.

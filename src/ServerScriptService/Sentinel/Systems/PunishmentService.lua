@@ -203,6 +203,25 @@ function PunishmentService.ClearWarnings(userId: number)
 	end
 end
 
+-- W14 (accepted warn appeals): removes the one warning issued closest to
+-- `at` (a case's CreatedAt), within 2 minutes. Returns whether one was removed.
+function PunishmentService.RemoveWarningNear(userId: number, at: number): boolean
+	local warnings = table.clone(PunishmentService.GetWarnings(userId))
+	local best, bestGap = nil, 121
+	for i, w in ipairs(warnings) do
+		local gap = math.abs((w.Timestamp or 0) - at)
+		if gap < bestGap then
+			best, bestGap = i, gap
+		end
+	end
+	if not best then
+		return false
+	end
+	table.remove(warnings, best)
+	persist(userId, warnings)
+	return true
+end
+
 Players.PlayerAdded:Connect(function(player: Player)
 	-- Warm the cache so /warnings and escalation checks don't pay a
 	-- DataStore round trip the first time they're needed for this player.

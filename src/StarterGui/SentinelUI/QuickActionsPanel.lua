@@ -42,6 +42,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 local ConfirmDialog = require(script.Parent:WaitForChild("ConfirmDialog"))
 
 local QuickActionsPanel = {}
@@ -137,13 +138,13 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		local iconLabel = Instance.new("TextLabel")
 		iconLabel.LayoutOrder = 1
 		iconLabel.BackgroundTransparency = 1
-		iconLabel.Size = UDim2.new(1, 0, 0, 0)
-		iconLabel.AutomaticSize = Enum.AutomaticSize.Y
+		iconLabel.Size = UDim2.new(1, 0, 0, 24)
 		iconLabel.Font = Theme.Font.Regular
 		iconLabel.TextSize = 20
 		iconLabel.TextXAlignment = Enum.TextXAlignment.Left
-		iconLabel.Text = icon
+		iconLabel.Text = Icons.text(icon, "") -- icon is an Icons.lua slot key
 		iconLabel.Parent = content
+		Icons.attach(iconLabel, icon, { Size = 24, X = 0 })
 
 		local titleLabel = Instance.new("TextLabel")
 		titleLabel.LayoutOrder = 2
@@ -275,7 +276,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 	-- ------------------------------------------------------------------
 	-- Cards
 	-- ------------------------------------------------------------------
-	makeActionCard(1, "📢", "Announce", "Broadcast a message", "Safe", function()
+	makeActionCard(1, "Announce", "Announce", "Broadcast a message", "Safe", function()
 		if commandPalette then
 			commandPalette.Open()
 			task.wait()
@@ -286,19 +287,19 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		end
 	end)
 
-	makeActionCard(2, "❄", "Freeze All", "Freeze every player", "Safe", function()
+	makeActionCard(2, "Freeze", "Freeze All", "Freeze every player", "Safe", function()
 		runCommand("freeze all")
 	end)
 
-	local applyLockState = makeToggleCard(3, "🔒", "Lock Server", "Prevent new joins", function(newValue: boolean)
+	local applyLockState = makeToggleCard(3, "Lock", "Lock Server", "Prevent new joins", function(newValue: boolean)
 		runCommand(if newValue then "lockserver" else "unlockserver")
 	end)
 
-	local applyMaintenanceState = makeToggleCard(4, "🛠", "Maintenance", "Enable maintenance mode", function(newValue: boolean)
+	local applyMaintenanceState = makeToggleCard(4, "Maintenance", "Maintenance", "Enable maintenance mode", function(newValue: boolean)
 		runCommand("maintenancemode " .. (if newValue then "on" else "off"))
 	end)
 
-	makeActionCard(5, "⛔", "Shutdown", "Close this server", "Critical", function()
+	makeActionCard(5, "Shutdown", "Shutdown", "Close this server", "Critical", function()
 		ConfirmDialog.Show({
 			Title = "Shutdown Server",
 			Message = "This will disconnect every player currently in this server. This cannot be undone.",
@@ -310,15 +311,15 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		})
 	end)
 
-	makeActionCard(6, "💖", "Heal All", "Restore all players' health", "Safe", function()
+	makeActionCard(6, "Heal", "Heal All", "Restore all players' health", "Safe", function()
 		runCommand("heal all")
 	end)
 
-	makeActionCard(7, "🧹", "Cleanup Map", "Clear loose debris & tools", "Safe", function()
+	makeActionCard(7, "Cleanup", "Cleanup Map", "Clear loose debris & tools", "Safe", function()
 		runCommand("clear")
 	end)
 
-	makeActionCard(8, "📍", "Spawn All", "Teleport all players to spawn", "Safe", function()
+	makeActionCard(8, "Spawn", "Spawn All", "Teleport all players to spawn", "Safe", function()
 		runCommand("spawn all")
 	end)
 

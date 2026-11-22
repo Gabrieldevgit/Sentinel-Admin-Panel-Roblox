@@ -45,6 +45,7 @@ local TextService = game:GetService("TextService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 
 local Shell = {}
 
@@ -96,6 +97,8 @@ local SECTIONS = {
 		Icon = "🛡",
 		Pages = {
 			{ Id = "Moderation", Label = "Moderation", Icon = "🛡" },
+			{ Id = "Reports", Label = "Reports", Icon = "🚩" },
+			{ Id = "Appeals", Label = "Appeals", Icon = "⚖" },
 			{ Id = "Ranks", Label = "Ranks", Icon = "👑" },
 		},
 	},
@@ -153,6 +156,22 @@ local SECTIONS = {
 		},
 	},
 }
+
+-- Icons.lua decides each entry's icon: an uploaded image (the emoji slot
+-- becomes blank space and an ImageLabel is attached) or the emoji fallback.
+-- Section slots are "<Id>Section" (Dashboard has a single page and uses its page slot).
+for _, section in ipairs(SECTIONS) do
+	section.IconKey = if Icons.Slots[section.Id .. "Section"] then section.Id .. "Section" else section.Id
+	if Icons.Slots[section.IconKey] then
+		section.Icon = Icons.text(section.IconKey, "     ")
+	end
+	for _, page in ipairs(section.Pages) do
+		page.IconKey = page.Id
+		if Icons.Slots[page.Id] then
+			page.Icon = Icons.text(page.Id)
+		end
+	end
+end
 
 local sectionOfPage: { [string]: any } = {}
 for _, section in ipairs(SECTIONS) do
@@ -369,6 +388,9 @@ local function makeNavButton(parent: Instance, name: string, page: any, order: n
 	button:SetAttribute("IconText", page.Icon)
 	button:SetAttribute("StripText", ("  %s  %s  "):format(page.Icon, page.Label))
 	button.Parent = parent
+	if Icons.attach(button, page.IconKey or page.Id, { Size = 18, X = 14 }) then
+		button:SetAttribute("IconText", "")
+	end
 	Theme.corner(button, Theme.Radius.S)
 
 	if withMarker then
@@ -643,6 +665,7 @@ function Shell.Init(): ScreenGui
 		tab:SetAttribute("FullText", tab.Text)
 		tab:SetAttribute("IconText", section.Icon)
 		tab.Parent = tabs
+		Icons.attach(tab, section.IconKey, { Size = 18, X = 0 })
 		local pad = Instance.new("UIPadding")
 		pad.PaddingLeft = UDim.new(0, 12)
 		pad.PaddingRight = UDim.new(0, 12)
@@ -699,7 +722,7 @@ function Shell.Init(): ScreenGui
 	searchButton.Font = Theme.Font.Regular
 	searchButton.TextSize = 13
 	searchButton.TextColor3 = Theme.Colors.TextSecondary
-	searchButton.Text = "🔍  Search"
+	Icons.prefix(searchButton, "Search", "Search", 14)
 	searchButton.Parent = right
 	Theme.corner(searchButton, Theme.Radius.Pill)
 	hover(searchButton, function()
@@ -727,11 +750,13 @@ function Shell.Init(): ScreenGui
 	end)
 	Shell.pinButton = pinButton
 
-	local bellButton = iconButton(right, "BellButton", "🔔", 2)
+	local bellButton = iconButton(right, "BellButton", Icons.text("Bell", ""), 2)
+	Icons.attach(bellButton, "Bell", { Size = 18 })
 	bellButton.MouseButton1Click:Connect(function()
 		Shell.ShowPage("Notifications")
 	end)
-	local gearButton = iconButton(right, "GearButton", "⚙", 3)
+	local gearButton = iconButton(right, "GearButton", Icons.text("Gear", ""), 3)
+	Icons.attach(gearButton, "Gear", { Size = 18 })
 	gearButton.MouseButton1Click:Connect(function()
 		Shell.ShowPage("Settings")
 	end)
@@ -872,7 +897,7 @@ function Shell.Init(): ScreenGui
 			task.wait(1)
 			fps = frameCount
 			frameCount = 0
-			clock.Text = "🕒  " .. (os.date("%I:%M %p") :: string):gsub("^0", "")
+			Icons.prefix(clock, "Clock", ((os.date("%I:%M %p") :: string):gsub("^0", "")), 14)
 		end
 	end)
 
@@ -1174,11 +1199,19 @@ function Shell.Init(): ScreenGui
 			textEntry.Size = UDim2.new(0, 0, 1, 0)
 			textEntry.Text = entry:GetAttribute("StripText") or textEntry.Text
 			textEntry.TextXAlignment = Enum.TextXAlignment.Center
+			local img = entry:FindFirstChild("IconImage") :: ImageLabel?
+			if img then
+				Icons.place(img, 8)
+			end
 		else
 			textEntry.AutomaticSize = Enum.AutomaticSize.None
 			textEntry.Size = UDim2.new(1, 0, 0, if isLabel then 20 else metrics.Row)
 			textEntry.Text = (if iconsOnly then entry:GetAttribute("IconText") else entry:GetAttribute("FullText")) or textEntry.Text
 			textEntry.TextXAlignment = if iconsOnly then Enum.TextXAlignment.Center else Enum.TextXAlignment.Left
+			local img = entry:FindFirstChild("IconImage") :: ImageLabel?
+			if img then
+				Icons.place(img, if iconsOnly then nil else 14)
+			end
 		end
 		if isButton then
 			textEntry.TextSize = if layout.Compact then 13 else 14
@@ -1249,7 +1282,15 @@ function Shell.Init(): ScreenGui
 		local width = if isMobile then viewportSize().X / scale else root.AbsoluteSize.X / scale
 		local narrow = isMobile or width < NARROW_WIDTH
 		clock.Visible = width >= 640
-		searchButton.Text = if narrow then "🔍" else "🔍  Search"
+		if narrow then
+			searchButton.Text = Icons.text("Search", "")
+			local searchImg = searchButton:FindFirstChild("IconImage") :: ImageLabel?
+			if searchImg then
+				Icons.place(searchImg, nil)
+			end
+		else
+			Icons.prefix(searchButton, "Search", "Search", 14)
+		end
 		local searchWidth = if narrow then metrics.Icon else 96
 		searchButton.Size = UDim2.new(0, searchWidth, 0, metrics.Icon)
 		local userWidth = if narrow then 26 else 132
@@ -1272,6 +1313,10 @@ function Shell.Init(): ScreenGui
 		for _, tab in pairs(tabButtons) do
 			tab.Text = (if iconTabs then tab:GetAttribute("IconText") else tab:GetAttribute("FullText")) or tab.Text
 			tab.TextSize = metrics.Tab + (if iconTabs then 3 else 0)
+			local tabImg = tab:FindFirstChild("IconImage") :: ImageLabel?
+			if tabImg then
+				Icons.place(tabImg, if iconTabs then nil else 0)
+			end
 			tab.Size = UDim2.new(0, 0, 0, metrics.Icon)
 			local pad = tab:FindFirstChildOfClass("UIPadding")
 			if pad then

@@ -34,6 +34,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 local ToggleSwitch = require(script.Parent:WaitForChild("ToggleSwitch"))
 
 local ServerPage = {}
@@ -113,8 +114,9 @@ function ServerPage.Build(container: Frame)
 		labelText.TextSize = 14
 		labelText.TextColor3 = Theme.Colors.Text
 		labelText.TextXAlignment = Enum.TextXAlignment.Left
-		labelText.Text = icon .. "  " .. label
+		labelText.Text = Icons.text(icon, "      ") .. "  " .. label -- icon is an Icons.lua slot key
 		labelText.Parent = row
+		Icons.attach(labelText, icon, { Size = 18, X = 0 })
 
 		return ToggleSwitch.Create(row, {
 			Position = UDim2.new(1, 0, 0.5, 0),
@@ -123,13 +125,13 @@ function ServerPage.Build(container: Frame)
 		})
 	end
 
-	local lockHandle = makeToggleRow(2, "🔒", "Lock Server", function(v)
+	local lockHandle = makeToggleRow(2, "Lock", "Lock Server", function(v)
 		runCommand(if v then "lockserver" else "unlockserver")
 	end)
-	local maintenanceHandle = makeToggleRow(3, "🛠", "Maintenance Mode", function(v)
+	local maintenanceHandle = makeToggleRow(3, "Maintenance", "Maintenance Mode", function(v)
 		runCommand("maintenancemode " .. (if v then "on" else "off"))
 	end)
-	local timeFreezeHandle = makeToggleRow(4, "⏱", "Time Freeze", function(v)
+	local timeFreezeHandle = makeToggleRow(4, "TimeFreeze", "Time Freeze", function(v)
 		runCommand("timefreeze " .. (if v then "on" else "off"))
 	end)
 
@@ -150,8 +152,8 @@ function ServerPage.Build(container: Frame)
 	slowModeLabel.TextSize = 14
 	slowModeLabel.TextColor3 = Theme.Colors.Text
 	slowModeLabel.TextXAlignment = Enum.TextXAlignment.Left
-	slowModeLabel.Text = "⏳ Slow Mode: -- seconds"
 	slowModeLabel.Parent = slowModeRow
+	Icons.prefix(slowModeLabel, "Slowmode", "Slow Mode: -- seconds", 18)
 
 	local slowModeInput = Instance.new("TextBox")
 	slowModeInput.AnchorPoint = Vector2.new(1, 0.5)
@@ -189,7 +191,7 @@ function ServerPage.Build(container: Frame)
 	-- ------------------------------------------------------------------
 	makeSectionLabel(6, "Environment")
 
-	local function makePresetRow(layoutOrder: number, label: string, presets: { string }, commandPrefix: string)
+	local function makePresetRow(layoutOrder: number, iconKey: string, label: string, presets: { string }, commandPrefix: string)
 		local row = Instance.new("Frame")
 		row.LayoutOrder = layoutOrder
 		-- W09 (known issue #1): the buttons wrap onto more lines when the
@@ -209,8 +211,8 @@ function ServerPage.Build(container: Frame)
 		rowLabel.TextSize = 13
 		rowLabel.TextColor3 = Theme.Colors.Text
 		rowLabel.TextXAlignment = Enum.TextXAlignment.Left
-		rowLabel.Text = label
 		rowLabel.Parent = row
+		Icons.prefix(rowLabel, iconKey, label, 16)
 
 		local buttonRow = Instance.new("Frame")
 		buttonRow.Position = UDim2.new(0, 0, 0, 22)
@@ -243,8 +245,8 @@ function ServerPage.Build(container: Frame)
 		end
 	end
 
-	makePresetRow(7, "☁ Weather", WEATHER_PRESETS, "weather")
-	makePresetRow(8, "💡 Lighting Preset", LIGHTING_PRESETS, "lightingpreset")
+	makePresetRow(7, "Weather", "Weather", WEATHER_PRESETS, "weather")
+	makePresetRow(8, "Lighting", "Lighting Preset", LIGHTING_PRESETS, "lightingpreset")
 
 	-- ------------------------------------------------------------------
 	-- Section: Broadcast (opens Command Palette pre-filled rather than
@@ -283,7 +285,7 @@ function ServerPage.Build(container: Frame)
 						timeFreezeHandle.Set(state.TimeFrozen)
 					end
 					if state.SlowModeSeconds ~= nil then
-						slowModeLabel.Text = ("⏳ Slow Mode: %d seconds"):format(state.SlowModeSeconds)
+						Icons.prefix(slowModeLabel, "Slowmode", ("Slow Mode: %d seconds"):format(state.SlowModeSeconds), 18)
 					end
 				end
 			end

@@ -135,7 +135,8 @@ getOrCreate("MovementRemote", "RemoteEvent")
 
 -- Staff = may open the panel. A rank can exist without this (e.g. VIP perks).
 local function isStaff(player: Player): boolean
-	return PermissionSystem.Has(player, "panel.open")
+	-- A banned staff member on the ban / appeal screen gets no panel (W14).
+	return PermissionSystem.Has(player, "panel.open") and not player:GetAttribute("SentinelBanHold")
 end
 
 -- ---------------------------------------------------------------------------
@@ -169,6 +170,10 @@ local LIMITS: { [string]: { number } } = {
 	GetOfflineProfileRemote = { 4, 0.5 }, -- Roblox name lookups
 	GetBanListRemote = { 3, 0.5 },
 	GetAnnouncementsRemote = { 4, 1 },
+	SearchReportsRemote = { 5, 1 },
+	GetReportRemote = { 6, 2 },
+	SearchAppealsRemote = { 5, 1 },
+	GetAppealRemote = { 6, 2 },
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -683,7 +688,7 @@ local executeLimiter = RateLimiter.new("ExecuteCommandRemote", 8, 4)
 -- (e.g. Quick Actions' typed SHUTDOWN). Confirmations are a safeguard
 -- against mistakes, not a permission: Dispatch still checks everything.
 executeCommandRemote.OnServerEvent:Connect(function(player: Player, rawText: any, options: any)
-	if type(rawText) ~= "string" or #rawText == 0 or #rawText > 500 then
+	if type(rawText) ~= "string" or #rawText == 0 or #rawText > 500 or player:GetAttribute("SentinelBanHold") then
 		return
 	end
 	local allowed, firstDrop = executeLimiter:Allow(player)
@@ -1019,6 +1024,8 @@ end)
 -- assignment, punishments, reason templates) is a normal command.
 -- ---------------------------------------------------------------------------
 local CaseService = require(Sentinel:WaitForChild("Systems"):WaitForChild("CaseService"))
+local ReportService = require(Sentinel:WaitForChild("Systems"):WaitForChild("ReportService"))
+local AppealService = require(Sentinel:WaitForChild("Systems"):WaitForChild("AppealService"))
 local getModerationDashboardRemote = getOrCreate("GetModerationDashboardRemote", "RemoteFunction") :: RemoteFunction
 local searchCasesRemote = getOrCreate("SearchCasesRemote", "RemoteFunction") :: RemoteFunction
 local getCaseRemote = getOrCreate("GetCaseRemote", "RemoteFunction") :: RemoteFunction
@@ -1033,6 +1040,9 @@ bindInvoke(getModerationDashboardRemote, function(player: Player)
 	end
 	local data = CaseService.Dashboard()
 	data.CanEditReasons = PermissionSystem.Has(player, "config.edit")
+	-- W14: queue sizes for the dashboard cards.
+	data.PendingReports = if PermissionSystem.Has(player, "moderation.reports") then ReportService.PendingCount() else nil
+	data.PendingAppeals = if PermissionSystem.Has(player, "moderation.appeals") then AppealService.PendingCount() else nil
 	return data
 end)
 
@@ -1060,6 +1070,104 @@ bindInvoke(getCaseRemote, function(player: Player, id: any)
 		return nil
 	end
 	return CaseService.Get(id)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Reports & appeals (W14). Reads only; every change is a normal command
+-- (;reportclaim, ;reportresolve, ;appealaccept, ...). ModerationQueueEvent
+-- pushes (kind "report" | "appeal", what, summary) to staff who may see it.
+-- ---------------------------------------------------------------------------
+local searchReportsRemote = getOrCreate("SearchReportsRemote", "RemoteFunction") :: RemoteFunction
+local getReportRemote = getOrCreate("GetReportRemote", "RemoteFunction") :: RemoteFunction
+local searchAppealsRemote = getOrCreate("SearchAppealsRemote", "RemoteFunction") :: RemoteFunction
+local getAppealRemote = getOrCreate("GetAppealRemote", "RemoteFunction") :: RemoteFunction
+local moderationQueueEvent = getOrCreate("ModerationQueueEvent", "RemoteEvent") :: RemoteEvent
+
+local function canReports(player: Player): boolean
+	return isStaff(player) and PermissionSystem.Has(player, "moderation.reports")
+end
+local function canAppeals(player: Player): boolean
+	return isStaff(player) and PermissionSystem.Has(player, "moderation.appeals")
+end
+
+bindInvoke(searchReportsRemote, function(player: Player, query: any, cursor: any, limit: any)
+	if not canReports(player) then
+		return { Reports = {}, Total = 0, Error = "You need moderation.reports." }
+	end
+	local filter = if type(query) == "string"
+		then ReportService.ParseQuery(query:sub(1, 200), player.Name)
+		else ReportService.SanitizeFilter(query)
+	local found = ReportService.Search(filter, if type(cursor) == "number" then cursor else nil, clampCount(limit, 40, 100))
+	found.Filter = filter
+	return found
+end)
+
+bindInvoke(getReportRemote, function(player: Player, id: any)
+	if not canReports(player) or type(id) ~= "number" then
+		return nil
+	end
+	local r = ReportService.Get(id)
+	if not r then
+		return nil
+	end
+	local out = table.clone(r)
+	out.TargetOnline = Players:GetPlayerByUserId(r.TargetId) ~= nil
+	out.Case = if r.CaseId then CaseService.Get(r.CaseId) else nil
+	-- Earlier reports about the same player, for context.
+	local others = ReportService.Search({ Status = "all", Target = tostring(r.TargetId) }, nil, 10)
+	out.OtherReports = {}
+	for _, o in ipairs(others.Reports) do
+		if o.Id ~= r.Id then
+			table.insert(out.OtherReports, o)
+		end
+	end
+	return out
+end)
+
+bindInvoke(searchAppealsRemote, function(player: Player, query: any, cursor: any, limit: any)
+	if not canAppeals(player) then
+		return { Appeals = {}, Total = 0, Error = "You need moderation.appeals." }
+	end
+	local filter = if type(query) == "string"
+		then AppealService.ParseQuery(query:sub(1, 200), player.Name)
+		else AppealService.SanitizeFilter(query)
+	local found = AppealService.Search(filter, if type(cursor) == "number" then cursor else nil, clampCount(limit, 40, 100))
+	found.Filter = filter
+	return found
+end)
+
+bindInvoke(getAppealRemote, function(player: Player, id: any)
+	if not canAppeals(player) or type(id) ~= "number" then
+		return nil
+	end
+	local a = AppealService.Get(id)
+	if not a then
+		return nil
+	end
+	local out = table.clone(a)
+	out.Case = if a.CaseId then CaseService.Get(a.CaseId) else nil
+	local canDecide, why = AppealService.CanDecide(player, a)
+	out.CanDecide = canDecide
+	out.CannotDecideWhy = why
+	-- The player's other cases, for context.
+	local cases = CaseService.Search({ Player = tostring(a.UserId) } :: any, nil, 10)
+	out.PlayerCases = cases.Cases
+	return out
+end)
+
+local function pushQueue(kind: string, what: string, item: any)
+	local node = if kind == "report" then "moderation.reports" else "moderation.appeals"
+	for _, p in ipairs(Players:GetPlayers()) do
+		if isStaff(p) and PermissionSystem.Has(p, node) then
+			moderationQueueEvent:FireClient(p, kind, what, item)
+		end
+	end
+end
+ReportService.OnChanged(function(r, what)
+	pushQueue("report", what, r)
+end)
+AppealService.OnChanged(function(a, what)
+	pushQueue("appeal", what, a)
 end)
 
 -- ---------------------------------------------------------------------------

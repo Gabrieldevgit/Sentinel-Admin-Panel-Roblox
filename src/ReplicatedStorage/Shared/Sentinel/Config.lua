@@ -103,19 +103,19 @@ Config.NOTIFICATIONS = {
 	TYPES = {
 		SUCCESS = {
 			color = Color3.fromRGB(76, 175, 80),
-			icon = "✓",
+			icon = "NotifySuccess", -- Icons.lua slot (Icons.image / Icons.fallback)
 		},
 		ERROR = {
 			color = Color3.fromRGB(244, 67, 54),
-			icon = "✗",
+			icon = "NotifyError", -- Icons.lua slot (Icons.image / Icons.fallback)
 		},
 		WARNING = {
 			color = Color3.fromRGB(255, 152, 0),
-			icon = "⚠",
+			icon = "NotifyWarning", -- Icons.lua slot (Icons.image / Icons.fallback)
 		},
 		INFO = {
 			color = Color3.fromRGB(33, 150, 243),
-			icon = "ℹ",
+			icon = "NotifyInfo", -- Icons.lua slot (Icons.image / Icons.fallback)
 		},
 	},
 }

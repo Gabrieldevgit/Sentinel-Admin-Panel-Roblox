@@ -34,6 +34,11 @@ local playerGui = localPlayer:WaitForChild("PlayerGui")
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
+-- W14: report / appeal forms and the ban screen, for every player. Loaded
+-- first: a banned player never spawns, so nothing from StarterGui arrives.
+local PlayerForms = require(script:WaitForChild("PlayerForms"))
+PlayerForms.Init()
+
 -- ---------------------------------------------------------------------------
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------
@@ -415,6 +420,7 @@ if sentinelUIFolder then
 		{ Name = "DashboardPage" },
 		{ Name = "PlayersPage" },
 		{ Name = "ModerationPage" },
+		{ Name = "ReportsPage" },
 		{ Name = "CommandsPage" },
 		{ Name = "EconomyPage" },
 		{ Name = "ServerPage" },
@@ -582,6 +588,15 @@ if sentinelUIFolder then
 		DashboardPage.Build(Shell.RegisterPage("Dashboard", "Dashboard", "🏠"), CommandPalette)
 		PlayersPage.Build(Shell.RegisterPage("Players", "Players", "👥"))
 		ModerationPage.Build(Shell.RegisterPage("Moderation", "Moderation", "🛡"))
+		-- W14: Reports + Appeals queues (Moderation section).
+		local ReportsPage = require(loadedModules.ReportsPage)
+		ReportsPage.Build({
+			Reports = Shell.RegisterPage("Reports", "Reports", "🚩"),
+			Appeals = Shell.RegisterPage("Appeals", "Appeals", "⚖"),
+		}, function(caseId: number)
+			Shell.ShowPage("Moderation")
+			ModerationPage.OpenCase(caseId)
+		end)
 		require(loadedModules.LookupPage).Build(Shell.RegisterPage("Lookup", "Lookup", "🔎"), function(caseId: number)
 			Shell.ShowPage("Moderation")
 			ModerationPage.OpenCase(caseId)
@@ -608,6 +623,31 @@ if sentinelUIFolder then
 			NotificationCenter.ApplyPrefs(effectivePrefs.Notifications)
 		end
 		NotificationCenter.BuildPage(Shell.RegisterPage("Notifications", "Notifications", "🔔"))
+		-- W14: a toast when a new report / appeal arrives (staff who can see it).
+		local queueEvent = SentinelShared:FindFirstChild("ModerationQueueEvent") :: RemoteEvent?
+		if queueEvent then
+			queueEvent.OnClientEvent:Connect(function(kind: any, what: any, item: any)
+				if what ~= "created" or type(item) ~= "table" then
+					return
+				end
+				local isReport = kind == "report"
+				NotificationCenter.Notify({
+					Kind = "warning",
+					Title = if isReport then ("New report #%d"):format(item.Id) else ("New appeal #%d"):format(item.Id),
+					Message = if isReport
+						then ("%s reported %s (%s)."):format(tostring(item.ReporterName), tostring(item.TargetName), tostring(item.Category))
+						else ("%s appealed their %s."):format(tostring(item.Name), tostring(item.Type)),
+					Action = {
+						Text = "Review",
+						Callback = function()
+							Shell.Open()
+							Shell.ShowPage(if isReport then "Reports" else "Appeals")
+							ReportsPage.Open(if isReport then "report" else "appeal", item.Id)
+						end,
+					},
+				})
+			end)
+		end
 		-- Built after the Notification Center so staff chat and global
 		-- notifications can raise toasts.
 		require(crossServerPageModule).Build(crossServerContainer, NotificationCenter)

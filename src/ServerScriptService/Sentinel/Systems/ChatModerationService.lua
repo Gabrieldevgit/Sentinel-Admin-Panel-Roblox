@@ -87,6 +87,32 @@ end
 
 local scheduledUnmuteToken: { [number]: number } = {}
 
+-- W14: players held on the ban / appeal screen can't chat. Not a mute: not
+-- saved, not shown as a punishment, gone when they leave.
+local silenced: { [number]: boolean } = {}
+
+local function blocked(userId: number): boolean
+	return silenced[userId] == true or ChatModerationService.IsMuted(userId)
+end
+
+function ChatModerationService.SetSilenced(userId: number, on: boolean)
+	silenced[userId] = if on then true else nil
+	applyCanSend(userId, not blocked(userId))
+end
+
+-- W14 (accepted mute appeals): lifts a mute by UserId, online or not.
+function ChatModerationService.UnmuteUserId(userId: number)
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		ChatModerationService.Unmute(player)
+		return
+	end
+	activeMutes[userId] = nil
+	pcall(function()
+		MuteStore:RemoveAsync(tostring(userId))
+	end)
+end
+
 function ChatModerationService.Mute(target: Player, seconds: number, permanent: boolean?)
 	local expiry = if permanent then math.huge else os.time() + seconds
 	activeMutes[target.UserId] = expiry
@@ -120,7 +146,7 @@ end
 function ChatModerationService.Unmute(target: Player)
 	activeMutes[target.UserId] = nil
 	scheduledUnmuteToken[target.UserId] = (scheduledUnmuteToken[target.UserId] or 0) + 1
-	applyCanSend(target.UserId, true)
+	applyCanSend(target.UserId, not blocked(target.UserId))
 	local ok, err = pcall(function()
 		MuteStore:RemoveAsync(tostring(target.UserId))
 	end)
@@ -136,7 +162,7 @@ local function attachDeliveryGate(channel: TextChannel)
 		if not speaker then
 			return true -- system messages etc.
 		end
-		return not ChatModerationService.IsMuted(speaker.UserId)
+		return not blocked(speaker.UserId)
 	end
 end
 
@@ -158,7 +184,7 @@ if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 		local function watchChannel(channel: TextChannel)
 			attachDeliveryGate(channel)
 			channel.ChildAdded:Connect(function(source: Instance)
-				if source:IsA("TextSource") and ChatModerationService.IsMuted(source.UserId) then
+				if source:IsA("TextSource") and blocked(source.UserId) then
 					source.CanSend = false
 				end
 			end)
@@ -194,6 +220,7 @@ Players.PlayerAdded:Connect(function(player: Player)
 end)
 
 Players.PlayerRemoving:Connect(function(player: Player)
+	silenced[player.UserId] = nil
 	if activeMutes[player.UserId] ~= math.huge then
 		activeMutes[player.UserId] = nil
 	end
