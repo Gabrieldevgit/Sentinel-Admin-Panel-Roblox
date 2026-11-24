@@ -172,6 +172,7 @@ local LIMITS: { [string]: { number } } = {
 	GetOfflineProfileRemote = { 4, 0.5 }, -- Roblox name lookups
 	GetBanListRemote = { 3, 0.5 },
 	GetAnnouncementsRemote = { 4, 1 },
+	GetPollsRemote = { 4, 1 },
 	SearchReportsRemote = { 5, 1 },
 	GetReportRemote = { 6, 2 },
 	SearchAppealsRemote = { 5, 1 },
@@ -1301,6 +1302,19 @@ end)
 -- ---------------------------------------------------------------------------
 -- Announcements section: history + who can be targeted + what you may send.
 -- ---------------------------------------------------------------------------
+-- W23: active polls (as this staff member sees them) + recent results.
+local getPollsRemote = getOrCreate("GetPollsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getPollsRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
+	local PollService = require(script.Parent:WaitForChild("PollService")) :: any
+	local snapshot = PollService.Snapshot(player)
+	snapshot.CanServer = PermissionSystem.Has(player, "server.poll")
+	snapshot.CanGlobal = PermissionSystem.Has(player, "crossserver.poll")
+	return snapshot
+end)
+
 local getAnnouncementsRemote = getOrCreate("GetAnnouncementsRemote", "RemoteFunction") :: RemoteFunction
 bindInvoke(getAnnouncementsRemote, function(player: Player, limit: any)
 	if not isStaff(player) then

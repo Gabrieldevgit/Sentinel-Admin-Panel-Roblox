@@ -63,6 +63,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 local Selection = require(script.Parent:WaitForChild("Selection"))
 local BanPromptSystem = require(script.Parent:WaitForChild("BanPromptSystem"))
 
@@ -559,7 +560,7 @@ function PlayersPage.Build(container: Frame, options: any?)
 	-- A toggle row: label on the left, a small switch on the right. Same
 	-- functional pattern as QuickActionsPanel's toggle cards (plain green/
 	-- red pill visuals — swap once the custom switch design is ready).
-	local function makeToggleRow(parent: Instance, layoutOrder: number, label: string, initialState: boolean, onToggle: (boolean) -> ())
+	local function makeToggleRow(parent: Instance, layoutOrder: number, label: string, initialState: boolean, onToggle: (boolean) -> (), icon: string?)
 		local row = Instance.new("Frame")
 		row.Name = label .. "Toggle"
 		row.LayoutOrder = layoutOrder
@@ -577,7 +578,11 @@ function PlayersPage.Build(container: Frame, options: any?)
 		labelText.TextSize = 13
 		labelText.TextColor3 = Theme.Colors.Text
 		labelText.TextXAlignment = Enum.TextXAlignment.Left
-		labelText.Text = label
+		if icon then
+			Icons.prefix(labelText, icon, label, 15)
+		else
+			labelText.Text = label
+		end
 		labelText.Parent = row
 
 		local switchTrack = Instance.new("Frame")
@@ -699,22 +704,22 @@ function PlayersPage.Build(container: Frame, options: any?)
 		banButton.Name = "BanButton"
 		banButton.TextColor3 = Theme.Colors.Error
 
-		makeToggleRow(togglesFrame, 1, "❄ Freeze", row.IsFrozen, function(newValue: boolean)
+		makeToggleRow(togglesFrame, 1, "Freeze", row.IsFrozen, function(newValue: boolean)
 			runQuickAction((if newValue then "freeze " else "unfreeze ") .. row.Name)
-		end)
-		makeToggleRow(togglesFrame, 2, "🔒 Jail", row.IsJailed, function(newValue: boolean)
+		end, "Freeze")
+		makeToggleRow(togglesFrame, 2, "Jail", row.IsJailed, function(newValue: boolean)
 			runQuickAction((if newValue then "jail " else "unjail ") .. row.Name)
-		end)
-		makeToggleRow(togglesFrame, 3, "🔇 Mute", row.IsMuted, function(newValue: boolean)
+		end, "Lock")
+		makeToggleRow(togglesFrame, 3, "Mute", row.IsMuted, function(newValue: boolean)
 			runQuickAction((if newValue then "mute " else "unmute ") .. row.Name)
 		end)
-		makeToggleRow(togglesFrame, 4, "✨ God Mode", row.IsGod == true, function(newValue: boolean)
+		makeToggleRow(togglesFrame, 4, "God Mode", row.IsGod == true, function(newValue: boolean)
 			runQuickAction((if newValue then "god " else "ungod ") .. row.Name)
 		end)
-		makeToggleRow(togglesFrame, 5, "🕊 Fly", row.IsFlying == true, function(newValue: boolean)
+		makeToggleRow(togglesFrame, 5, "Fly", row.IsFlying == true, function(newValue: boolean)
 			runQuickAction((if newValue then "fly " else "unfly ") .. row.Name)
 		end)
-		makeToggleRow(togglesFrame, 6, "👻 Invisible", row.IsInvisible == true, function(newValue: boolean)
+		makeToggleRow(togglesFrame, 6, "Invisible", row.IsInvisible == true, function(newValue: boolean)
 			runQuickAction((if newValue then "invisible " else "visible ") .. row.Name)
 		end)
 	end
@@ -783,7 +788,7 @@ function PlayersPage.Build(container: Frame, options: any?)
 			return
 		end
 		for i, item in ipairs(items :: { any }) do
-			makeInfoCard(page, i, (if item.Equipped then "🖐 " else "🎒 ") .. item.Name .. (if item.Equipped then " (equipped)" else ""))
+			makeInfoCard(page, i, item.Name .. (if item.Equipped then " (equipped)" else ""))
 		end
 	end
 
@@ -804,7 +809,7 @@ function PlayersPage.Build(container: Frame, options: any?)
 		end)
 		if ok and snapshot then
 			local s = snapshot :: { Coins: number, Gems: number, XP: number, Level: number }
-			makeInfoCard(page, 2, ("🪙 Coins: %d\n💎 Gems: %d\n⭐ XP: %d\n📈 Level: %d"):format(s.Coins, s.Gems, s.XP, s.Level))
+			makeInfoCard(page, 2, ("Coins: %d\nGems: %d\nXP: %d\nLevel: %d"):format(s.Coins, s.Gems, s.XP, s.Level))
 		else
 			makeEmptyLabel(page, 2, "Economy data unavailable (player may have left).")
 		end
@@ -833,7 +838,7 @@ function PlayersPage.Build(container: Frame, options: any?)
 		end
 		for i, entry in ipairs(list) do
 			local timeText = os.date("%m/%d %H:%M:%S", entry.Timestamp)
-			local resultIcon = if entry.Result == "Success" then "✅" elseif entry.Result == "Denied" then "🚫" else "❌"
+			local resultIcon = if entry.Result == "Success" then "OK" elseif entry.Result == "Denied" then "DENIED" else "FAILED"
 			makeInfoCard(
 				page,
 				i,

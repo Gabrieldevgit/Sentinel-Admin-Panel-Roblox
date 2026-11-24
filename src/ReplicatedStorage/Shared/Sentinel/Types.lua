@@ -168,6 +168,7 @@ export type CommandDefinition = {
 	Tags: { string }?,
 	Hidden: boolean?, -- registered but not listed in the palette / Commands page
 	Cancellable: boolean?, -- uses ctx.Track; ;cancel stops it
+	DefaultSelf: boolean?, -- RequiresTarget command with no target typed = the executor
 	-- Undo: either the name of the command that reverses this one (run with
 	-- the same targets, modifier and arguments), or a function that undoes
 	-- it from the result's UndoData.

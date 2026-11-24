@@ -374,7 +374,16 @@ function ServerPage.Build(container: Frame)
 			else "Public"
 		infoValues.Location.Text = if info.Location then tostring(info.Location) else "Not available"
 		infoValues.Events.Text = if type(info.Events) == "table" and #info.Events > 0 then table.concat(info.Events, ", ") else "None"
-		infoValues.Polls.Text = if type(info.Polls) == "table" and #info.Polls > 0 then table.concat(info.Polls, ", ") else "None"
+		-- W23: { Id, Question, Scope, Votes, EndsAt } per active poll.
+		local pollNames = {}
+		for _, p in ipairs(if type(info.Polls) == "table" then info.Polls else {}) do
+			if type(p) == "table" then
+				table.insert(pollNames, ("%s (%d vote%s)"):format(tostring(p.Question), tonumber(p.Votes) or 0, if p.Votes == 1 then "" else "s"))
+			else
+				table.insert(pollNames, tostring(p))
+			end
+		end
+		infoValues.Polls.Text = if #pollNames > 0 then table.concat(pollNames, ", ") else "None"
 		jobIdBox.Text = "JobId: " .. tostring(info.Id or "-")
 	end
 

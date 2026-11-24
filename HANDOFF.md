@@ -4,11 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-22 (W17-W22 live test) - **W22 committed**
-(`11c0736`). Live 2-server test of W17-W22 done on the published place
-(v201+); fixes from it (slow-join UI, gbring full server, gban name:dur,
-;global confirm) are **published, not committed**. Next: commit, then
-**W23 Polls** (W16 still skipped by the user). Start with §6._
+_Last updated: 2026-11-23 (command bar scroll) - W23 Polls, UI fixes
+and the scrollable command-bar log are **committed and pushed** (not
+published to Roblox yet). Next: publish + live 2-server test of global
+polls, then **W24 Events** (W16 still skipped by the user). Start with §6._
 
 ---
 
@@ -132,7 +131,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases, 102 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls, 135 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -746,6 +745,84 @@ Control" UI, all driven by one command grammar
   - ServerPage: Server Info card, Join Rules (whitelist toggle, message box
     used by Lock / Maintenance / kicks, soft cap row), Server Actions (Kick
     non-staff, Kick all, Restart 30s, Shutdown 30s). Paths in its header.
+- **Control + createserver (2026-11-22, from the HD Admin gap list):**
+  - `Systems/ControlService` + `Commands/Player/Control.lua`: `;control
+    <player>` (possess; node `player.control`, high risk, rank
+    protection, Inverse `uncontrol`) gives the controller network ownership
+    of the target's root assembly, anchors the controller's root, sets
+    attributes `SentinelControlledBy` / `SentinelControlling`; client
+    (init.client "ControlRemote") points the camera at the target and calls
+    `targetHumanoid:Move(ControlModule:GetMoveVector(), true)` every frame +
+    Jump on JumpRequest; target's controls are disabled. Ends on
+    `;uncontrol [player]`, death, respawn, leaving. Only the controller can
+    end it through the remote. `ControlService.Validate` is pure (spec).
+  - New def option `DefaultSelf = true`: a RequiresTarget command with no
+    target typed runs on the executor (CommandProcessor Process + Preview).
+  - `;createserver [players]` (newserver, reserveserver; node
+    `crossserver.create`, medium risk, DefaultSelf) =
+    `CrossServerService.CreateServer`: ReserveServer + TeleportAsync with
+    the access code; code stored in MemoryStore sorted map
+    `SentinelReserved_v1` (key PrivateServerId, 24 h). Reserved servers
+    report `Res` = their PrivateServerId in the registry record, so
+    `;joinserver` / `;follow` can join them (other private servers still
+    refused). `;servers` flags them "created". The CrossServer `register`
+    helper now keeps an explicit `RequiresTarget = true`.
+- **W23 Polls:**
+  - `Systems/PollService`: polls with 2-8 options, question <= 120 /
+    option <= 40 chars (one TextFilterService call for all), max 3
+    active. `ParseSpec(words)`: leading `time=10s-1h|none` (default 60),
+    `change=on|off`, `results=live|end`, `announce=on|off`, then
+    `question | a | b` (no options = Yes | No). Status active / closing /
+    ended / cancelled; timer on the origin; results banner via
+    `AnnouncementService.Show` (Title "Poll results"); history newest
+    first (100) in DataStore `Sentinel_Polls_v1` key `History` (origin
+    only, flushed 10 s / close). Pure helpers `ApplyVote`, `Totals`,
+    `Sum` (Poll.spec).
+  - Global polls: the creating server is the origin. Kinds `polls`
+    (start), `pollc` (a server's own counts, **Quiet**, every 2 s while
+    they change), `pollz` (close: send final counts), `polle` (final
+    result), `pollreq` (end / cancel asked on another server). Each server
+    stores only its own players' votes; totals = own + latest of others.
+    New `CrossServerNode` send option `Quiet = true` (no ack, no operation
+    record - keeps the Operations tab clean). `CrossServerService.
+    SetPollProvider` fills `LocalInfo().Polls` = `{Id, Question, Scope,
+    Votes, EndsAt}` (Server page info card shows them).
+  - Remote `PollRemote` (server -> client "state"/"remove"/"result";
+    client -> server "vote"/"sync", rate limited 6 / 2 per s). Views hide
+    counts from players while `results=end` (staff always see them).
+    `GetPollsRemote` (UIBridge, staff) = `{Active, History, CanServer,
+    CanGlobal}`.
+  - Commands (`Commands/Server/Polls.lua`, category Server / Polls):
+    `;poll` (createpoll, startpoll; node `server.poll`), `;gpoll`
+    (globalpoll; `crossserver.poll`), `;vote [id] <n|name prefix>`
+    (Public), `;endpoll [id]` (closepoll, stoppoll), `;cancelpoll [id]`,
+    `;polls [history]` (panel.open). Admin gets `server.poll` through
+    `server.*`, SuperAdmin `crossserver.poll` through `crossserver.*`.
+  - Client: poll card in `AnnouncementBanner` (right-hand stack,
+    `Cards.Poll_<id>.Card.Body.Options.Option_<n>`): click to vote, live
+    bars, time left, winner in green, closes 12 s after the end.
+    `PollsPage.lua` = Announcements > **Polls** (page id `Polls` in
+    `UIPrefs.PAGE_IDS`; paths in its header; the active list is
+    `Body.ActivePolls` - a child named `Active` would shadow the
+    GuiObject property).
+- **Command bar output scrolls (2026-11-23, 2nd pass):** the log is a
+  ScrollingFrame (`SentinelCommandBar.Window.Log`): it grows to
+  `MaxLines` visible lines, keeps 200 lines (`LOG_BUFFER`), scrolls with
+  the mouse wheel / drag and with PageUp / PageDown while typing, and
+  sticks to the bottom on new output unless the player scrolled up. This
+  is what the user meant by "scroll up/down" (the Up/Down history fix
+  below was not enough).
+- **UI fixes (2026-11-23):** command bar Up/Down walks history even after
+  a recalled line (the deferred Text-changed signal used to re-open the
+  suggestion popup: `setText` now remembers the text it set instead of a
+  suppress flag) and history is seeded from the saved Recent list (retried
+  - `GetCommandLibraryRemote` is rate limited 4/s). Emojis replaced with
+  icons / plain text on Quick Actions, Developer tabs and Players page
+  toggles (Icons slots `QuickActionsHeader`, `Dev*`). Page switches slide
+  horizontally by navigation order (`Theme.Motion.Page`, Quint 0.38 s,
+  old page slides out). The panel is **pre-built hidden after join** for
+  staff (welcome flow), so F6 opens instantly; `buildUI(openAfter)` is
+  guarded against double builds.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -846,6 +923,26 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **W23 not verified live:** global polls were only run on one Studio
+  server (origin path, `;gpoll`, change=off, cancel). Needs the 2-server
+  test: votes summed across servers, `;endpoll` from a non-origin server
+  (`pollreq`), final counts after `pollz`. "Global polls" stays unchecked
+  in the blueprint. Known limit: a player who moves servers during a
+  global poll can vote once per server. The poll card shares the
+  right-hand stack with PM / approval cards and can sit over toasts.
+- HD Admin (`Workspace.HD Admin`) is now in the testing place too (user's
+  comparison panel; its "Info" toast appears on join).
+
+- **`;control` / `;createserver` live test (2026-11-22, main + alt):**
+  `;control gabrielgaming_offv1` -> the alt walked from the main's input
+  and its own controls were blocked (user confirmed); `;uncontrol` ->
+  "Stopped controlling". `;createserver me,gabrielgaming_offv1` -> both
+  arrived together in a new reserved server. Also seen live: the slow-join
+  fix ("SentinelUI hasn't arrived after 15 s - still waiting").
+  Not checked yet: `;servers` showing the created server as "created",
+  `;joinserver` / `;follow` into it from another server, control ending on
+  death / respawn. Tests 129/129.
 
 - **W21 gaps deferred (decided 2026-11-22):** cross-server analytics goes
   with W16 (one metrics store for both); the global event activation hook
@@ -1071,6 +1168,11 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-23, committed + pushed** (see git log): W23 polls, command bar history, emoji
+  clean-up, page transitions, instant panel open (all verified in Play),
+  plus the earlier uncommitted live-test fixes, `;control`,
+  `;createserver`. Tests **135/135** (Edit). Next row: **W24 Events**.
+
 - **W22 server management** committed (`11c0736`). Live-test fixes in
   `init.client.lua` and `Commands/CrossServer/CrossServer.lua` are
   published but **not committed**. Unit tests **127/127** (Edit).
@@ -1091,9 +1193,9 @@ Rules that keep it sound:
   (W17-W21) was built out of order** on 2026-11-16 because the user asked
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
-- **Schedule position:** W15 done; W16 skipped for now (user); W17-W21
-  built earlier; W22 built (live test pending); next after the live test
-  is **W23 - Polls**. About 8 weekends
+- **Schedule position:** W15 done; W16 skipped for now (user); W17-W22
+  done (live-tested); W23 Polls built 2026-11-23; next is **W24 -
+  Events**. About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -1103,7 +1205,7 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **350 bullets ✅** (live test +13: find player
+- Feature blueprint: **363 bullets ✅** (W23 +13: 12 poll bullets + active polls) (live test +13: find player
   across servers, shared punishment DB, punishment sync, restart/migrate,
   kick all, whitelist on/off, capacity, countdown, global shutdown, update
   countdown, graceful migration, global kick; W22 +12: server JobId, uptime,
@@ -1171,6 +1273,32 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-23 (command bar scroll)** - User: still can't scroll the
+  command bar. The output log was a plain Frame that dropped old lines;
+  made it a scrollable log (wheel, PageUp/PageDown, 200-line buffer,
+  sticks to bottom). Verified in Play (17 lines, 6 visible, wheel and
+  PageUp/Down). Tests 135/135. Committed and pushed everything on the
+  user's request (W23 + UI fixes + earlier control/createserver/live-test
+  fixes). Not yet published to Roblox.
+
+- **2026-11-23 (UI fixes + W23 polls)** - User asked: command bar Up/Down
+  history, no emojis in Quick Actions / Developer, a more dynamic page
+  transition, no delay opening Sentinel, then the next W row (W16 still
+  skipped). Fixed history (deferred signal bug + seed from saved Recent),
+  replaced emojis, direction-aware slide transition, pre-built panel.
+  Built W23 (PollService, Polls.lua, poll card, Polls page, Quiet
+  cross-server sends, Poll.spec). Verified in Play: card vote by mouse,
+  `;vote` change, change=off, form Start by mouse/keyboard, timer end +
+  results banner, End / Cancel, global poll on one server, Server info
+  card. Fixed: ServerPage concat on poll tables. Blueprint +13 ✅. Not
+  committed.
+
+- **2026-11-22 (control + createserver)** - Committed the HD Admin gap doc
+  (`95226b5`). Built `;control` / `;uncontrol` (ControlService) and
+  `;createserver` (reserved server + joinable by id), `DefaultSelf` def
+  option, Control.spec (129/129); published; verified live with the alt
+  (see §5). Not committed.
 
 - **2026-11-22 (W17-W22 live test)** - Committed + pushed W22
   (`11c0736`). Set max visitors via Creator Hub by desktop control, ran the

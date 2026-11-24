@@ -186,6 +186,9 @@ local function buildRecord(): any
 		Locked = ServerStateService.IsLocked(),
 		Maint = ServerStateService.IsMaintenanceMode(),
 		Priv = game.PrivateServerId ~= "",
+		-- A reserved server made by ;createserver can be joined by id: its
+		-- PrivateServerId keys the access code in SentinelReserved_v1.
+		Res = if game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0 then game.PrivateServerId else nil,
 		Studio = studio or nil,
 		P = list,
 	}
@@ -194,8 +197,10 @@ end
 --[[
 	W22: everything the Server page / ;serverinfo show about THIS server.
 	Location: Roblox has no server-region API, so it stays nil. Events and
-	polls are empty lists until W23 / W24 add those services.
+	polls: active polls from PollService (W23); events stay empty until W24.
 --]]
+local pollProvider: (() -> { any })? = nil
+
 function CrossServerService.LocalInfo(): any
 	local record = buildRecord()
 	record.P = nil
@@ -211,8 +216,14 @@ function CrossServerService.LocalInfo(): any
 	record.Owner = if game.PrivateServerOwnerId ~= 0 then game.PrivateServerOwnerId else nil
 	record.Location = nil
 	record.Events = {}
-	record.Polls = {}
+	record.Polls = if pollProvider then pollProvider() else {}
 	return record
+end
+
+-- W23: PollService hands over its active-poll summaries (Systems can't
+-- require each other in a cycle).
+function CrossServerService.SetPollProvider(fn: () -> { any })
+	pollProvider = fn
 end
 
 local function writeHeartbeat()
@@ -403,7 +414,7 @@ end
 -- Handlers get (payload, envelope); envelope.a = { u, n, p } is the staff
 -- member who started it, envelope.f the origin server. Every handled action
 -- that came from ANOTHER server is written to this server's log.
-local QUIET_KINDS = { chat = true, ping = true, notify = true }
+local QUIET_KINDS = { chat = true, ping = true, notify = true, pollc = true, pollreq = true }
 
 function CrossServerService.Handle(kind: string, fn: (any, any) -> (boolean, number?, string?))
 	node:Handle(kind, function(payload: any, envelope: any)
@@ -509,7 +520,7 @@ function CrossServerService.Send(kind: string, payload: any, options: { [string]
 	if not live then
 		return nil, "Cross-server messaging is only available in a running game."
 	end
-	if not opts.To then
+	if not opts.To and not opts.Quiet then
 		-- make sure the expectation list is reasonably fresh for broadcasts
 		CrossServerService.ListServers()
 	end
@@ -715,19 +726,79 @@ function CrossServerService.CanTeleport(): (boolean, string?)
 	return true, nil
 end
 
+-- ---------------------------------------------------------------------------
+-- ;createserver: reserved servers staff create and can join later by id.
+-- Access codes live in the MemoryStore sorted map SentinelReserved_v1
+-- (key = PrivateServerId, 24 h), never sent to clients.
+-- ---------------------------------------------------------------------------
+local RESERVED_MAP = "SentinelReserved_v1"
+local RESERVED_EXPIRY = 24 * 3600
+local reservedMap = if live then MemoryStoreService:GetSortedMap(RESERVED_MAP) else nil
+
+local function reservedCode(privateServerId: string): string?
+	if not reservedMap then
+		return nil
+	end
+	local ok, value = pcall(function()
+		return (reservedMap :: MemoryStoreSortedMap):GetAsync(privateServerId)
+	end)
+	return if ok and type(value) == "table" and type(value.Code) == "string" then value.Code else nil
+end
+
+function CrossServerService.CreateServer(players: { Player }, actor: Player): (boolean, string, string?)
+	local can, why = CrossServerService.CanTeleport()
+	if not can then
+		return false, why :: string, nil
+	end
+	if #players == 0 then
+		return false, "Nobody to send.", nil
+	end
+	local okReserve, code, privateServerId = pcall(function()
+		return TeleportService:ReserveServer(game.PlaceId)
+	end)
+	if not okReserve or type(code) ~= "string" then
+		return false, "Could not reserve a server: " .. tostring(code), nil
+	end
+	if reservedMap then
+		pcall(function()
+			(reservedMap :: MemoryStoreSortedMap):SetAsync(privateServerId, {
+				Code = code,
+				By = actor.Name,
+				ById = actor.UserId,
+				At = os.time(),
+			}, RESERVED_EXPIRY)
+		end)
+	end
+	local options = Instance.new("TeleportOptions")
+	options.ReservedServerAccessCode = code
+	options:SetTeleportData({ SentinelCreated = true })
+	local okTeleport, err = pcall(function()
+		TeleportService:TeleportAsync(game.PlaceId, players, options)
+	end)
+	if not okTeleport then
+		return false, "Teleport failed: " .. tostring(err), privateServerId
+	end
+	return true, ("Created a new server; teleporting %d player(s). Staff can join it with ;joinserver once it shows in ;servers."):format(#players), privateServerId
+end
+
 function CrossServerService.TeleportToServer(players: { Player }, record: any): (boolean, string)
 	local can, why = CrossServerService.CanTeleport()
 	if not can then
 		return false, why :: string
 	end
-	if record.Priv then
-		return false, "Private and reserved servers can't be joined by id."
-	end
 	if record.Studio then
 		return false, "That entry is a Studio session, not a live server."
 	end
 	local options = Instance.new("TeleportOptions")
-	options.ServerInstanceId = record.Id
+	if record.Priv then
+		local code = if type(record.Res) == "string" then reservedCode(record.Res) else nil
+		if not code then
+			return false, "Private and reserved servers can't be joined by id (only servers made with ;createserver)."
+		end
+		options.ReservedServerAccessCode = code
+	else
+		options.ServerInstanceId = record.Id
+	end
 	local ok, err = pcall(function()
 		TeleportService:TeleportAsync(record.Place or game.PlaceId, players, options)
 	end)

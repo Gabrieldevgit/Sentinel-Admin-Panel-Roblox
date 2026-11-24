@@ -188,7 +188,7 @@ local function register(def: any)
 	def.Aliases = def.Aliases or {}
 	def.Log = def.Log ~= false
 	def.Undoable = false
-	def.RequiresTarget = false
+	def.RequiresTarget = def.RequiresTarget == true -- only ;createserver takes the target grammar
 	CommandRegistry.Register(def)
 end
 
@@ -229,7 +229,9 @@ register({
 			if s.Maint then
 				table.insert(flags, "maintenance")
 			end
-			if s.Priv then
+			if s.Res then
+				table.insert(flags, "created")
+			elseif s.Priv then
 				table.insert(flags, "private")
 			end
 			table.insert(lines, ("%s  %d/%d players  %d staff  %s (fps %d, ping %d)  up %s  v%s%s"):format(
@@ -615,6 +617,25 @@ register({
 			Status = "complete",
 		})
 		return { Success = true, Message = ("Warned %s while offline (%d warning(s) on record)."):format(user.Name, count) }
+	end,
+})
+
+register({
+	Name = "createserver",
+	Aliases = { "newserver", "reserveserver" },
+	Description = "Reserves a brand-new server and teleports the players there (default: you). Staff can join it later with ;joinserver or ;follow.",
+	Usage = "/createserver [players]",
+	ArgHints = { players = { Type = "players", Description = "Who goes to the new server (default: you)" } },
+	Permission = "crossserver.create",
+	Subcategory = "Servers",
+	Risk = "medium",
+	Cooldown = 10,
+	RequiresTarget = true,
+	DefaultSelf = true,
+	Examples = { "createserver", "createserver me,Player1", "createserver @staff" },
+	Execute = function(ctx: Ctx): Result
+		local ok, message = CrossServerService.CreateServer(ctx.Targets, ctx.Executor)
+		return { Success = ok, Message = message }
 	end,
 })
 

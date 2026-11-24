@@ -323,7 +323,7 @@ end
 UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Announcements", "Insights" }
 UIPrefs.PAGE_IDS = {
 	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "Ranks", "Commands", "Library", "Server", "CrossServer",
-	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers",
+	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers", "Polls",
 	"Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Sounds", "Administration", "Notifications",
 }
 UIPrefs.MAX_PINNED = 8
@@ -378,7 +378,7 @@ UIPrefs.SPEC = {
 		Width = number(0.4, 1, 0.1, "Width, as a share of the screen"),
 		Opacity = number(0.4, 1, 0.1, "How solid the background is"),
 		FontSize = number(12, 20, 1, "Text size", true),
-		MaxLines = number(2, 14, 1, "Output lines kept on screen", true),
+		MaxLines = number(2, 14, 1, "Output lines visible (scroll for older ones)", true),
 		Rows = number(4, 12, 1, "Suggestions shown at once", true),
 		Key = choice({ "F2", "F4", "Semicolon", "Quote", "Backquote", "BackSlash" }, "Key that opens the command bar"),
 	},

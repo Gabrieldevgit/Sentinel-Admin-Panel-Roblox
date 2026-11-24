@@ -59,6 +59,7 @@ Theme.Motion = {
 	Fast = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 	Normal = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 	Spring = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	Page = TweenInfo.new(0.38, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
 -- ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@ local BASE_MOTION = {
 	Fast = { 0.15, Enum.EasingStyle.Quad },
 	Normal = { 0.2, Enum.EasingStyle.Quad },
 	Spring = { 0.3, Enum.EasingStyle.Back },
+	Page = { 0.38, Enum.EasingStyle.Quint },
 }
 
 local FONT_KEYS = { "Regular", "Medium", "Bold", "Black" }

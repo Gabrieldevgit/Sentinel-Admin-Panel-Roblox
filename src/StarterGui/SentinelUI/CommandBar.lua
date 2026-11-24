@@ -60,8 +60,13 @@ local isOpen = false
 
 -- Output and history survive rebuilds.
 local logLines: { { Text: string, Color: Color3? } } = {}
+local LOG_BUFFER = 200
 local history: { string } = {}
 local historyIndex = 0
+-- True while Up / Down walk the history: the recalled line's suggestion
+-- popup stays hidden so the next arrow keeps walking. Typing ends it.
+local browsingHistory = false
+local historySeeded = false
 local pendingResults = 0
 
 -- Built by build()
@@ -71,6 +76,7 @@ local inputBox: TextBox? = nil
 local renderLog: (() -> ())? = nil
 local refresh: (() -> ())? = nil
 local handleKey: ((Enum.KeyCode) -> boolean)? = nil
+local scrollLog: ((number) -> ())? = nil
 
 -- ---------------------------------------------------------------------------
 -- Data (own small caches; the bar may exist without the palette)
@@ -198,8 +204,9 @@ function CommandBar.Print(text: string, color: Color3?)
 	for line in (text .. "\n"):gmatch("(.-)\n") do
 		table.insert(logLines, { Text = line, Color = color })
 	end
-	local max = prefs.CommandBar.MaxLines
-	while #logLines > max do
+	-- MaxLines is how many lines are visible; older output stays in the
+	-- log (scroll up with the mouse wheel or PageUp) up to LOG_BUFFER lines.
+	while #logLines > LOG_BUFFER do
 		table.remove(logLines, 1)
 	end
 	if renderLog then
@@ -245,12 +252,21 @@ local function build()
 	winLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	winLayout.Parent = win
 
-	local log = Instance.new("Frame")
+	-- Output log: scrollable (mouse wheel / drag, PageUp / PageDown while
+	-- typing). Grows with the output up to MaxLines lines, then scrolls.
+	-- New output keeps it at the bottom unless the player scrolled up.
+	local log = Instance.new("ScrollingFrame")
 	log.Name = "Log"
 	log.LayoutOrder = 1
 	log.BackgroundTransparency = 1
+	log.BorderSizePixel = 0
 	log.Size = UDim2.new(1, 0, 0, 0)
-	log.AutomaticSize = Enum.AutomaticSize.Y
+	log.CanvasSize = UDim2.new()
+	log.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	log.ScrollingDirection = Enum.ScrollingDirection.Y
+	log.ScrollBarThickness = 4
+	log.ScrollBarImageColor3 = P.Muted
+	log.ScrollBarImageTransparency = 0.3
 	log.Parent = win
 	local logLayout = Instance.new("UIListLayout")
 	logLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -260,6 +276,29 @@ local function build()
 	logPad.PaddingRight = UDim.new(0, 12)
 	logPad.PaddingTop = UDim.new(0, 6)
 	logPad.Parent = log
+
+	local maxLogHeight = bar.MaxLines * lineHeight + 6
+	local stickToBottom = true
+	local function scrollToBottom()
+		log.CanvasPosition = Vector2.new(0, math.max(0, log.AbsoluteCanvasSize.Y - log.AbsoluteWindowSize.Y))
+	end
+	local function fitLog()
+		local content = logLayout.AbsoluteContentSize.Y + 6
+		log.Size = UDim2.new(1, 0, 0, if #logLines == 0 then 0 else math.min(content, maxLogHeight))
+		if stickToBottom then
+			task.defer(scrollToBottom) -- after the canvas size updates
+		end
+	end
+	logLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(fitLog)
+	log:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+		local bottom = log.AbsoluteCanvasSize.Y - log.AbsoluteWindowSize.Y
+		stickToBottom = log.CanvasPosition.Y >= bottom - 4
+	end)
+	scrollLog = function(pages: number)
+		local step = math.max(lineHeight, log.AbsoluteWindowSize.Y - lineHeight)
+		local bottom = math.max(0, log.AbsoluteCanvasSize.Y - log.AbsoluteWindowSize.Y)
+		log.CanvasPosition = Vector2.new(0, math.clamp(log.CanvasPosition.Y + pages * step, 0, bottom))
+	end
 
 	local inputLine = Instance.new("Frame")
 	inputLine.Name = "InputLine"
@@ -367,12 +406,17 @@ local function build()
 	local analysis: any = nil
 	local suggestions: { any } = {}
 	local selected = 1
-	local suppress = false
+	-- Text we set from code. With deferred signals the Changed handler runs
+	-- after setText returns, so a flag would already be cleared: compare
+	-- the text instead.
+	local setByCode: string? = nil
 
 	local function setText(text: string)
-		suppress = true
+		if box.Text == text then
+			return
+		end
+		setByCode = text
 		box.Text = text
-		suppress = false
 	end
 
 	renderLog = function()
@@ -397,6 +441,7 @@ local function build()
 			l.Text = line.Text
 			l.Parent = log
 		end
+		fitLog()
 	end
 	renderLog()
 
@@ -558,14 +603,19 @@ local function build()
 	end
 
 	box:GetPropertyChangedSignal("Text"):Connect(function()
-		if suppress then
-			return
+		if setByCode ~= nil then
+			local mine = box.Text == setByCode
+			setByCode = nil
+			if mine then
+				return
+			end
 		end
 		if box.Text:find("\t", 1, true) then
 			setText((box.Text:gsub("\t", "")))
 			return
 		end
 		selected = 1
+		browsingHistory = false
 		if refresh then
 			refresh()
 		end
@@ -590,20 +640,27 @@ local function build()
 		elseif key == Enum.KeyCode.Tab then
 			accept(nil)
 			return true
+		elseif (key == Enum.KeyCode.PageUp or key == Enum.KeyCode.PageDown) and scrollLog then
+			scrollLog(if key == Enum.KeyCode.PageUp then -1 else 1)
+			return true
 		elseif key == Enum.KeyCode.Up or key == Enum.KeyCode.Down then
 			local down = key == Enum.KeyCode.Down
-			if popup.Visible and #suggestions > 1 then
+			-- History when the line is empty or already a recalled line;
+			-- otherwise the arrows move through the suggestions.
+			local walkHistory = browsingHistory or box.Text:gsub("%s", "") == "" or not popup.Visible or #suggestions <= 1
+			if not walkHistory then
 				selected = if down then (selected % #suggestions) + 1 else ((selected - 2) % #suggestions) + 1
 				renderPopup()
 			elseif #history > 0 then
 				historyIndex = math.clamp(historyIndex + (if down then 1 else -1), 1, #history + 1)
 				setText(history[historyIndex] or "")
+				browsingHistory = historyIndex <= #history
+				suggestions = {}
+				popup.Visible = false
+				box.TextColor3 = P.Text
 				task.defer(function()
 					box.CursorPosition = #box.Text + 1
 				end)
-				if refresh then
-					refresh()
-				end
 			end
 			return true
 		end
@@ -614,6 +671,56 @@ end
 -- ---------------------------------------------------------------------------
 -- Open / close
 -- ---------------------------------------------------------------------------
+
+-- Seed the history once from the persisted "Recent" list (newest first), so
+-- Up recalls commands from earlier sessions too.
+local function seedHistory()
+	if historySeeded then
+		return
+	end
+	local remote = SentinelShared:FindFirstChild("GetCommandLibraryRemote") :: RemoteFunction?
+	if not remote then
+		return
+	end
+	-- The remote is rate limited (the panel's pages ask for it at the same
+	-- moment right after join), so retry a few times.
+	local lib: any = nil
+	for attempt = 1, 4 do
+		local ok, result = pcall(function()
+			return remote:InvokeServer()
+		end)
+		if ok and type(result) == "table" then
+			lib = result
+			break
+		end
+		task.wait(1.5)
+	end
+	if historySeeded or type(lib) ~= "table" or type(lib.Recent) ~= "table" then
+		return
+	end
+	historySeeded = true
+	local older = {}
+	for i = math.min(#lib.Recent, 50), 1, -1 do
+		local line = lib.Recent[i]
+		if type(line) == "string" and not table.find(history, line) then
+			table.insert(older, line)
+		end
+	end
+	for i = #older, 1, -1 do
+		table.insert(history, 1, older[i])
+	end
+	local dropped = 0
+	while #history > 50 do
+		table.remove(history, 1)
+		dropped += 1
+	end
+	if browsingHistory then
+		-- Keep pointing at the line being shown.
+		historyIndex = math.clamp(historyIndex + #older - dropped, 1, #history + 1)
+	else
+		historyIndex = #history + 1
+	end
+end
 function CommandBar.IsOpen(): boolean
 	return isOpen
 end
@@ -636,6 +743,7 @@ function CommandBar.Open(initialText: string?, keepText: boolean?)
 	task.spawn(function()
 		fetchCommands()
 		fetchAutocomplete()
+		task.spawn(seedHistory)
 		if #logLines == 0 then
 			CommandBar.Print("Use the help command to see all available commands. Tab completes, Esc closes.", palette().Muted)
 		end

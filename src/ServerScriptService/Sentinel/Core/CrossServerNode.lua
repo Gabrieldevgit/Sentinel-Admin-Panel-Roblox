@@ -339,6 +339,27 @@ function Node:Send(kind: string, payload: any, options: { [string]: any }?): (an
 		return nil, ("message too large (%d of %d bytes)"):format(#text, Node.MAX_BYTES)
 	end
 
+	-- Quiet = frequent background sync (poll tallies): no acknowledgement
+	-- and no operation record, so the Operations list stays readable.
+	if opts.Quiet then
+		envelope.x = true
+		text = HttpService:JSONEncode(envelope)
+		self.Stats.Sent += 1
+		if opts.To == self.Id then
+			self.Seen[self.Id .. "|" .. id] = self.Now()
+			self.Spawn(function()
+				self:_handle(envelope)
+			end)
+		else
+			local sent, err = self.Transport.Publish(if opts.To then Node.DirectTopic(opts.To) else Node.TOPIC_ALL, text)
+			if not sent then
+				self.Stats.Errors += 1
+				return nil, tostring(err)
+			end
+		end
+		return { Id = id, Kind = kind, Status = "sent" }, nil
+	end
+
 	local expected: { string } = {}
 	if opts.To then
 		expected = { opts.To }

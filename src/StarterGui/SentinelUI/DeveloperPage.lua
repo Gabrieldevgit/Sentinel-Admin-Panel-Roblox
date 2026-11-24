@@ -3,19 +3,21 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
+local Icons = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
 
 local DeveloperPage = {}
 
 type TabDef = {
 	Id: string,
 	Label: string,
+	Icon: string,
 }
 
 local TABS: { TabDef } = {
-	{ Id = "Performance", Label = "📊 Performance" },
-	{ Id = "Console", Label = "📋 Console" },
-	{ Id = "Remotes", Label = "📡 Remotes" },
-	{ Id = "DataStores", Label = "💾 DataStores" },
+	{ Id = "Performance", Label = "Performance", Icon = "DevPerformance" },
+	{ Id = "Console", Label = "Console", Icon = "DevConsole" },
+	{ Id = "Remotes", Label = "Remotes", Icon = "DevRemotes" },
+	{ Id = "DataStores", Label = "DataStores", Icon = "DevDataStores" },
 }
 
 function DeveloperPage.Build(container: Frame)
@@ -602,7 +604,7 @@ function DeveloperPage.Build(container: Frame)
 		note.TextSize = 11
 		note.TextColor3 = Theme.Colors.TextSecondary
 		note.TextXAlignment = Enum.TextXAlignment.Left
-		note.Text = "⚠ DataStore commands are Owner-only. Results appear via CommandResultRemote."
+		note.Text = "DataStore commands are Owner-only. Results appear via CommandResultRemote."
 		note.Parent = scroll
 
 		-- Listen for results
@@ -663,7 +665,7 @@ function DeveloperPage.Build(container: Frame)
 		button.Font = Theme.Font.Medium
 		button.TextSize = 13
 		button.TextColor3 = if tabDef.Id == activeTabId then Theme.Colors.Text else Theme.Colors.TextSecondary
-		button.Text = tabDef.Label
+		Icons.prefix(button, tabDef.Icon, tabDef.Label, 15)
 		button.Parent = tabBar
 		Theme.corner(button, Theme.Radius.S)
 		button.MouseButton1Click:Connect(function()

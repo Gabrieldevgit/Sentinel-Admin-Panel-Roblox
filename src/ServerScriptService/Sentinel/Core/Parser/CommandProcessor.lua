@@ -141,7 +141,12 @@ function CommandProcessor.Process(executor: Player, rawInput: string, options: {
 		local ctxModifier: string? = nil
 
 		if def.RequiresTarget then
-			targets = TargetResolver.Resolve(executor, current.TargetSelectors)
+			-- def.DefaultSelf: no target typed = the executor (e.g. ;uncontrol).
+			if def.DefaultSelf and #current.TargetSelectors == 0 then
+				targets = { executor }
+			else
+				targets = TargetResolver.Resolve(executor, current.TargetSelectors)
+			end
 			ctxArguments = current.Arguments
 			ctxModifier = current.Modifier
 		end
@@ -260,7 +265,11 @@ function CommandProcessor.Preview(executor: Player, rawInput: string): { any }
 
 		local targets: { Player } = {}
 		if def.RequiresTarget then
-			targets = TargetResolver.Resolve(executor, current.TargetSelectors, nil, true)
+			if def.DefaultSelf and #current.TargetSelectors == 0 then
+				targets = { executor }
+			else
+				targets = TargetResolver.Resolve(executor, current.TargetSelectors, nil, true)
+			end
 			if #targets == 0 then
 				entry.Problem = entry.Problem or "No matching players"
 			elseif targetFilter and def.TargetProtection ~= false then

@@ -802,6 +802,207 @@ local function showApproval(payload: any)
 end
 
 -- ---------------------------------------------------------------------------
+-- Polls (W23): a live card per poll. Click an option to vote; bars show
+-- the results (when the poll shows them live), the footer the time left.
+-- ---------------------------------------------------------------------------
+local pollRemote: RemoteEvent? = nil
+local pollCards: { [string]: { Update: (any) -> (), Close: () -> (), Result: (boolean, string) -> () } } = {}
+local dismissedPolls: { [string]: boolean } = {}
+local POLL_COLOR = Color3.fromRGB(167, 139, 250)
+
+local function clockText(seconds: number): string
+	seconds = math.max(0, math.floor(seconds))
+	return ("%d:%02d"):format(seconds // 60, seconds % 60)
+end
+
+local function showPoll(view: any)
+	local id = tostring(view.Id)
+	local existing = pollCards[id]
+	if existing then
+		existing.Update(view)
+		return
+	end
+	if dismissedPolls[id] or view.Status == "cancelled" or view.Status == "ended" then
+		return -- don't pop a card for a poll that is already over
+	end
+	local accent = POLL_COLOR
+	local card, body, closeCard = baseCard("Poll_" .. id, accent, false)
+	local _, closeButton = personHeader(body, view.Author, accent, if view.Scope == "global" then "Global poll" else "Poll", "Staff")
+	text(body, "Question", tostring(view.Question), 16, Theme.Font.Bold, Theme.Colors.Text, 2)
+	local optionsFrame = new("Frame", { Name = "Options", LayoutOrder = 3, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, body)
+	list(optionsFrame, { Padding = UDim.new(0, 6) })
+	local status = text(body, "Status", "", 12, Theme.Font.Medium, Theme.Colors.TextSecondary, 4)
+	local footer = text(body, "Footer", "", 12, Theme.Font.Regular, Theme.Colors.TextSecondary, 5)
+	local timer = timerLine(card, accent)
+
+	local current = view
+	local rows: { { Button: TextButton, Fill: Frame, Value: TextLabel, Stroke: UIStroke } } = {}
+	for k, option in ipairs(view.Options or {}) do
+		local button = new("TextButton", {
+			Name = "Option_" .. k,
+			LayoutOrder = k,
+			Size = UDim2.new(1, 0, 0, 36),
+			BackgroundColor3 = Theme.Colors.SurfaceRaised,
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
+			Text = "",
+		}, optionsFrame) :: TextButton
+		Theme.corner(button, Theme.Radius.S)
+		local stroke = new("UIStroke", { Color = accent, Thickness = 1.5, Transparency = 1, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, button)
+		local fill = new("Frame", { Name = "Fill", Size = UDim2.new(0, 0, 1, 0), BackgroundColor3 = accent, BackgroundTransparency = 0.72, BorderSizePixel = 0 }, button)
+		Theme.corner(fill, Theme.Radius.S)
+		new("TextLabel", {
+			Name = "Label",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(12, 0),
+			Size = UDim2.new(1, -96, 1, 0),
+			Font = Theme.Font.Medium,
+			TextSize = 14,
+			TextColor3 = Theme.Colors.Text,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = ("%d.  %s"):format(k, tostring(option)),
+			ZIndex = 2,
+		}, button)
+		local value = new("TextLabel", {
+			Name = "Value",
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundTransparency = 1,
+			Position = UDim2.new(1, -12, 0, 0),
+			Size = UDim2.new(0, 80, 1, 0),
+			Font = Theme.Font.Bold,
+			TextSize = 13,
+			TextColor3 = Theme.Colors.TextSecondary,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Text = "",
+			ZIndex = 2,
+		}, button)
+		button.MouseEnter:Connect(function()
+			if current.Status == "active" then
+				Theme.tween(button, Theme.Motion.Fast, { BackgroundColor3 = Theme.Colors.SurfaceRaised:Lerp(Color3.new(1, 1, 1), 0.06) })
+			end
+		end)
+		button.MouseLeave:Connect(function()
+			Theme.tween(button, Theme.Motion.Fast, { BackgroundColor3 = Theme.Colors.SurfaceRaised })
+		end)
+		button.MouseButton1Click:Connect(function()
+			if current.Status ~= "active" or not pollRemote then
+				return
+			end
+			if current.MyVote and not current.AllowChange then
+				status.Text = "Changing your vote is off in this poll."
+				status.TextColor3 = Theme.Colors.Warning
+				return
+			end
+			status.Text = "Voting..."
+			status.TextColor3 = Theme.Colors.TextSecondary
+			pollRemote:FireServer("vote", id, k)
+		end)
+		rows[k] = { Button = button, Fill = fill, Value = value, Stroke = stroke }
+	end
+
+	local closed = false
+	local function close()
+		if closed then
+			return
+		end
+		closed = true
+		pollCards[id] = nil
+		closeCard()
+	end
+	closeButton.MouseButton1Click:Connect(function()
+		dismissedPolls[id] = true
+		close()
+	end)
+
+	local function render()
+		local v = current
+		local finished = v.Status == "ended" or v.Status == "cancelled"
+		local countsShown = type(v.Counts) == "table"
+		local total = tonumber(v.Total) or 0
+		local winners = if type(v.Winners) == "table" then v.Winners else {}
+		for k, row in ipairs(rows) do
+			local n = if countsShown then tonumber(v.Counts[k]) or 0 else 0
+			local share = if countsShown and total > 0 then n / total else 0
+			Theme.tween(row.Fill, Theme.Motion.Normal, { Size = UDim2.new(share, 0, 1, 0) })
+			row.Value.Text = if countsShown then ("%d%%  %d"):format(math.floor(share * 100 + 0.5), n) else ""
+			local mine = v.MyVote == k
+			local won = table.find(winners, k) ~= nil
+			row.Stroke.Transparency = if mine or won then 0 else 1
+			row.Stroke.Color = if won then Theme.Colors.Success else accent
+			row.Value.TextColor3 = if won then Theme.Colors.Success elseif mine then accent else Theme.Colors.TextSecondary
+		end
+		local parts = { ("%d vote%s"):format(total, if total == 1 then "" else "s") }
+		if v.Status == "active" and not countsShown then
+			table.insert(parts, "results at the end")
+		end
+		if v.MyVote then
+			table.insert(parts, if v.AllowChange and v.Status == "active" then "you can change your vote" else "you voted")
+		elseif v.Status == "active" then
+			table.insert(parts, "click an option to vote")
+		end
+		footer.Text = table.concat(parts, "  -  ")
+		if v.Status == "closing" then
+			status.Text = "Voting closed - counting votes..."
+			status.TextColor3 = Theme.Colors.Warning
+		elseif v.Status == "cancelled" then
+			status.Text = "This poll was cancelled."
+			status.TextColor3 = Theme.Colors.Error
+		elseif v.Status == "ended" then
+			status.Text = if #winners == 0 then "Poll ended - no votes." else "Poll ended."
+			status.TextColor3 = Theme.Colors.Success
+		end
+		if finished then
+			timer.Visible = false
+		end
+	end
+
+	-- Timer: time left in the footer status + the line under the card.
+	task.spawn(function()
+		local endsAt = tonumber(view.EndsAt) or 0
+		local startedAt = tonumber(view.StartedAt) or os.time()
+		local span = math.max(1, endsAt - startedAt)
+		while not closed and card.Parent do
+			if current.Status == "active" then
+				if endsAt > 0 then
+					local left = endsAt - os.time()
+					timer.Size = UDim2.new(math.clamp(left / span, 0, 1), 0, 0, 3)
+					if status.Text == "" or status.Text:find("left$") then
+						status.Text = clockText(left) .. " left"
+						status.TextColor3 = Theme.Colors.TextSecondary
+					end
+				else
+					timer.Visible = false
+				end
+			end
+			task.wait(0.5)
+		end
+	end)
+
+	pollCards[id] = {
+		Update = function(newView: any)
+			current = newView
+			render()
+			if newView.Status == "ended" or newView.Status == "cancelled" then
+				task.delay(if newView.Status == "ended" then 12 else 5, close)
+			end
+		end,
+		Close = close,
+		Result = function(ok: boolean, message: string)
+			status.Text = message
+			status.TextColor3 = if ok then Theme.Colors.Success else Theme.Colors.Error
+			task.delay(2.5, function()
+				if status.Text == message and current.Status == "active" then
+					status.Text = "" -- back to the time left
+				end
+			end)
+		end,
+	}
+	render()
+end
+
+-- ---------------------------------------------------------------------------
 -- Init
 -- ---------------------------------------------------------------------------
 function AnnouncementBanner.Init()
@@ -877,6 +1078,28 @@ function AnnouncementBanner.Init()
 					end
 				end
 			end)
+		end
+	end)
+	task.spawn(function()
+		local remote = SentinelShared:WaitForChild("PollRemote", 30)
+		if remote and remote:IsA("RemoteEvent") then
+			pollRemote = remote
+			remote.OnClientEvent:Connect(function(action: any, a: any, b: any, c: any)
+				if action == "state" and type(a) == "table" and a.Id then
+					showPoll(a)
+				elseif action == "remove" and type(a) == "string" then
+					local entry = pollCards[a]
+					if entry then
+						entry.Close()
+					end
+				elseif action == "result" and type(a) == "string" then
+					local entry = pollCards[a]
+					if entry then
+						entry.Result(b == true, tostring(c or ""))
+					end
+				end
+			end)
+			remote:FireServer("sync") -- polls already running when we joined
 		end
 	end)
 	task.spawn(function()

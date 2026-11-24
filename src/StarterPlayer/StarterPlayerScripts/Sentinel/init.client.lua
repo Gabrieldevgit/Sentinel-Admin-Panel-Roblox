@@ -426,6 +426,95 @@ if utilityRemote and utilityRemote:IsA("RemoteEvent") then
 end
 
 -- ---------------------------------------------------------------------------
+-- ;control (Systems/ControlService). The controller's client owns the
+-- target's physics, follows it with the camera and feeds its own movement
+-- input into the target's Humanoid; the target's controls are disabled.
+-- ---------------------------------------------------------------------------
+do
+	local RunService = game:GetService("RunService")
+	local controlRemote = SentinelShared:WaitForChild("ControlRemote", 15)
+	local controls: any = nil
+	local function getControls(): any
+		if controls == nil then
+			local ok, result = pcall(function()
+				local module = localPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule", 10)
+				return module and require(module :: ModuleScript):GetControls()
+			end)
+			controls = if ok and result then result else false
+		end
+		return controls or nil
+	end
+	local connections: { RBXScriptConnection } = {}
+	local function stopDriving()
+		for _, c in ipairs(connections) do
+			c:Disconnect()
+		end
+		table.clear(connections)
+		local camera = workspace.CurrentCamera
+		local char = localPlayer.Character
+		if camera and char then
+			camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+		end
+	end
+	if controlRemote and controlRemote:IsA("RemoteEvent") then
+		controlRemote.OnClientEvent:Connect(function(action: string, a: any, b: any)
+			if action == "start" then
+				stopDriving()
+				local targetChar = a :: Model?
+				local hum = targetChar and targetChar:FindFirstChildOfClass("Humanoid")
+				if not hum then
+					controlRemote:FireServer("stop")
+					return
+				end
+				local camera = workspace.CurrentCamera
+				if camera then
+					camera.CameraSubject = hum
+				end
+				local ctl = getControls()
+				table.insert(connections, RunService.RenderStepped:Connect(function()
+					if not hum.Parent or hum.Health <= 0 then
+						stopDriving()
+						controlRemote:FireServer("stop")
+						return
+					end
+					local move = if ctl then ctl:GetMoveVector() else Vector3.zero
+					hum:Move(move, true)
+				end))
+				table.insert(connections, UserInputService.JumpRequest:Connect(function()
+					if hum.Parent then
+						hum.Jump = true
+					end
+				end))
+				if AnnouncementBanner then
+					AnnouncementBanner.ShowHint(("Controlling %s - type ;uncontrol to stop"):format(tostring(b)))
+				end
+			elseif action == "stop" then
+				stopDriving()
+				if AnnouncementBanner then
+					AnnouncementBanner.ShowHint(("Stopped controlling %s%s"):format(tostring(a), if b then " (" .. tostring(b) .. ")" else ""))
+				end
+			elseif action == "controlled" then
+				local ctl = getControls()
+				if ctl then
+					ctl:Disable()
+				end
+				if AnnouncementBanner then
+					AnnouncementBanner.ShowHint(("%s is controlling your character"):format(tostring(a)))
+				end
+			elseif action == "released" then
+				local ctl = getControls()
+				if ctl then
+					ctl:Enable()
+				end
+				if AnnouncementBanner then
+					AnnouncementBanner.ShowHint("You have your character back")
+				end
+			end
+		end)
+	end
+end
+
+-- ---------------------------------------------------------------------------
 -- Main Sentinel UI shell (Phase 7): sidebar, top bar, status bar, command
 -- palette, and per-section pages. Placed in StarterGui.SentinelUI, which
 -- Roblox clones into this player's PlayerGui automatically — same as any
@@ -462,6 +551,7 @@ if sentinelUIFolder then
 		{ Name = "KeybindsPage" },
 		{ Name = "InGameSettingsPage" },
 		{ Name = "TopbarIcons" },
+		{ Name = "PollsPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -512,6 +602,9 @@ if sentinelUIFolder then
 	-- stats) even though every command they tried would be denied. This
 	-- was a real gap in an earlier version of this file.
 	local uiBuilt = false
+	-- True while buildUI runs (the background pre-build or an F6 press), so
+	-- the panel is never built twice.
+	local uiBuilding = false
 	local Shell, CommandPalette
 
 	-- -----------------------------------------------------------------------
@@ -586,7 +679,15 @@ if sentinelUIFolder then
 		end)
 	end
 
-	local function buildUI()
+	-- openAfter: open the panel once built (an explicit F6 / button press).
+	-- Staff get it pre-built in the background after join (openAfter =
+	-- false), so the first F6 opens instantly instead of waiting for every
+	-- page to build.
+	local function buildUI(openAfter: boolean)
+		if uiBuilt or uiBuilding then
+			return
+		end
+		uiBuilding = true
 		ensureCommandBar() -- also loads + applies the theme before pages are required
 		Shell = require(shellModule)
 		CommandPalette = require(commandPaletteModule)
@@ -644,6 +745,8 @@ if sentinelUIFolder then
 		}, AnnouncementBanner, function(pageId: string)
 			Shell.ShowPage(pageId)
 		end)
+		-- W23: polls (Announcements section).
+		require(loadedModules.PollsPage).Build(Shell.RegisterPage("Polls", "Polls", "📊"))
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		require(loadedModules.AuditLogPage).Build(Shell.RegisterPage("Logs", "Audit Log", "📋"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
@@ -740,17 +843,37 @@ if sentinelUIFolder then
 		end)
 
 		uiBuilt = true
-		Shell.Toggle() -- open immediately on first successful build, since this call came from an explicit F6 press
-		print("[Sentinel] UI shell built and opened — Ctrl+K for the command palette.")
+		uiBuilding = false
+		if openAfter then
+			Shell.Toggle()
+		end
+		print("[Sentinel] UI shell built — F6 opens it, Ctrl+K for the command palette.")
 	end
 
 	-- Re-checks permission every time until the UI is actually built, so a
 	-- player promoted mid-session (e.g. via /assignrole while testing)
 	-- doesn't need to rejoin — they just press F6 again after being granted
 	-- a role.
+	local openRequested = false
 	local function tryOpenPanel()
 		if uiBuilt then
 			Shell.Toggle()
+			return
+		end
+		if uiBuilding then
+			-- The background pre-build is running: open when it finishes.
+			if not openRequested then
+				openRequested = true
+				task.spawn(function()
+					while uiBuilding do
+						task.wait()
+					end
+					openRequested = false
+					if uiBuilt and not Shell.IsOpen() then
+						Shell.Open()
+					end
+				end)
+			end
 			return
 		end
 		if not canOpenPanelRemote then
@@ -760,7 +883,11 @@ if sentinelUIFolder then
 			return canOpenPanelRemote:InvokeServer()
 		end)
 		if ok and allowed then
-			buildUI()
+			local okBuild, err = pcall(buildUI, true)
+			if not okBuild then
+				uiBuilding = false
+				warn("[Sentinel] UI build failed: " .. tostring(err))
+			end
 		end
 		-- Deliberately silent on denial — no UI flash, no error, nothing
 		-- to indicate the panel exists at all to a non-staff player.
@@ -969,6 +1096,17 @@ if sentinelUIFolder then
 		end
 		if #icons > 0 then
 			require(loadedModules.TopbarIcons).Init(icons)
+		end
+
+		-- Pre-build the panel hidden so the first F6 opens without a delay.
+		if info.CanPanel and not uiBuilt and not uiBuilding then
+			task.spawn(function()
+				local okBuild, err = pcall(buildUI, false)
+				if not okBuild then
+					uiBuilding = false
+					warn("[Sentinel] UI pre-build failed: " .. tostring(err))
+				end
+			end)
 		end
 
 		local chips = {}

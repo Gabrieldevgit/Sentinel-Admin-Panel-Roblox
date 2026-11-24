@@ -130,6 +130,7 @@ local SECTIONS = {
 			{ Id = "AnnounceServer", Label = "Current server", Icon = "📢" },
 			{ Id = "AnnounceGlobal", Label = "Global", Icon = "🌐" },
 			{ Id = "AnnouncePlayers", Label = "Some players", Icon = "👤" },
+			{ Id = "Polls", Label = "Polls", Icon = "📊" },
 		},
 	},
 	{
@@ -273,6 +274,9 @@ function Shell.SetPageVisible(id: string, visible: boolean)
 	end
 end
 
+local transitionToken = 0
+local navOrder: () -> { string }
+
 function Shell.ShowPage(id: string)
 	if currentPageId == id or not pages[id] then
 		if currentPageId == id then
@@ -280,22 +284,56 @@ function Shell.ShowPage(id: string)
 		end
 		return
 	end
-	if currentPageId and pages[currentPageId] then
-		pages[currentPageId].Visible = false
-	end
+	local previousId = currentPageId
+	local previous = previousId and pages[previousId]
 	currentPageId = id
 	local page = pages[id]
+	-- Direction follows the navigation order: a page further along slides
+	-- in from the right (the old one leaves to the left), and back again.
+	local order = navOrder()
+	local from = previousId and table.find(order, previousId) or 0
+	local to = table.find(order, id) or 0
+	local dir = if to >= from then 1 else -1
+	transitionToken += 1
+	local token = transitionToken
+	if previous then
+		if Theme.Animations and not Theme.ReducedMotion then
+			previous.ZIndex = 1
+			local exitInfo = TweenInfo.new(0.16 / Theme.AnimationSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+			Theme.tween(previous, exitInfo, { Position = UDim2.new(-0.12 * dir, 0, 0, 0) })
+			task.delay(exitInfo.Time, function()
+				-- Came straight back to it: the new enter tween owns it now.
+				if currentPageId ~= previousId then
+					previous.Visible = false
+					previous.Position = UDim2.new(0, 0, 0, 0)
+				end
+			end)
+		else
+			previous.Visible = false
+		end
+	end
 	page.Visible = true
-	-- Slide the new page up into place.
-	page.Position = UDim2.new(0, 0, 0, 14)
-	Theme.tween(page, Theme.Motion.Normal, { Position = UDim2.new(0, 0, 0, 0) })
+	page.ZIndex = 2
+	if Theme.Animations and not Theme.ReducedMotion and previous then
+		-- Enter from the side with a little overshoot-free ease (Quint),
+		-- starting slightly lower so it settles diagonally into place.
+		page.Position = UDim2.new(0.18 * dir, 0, 0, 10)
+		task.delay(0.05 / Theme.AnimationSpeed, function()
+			if token == transitionToken then
+				Theme.tween(page, Theme.Motion.Page, { Position = UDim2.new(0, 0, 0, 0) })
+			end
+		end)
+	else
+		page.Position = UDim2.new(0, 0, 0, 14)
+		Theme.tween(page, Theme.Motion.Normal, { Position = UDim2.new(0, 0, 0, 0) })
+	end
 	refreshNav()
 end
 
 -- Next / previous page (keyboard shortcuts), in navigation order: pinned
 -- pages, then the section tabs in the player's order, then System. Skips
 -- hidden and unregistered pages. Wraps around.
-function Shell.Cycle(direction: number)
+navOrder = function(): { string }
 	local ids = {}
 	local function add(id: string)
 		if pages[id] and not hiddenPages[id] and not table.find(ids, id) then
@@ -317,6 +355,11 @@ function Shell.Cycle(direction: number)
 	for _, page in ipairs(SECTIONS[#SECTIONS].Pages) do
 		add(page.Id)
 	end
+	return ids
+end
+
+function Shell.Cycle(direction: number)
+	local ids = navOrder()
 	if #ids == 0 then
 		return
 	end

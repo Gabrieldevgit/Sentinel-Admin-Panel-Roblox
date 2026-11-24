@@ -390,7 +390,7 @@ Server information
 - ✅ Average player ping.
 - ✅ Current staff members.
 - Active server events.
-- Active polls.
+- ✅ Active polls.
 Server controls
 - ✅ Lock server.
 - ✅ Unlock server.
@@ -535,18 +535,18 @@ theavalon.app
 
 
 Poll system
-- Create polls.
-- Multiple-choice options.
-- Two to multiple voting options.
-- Poll timer.
-- Live voting.
-- Live results.
-- Change vote.
-- End poll.
-- Cancel poll.
-- Announce results.
-- Poll history.
-- Server-wide polls.
+- ✅ Create polls.
+- ✅ Multiple-choice options.
+- ✅ Two to multiple voting options.
+- ✅ Poll timer.
+- ✅ Live voting.
+- ✅ Live results.
+- ✅ Change vote.
+- ✅ End poll.
+- ✅ Cancel poll.
+- ✅ Announce results.
+- ✅ Poll history.
+- ✅ Server-wide polls.
 - Global polls.
 Live events
 - Create custom events.

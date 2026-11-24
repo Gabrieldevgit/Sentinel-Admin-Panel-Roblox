@@ -79,7 +79,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 	header.TextSize = 16
 	header.TextColor3 = Theme.Colors.Text
 	header.TextXAlignment = Enum.TextXAlignment.Left
-	header.Text = "⚡ Quick Actions"
+	Icons.prefix(header, "QuickActionsHeader", "Quick Actions", 18)
 	header.Parent = container
 
 	local cardRow = Instance.new("Frame")
@@ -250,7 +250,7 @@ function QuickActionsPanel.Build(container: Frame, commandPalette: any)
 		local function render()
 			switchTrack.BackgroundColor3 = if isOn then Theme.Colors.Success else Theme.Colors.Error
 			switchKnob.Position = if isOn then UDim2.new(1, -16, 0.5, -7) else UDim2.new(0, 2, 0.5, -7)
-			statusLabel.Text = if isOn then "🟢 Enabled" else "🔴 Disabled"
+			statusLabel.Text = if isOn then "Enabled" else "Disabled"
 			statusLabel.TextColor3 = if isOn then Theme.Colors.Success else Theme.Colors.Error
 		end
 
