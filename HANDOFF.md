@@ -4,11 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-24 (HD gaps: server bans + chat tags) - **`;serverban`
-and rank / custom chat tags built, verified in Play, committed; the
-`ServerStorage."Sentinel Setup"` install folder was rebuilt from the
-current code (place saved, v233).** Next: not pushed; the user picks the
-next W row or HD gap. Start with §6._
+_Last updated: 2026-11-24 (HD gaps 2: map snapshots + server music) -
+**`;savemap`/`;loadmap`/`;clearmap` and `;music`/`;volume`/`;pitch` built,
+verified in Play, committed + pushed; `ServerStorage."Sentinel Setup"`
+rebuilt.** Next: the user picks the next W row or HD gap. Start with §6._
 
 ---
 
@@ -142,7 +141,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps, 152 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps, 156 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -1302,6 +1301,22 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-24 (latest): HD gaps 2 - map snapshots + server music.**
+  New: `Systems/MapService.lua` (named snapshots of Workspace children +
+  Terrain region in `ServerStorage.SentinelMapSnapshots`, memory only, max
+  6; automatic `start` snapshot 5 s after boot in Play only; skips
+  characters, Camera, non-Archivable, `Sentinel*` names and attribute
+  `SentinelMapIgnore`; objects holding scripts are restored only if
+  missing), `Commands/Server/Map.lua` (`;savemap [name]`, `;loadmap
+  [name]` + `;clearmap` = high risk / `;confirm`, undoable via the `undo`
+  snapshot; `;maps`, `;deletemap`; node `server.map`),
+  `Systems/MusicService.lua` + `Commands/Server/Music.lua` (`;music id
+  [vol] [pitch]` / `off`, `;stopmusic`, `;volume 0-10`, `;pitch 0.1-5`,
+  `;nowplaying`; looped `SoundService.SentinelMusic`; non-audio assets
+  refused; all undoable; node `environment.music`). Both nodes reach
+  Admin+ via wildcards. `ArgHints.Suggestions` may now be a function
+  (ArgumentTypes + UIBridge resolve it). Tests **156/156**.
+
 - **2026-11-24 (latest): HD Admin gaps - server bans + chat tags,
   committed.** New: `Commands/Moderation/ServerBan.lua` (`;serverban
   target[:dur] [reason]`, `;unserverban name|id|all`, `;serverbans`;
@@ -1450,6 +1465,16 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-24 (HD gaps 2)** - User: 2 more HD gaps, commit + push,
+  rebuild the setup folder. Picked map snapshots and server music.
+  Verified in Play: boot `start` snapshot, `;savemap arena`, `;clearmap`
+  + `;confirm` + `;undo`, destroyed house + recoloured baseplate restored
+  by `;loadmap start`, reserved `undo` name, `;deletemap`; `;music
+  1837849285` plays on the client, volume / pitch / bounds, non-audio id
+  refused, undo of pitch and of `music off`, `;stopmusic`. Tests 156/156.
+  HD doc items ✅ (no blueprint bullet). Known nit: `;loadmap <unknown>`
+  asks for `;confirm` before saying the snapshot doesn't exist.
 
 - **2026-11-24 (HD gaps)** - User: implement 2 HD Admin gaps, commit,
   rebuild the Sentinel Setup folder. Picked server bans and chat tags.

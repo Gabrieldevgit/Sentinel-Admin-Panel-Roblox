@@ -33,12 +33,14 @@ HD Admin's code or design.
 - Name / HideName / Title: change or hide the overhead name, add a title.
 
 ### Map and world (no W row yet)
-- SaveMap / LoadMap / ClearMap: map snapshot + restore (`;clear` only
-  removes debris).
+- ✅ SaveMap / LoadMap / ClearMap: map snapshot + restore (`;clear` only
+  removes debris). (2026-11-24: `;savemap`, `;loadmap`, `;clearmap`,
+  `;maps`, `;deletemap`; automatic "start" snapshot, undoable.)
 - ClearEffects / ClearAll: stop every server-wide effect at once.
 - LockMap / LockCharacter: stop building tools editing the map / a
   player's parts (pairs with `;btools`).
-- Music / Pitch / Volume: play a sound for everyone by id.
+- ✅ Music / Pitch / Volume: play a sound for everyone by id. (2026-11-24:
+  `;music`, `;stopmusic`, `;volume`, `;pitch`, `;nowplaying`.)
 - FogColor.
 
 ### Teams and stats

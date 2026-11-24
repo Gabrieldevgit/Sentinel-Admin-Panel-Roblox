@@ -271,13 +271,18 @@ local function serializeArg(arg: any): any
 		local ok, list = pcall(choices)
 		choices = if ok and type(list) == "table" then list else nil
 	end
+	local suggestions = arg.Suggestions
+	if type(suggestions) == "function" then
+		local ok, list = pcall(suggestions)
+		suggestions = if ok and type(list) == "table" then list else nil
+	end
 	return {
 		Name = arg.Name,
 		Type = arg.Type,
 		Optional = arg.Optional,
 		Rest = arg.Rest,
 		Choices = choices,
-		Suggestions = arg.Suggestions,
+		Suggestions = suggestions,
 		Description = arg.Description,
 		Min = arg.Min,
 		Max = arg.Max,

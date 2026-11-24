@@ -71,8 +71,15 @@ local function startsWith(text: string, prefix: string): boolean
 	return text:lower():sub(1, #prefix) == prefix:lower()
 end
 
-local function fromList(list: { string }, partial: string, detail: string?): { Suggestion }
+local function fromList(list: any, partial: string, detail: string?): { Suggestion }
 	local out: { Suggestion } = {}
+	if type(list) == "function" then
+		local ok, result = pcall(list)
+		list = if ok then result else nil
+	end
+	if type(list) ~= "table" then
+		return out
+	end
 	for _, item in ipairs(list) do
 		if startsWith(item, partial) then
 			table.insert(out, { Text = item, Detail = detail })
