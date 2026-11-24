@@ -108,6 +108,25 @@ UIPrefs.THEMES = {
 		Text = rgb(248, 238, 234),
 		TextSecondary = rgb(180, 150, 144),
 	},
+	-- Seasonal themes (minimalist): their own surfaces + a fixed accent and
+	-- decoration from UIPrefs.SEASONAL (title badge, top-bar icon, corner
+	-- accent, line under the title bar - images come from Icons slots).
+	Christmas = {
+		Background = rgb(13, 21, 17),
+		Surface = rgb(19, 31, 25),
+		SurfaceRaised = rgb(29, 45, 37),
+		Border = rgb(47, 70, 57),
+		Text = rgb(246, 246, 242),
+		TextSecondary = rgb(168, 188, 176),
+	},
+	Halloween = {
+		Background = rgb(16, 13, 20),
+		Surface = rgb(25, 20, 30),
+		SurfaceRaised = rgb(38, 30, 45),
+		Border = rgb(62, 47, 72),
+		Text = rgb(248, 242, 236),
+		TextSecondary = rgb(184, 168, 178),
+	},
 	Light = {
 		Background = rgb(236, 239, 245),
 		Surface = rgb(250, 251, 253),
@@ -118,7 +137,32 @@ UIPrefs.THEMES = {
 	},
 }
 -- "Custom" uses Panel.Custom (falls back to the default theme until one is saved).
-UIPrefs.THEME_ORDER = { "Roblox", "Nebula", "Midnight", "Ocean", "Graphite", "Ember", "Light", "Custom" }
+UIPrefs.THEME_ORDER = { "Roblox", "Nebula", "Midnight", "Ocean", "Graphite", "Ember", "Light", "Christmas", "Halloween", "Custom" }
+
+-- Seasonal themes: accent (overrides the Accent setting while the theme is
+-- on), two colours for the line under the title bar, and the Icons slots
+-- for their images (empty until the asset ids are filled in Icons.Assets).
+UIPrefs.SEASONAL = {
+	Christmas = {
+		Accent = rgb(214, 52, 62),
+		Line = { rgb(214, 52, 62), rgb(46, 160, 92) },
+		Badge = "ChristmasBadge",
+		Topbar = "ChristmasTopbar",
+		Corner = "ChristmasCorner",
+		Hat = "ChristmasHat",
+	},
+	Halloween = {
+		Accent = rgb(255, 128, 24),
+		Line = { rgb(255, 128, 24), rgb(150, 92, 230) },
+		Badge = "HalloweenBadge",
+		Topbar = "HalloweenTopbar",
+		Corner = "HalloweenCorner",
+	},
+}
+
+function UIPrefs.Season(panel: any): any
+	return if type(panel) == "table" then UIPrefs.SEASONAL[panel.Theme] else nil
+end
 
 -- Colours a custom theme / theme code holds, in code order.
 UIPrefs.PALETTE_KEYS = { "Background", "Surface", "SurfaceRaised", "Border", "Text", "TextSecondary", "Accent" }
@@ -322,8 +366,8 @@ end
 -- ---------------------------------------------------------------------------
 UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Announcements", "Insights" }
 UIPrefs.PAGE_IDS = {
-	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "Ranks", "Commands", "Library", "Server", "CrossServer",
-	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers", "Polls",
+	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "ChatLog", "Alerts", "Ranks", "Commands", "Library", "Server", "CrossServer",
+	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers", "Polls", "Events",
 	"Analytics", "Logs", "Developer", "Settings", "Appearance", "Keybinds", "Sounds", "Administration", "Notifications",
 }
 UIPrefs.MAX_PINNED = 8
@@ -701,6 +745,10 @@ function UIPrefs.ResolvePalette(panel: any): { [string]: Color3 }
 		out[name] = color
 	end
 	out.Accent = UIPrefs.ACCENTS[panel.Accent] or UIPrefs.ACCENTS[UIPrefs.BUILTIN.Panel.Accent]
+	local season = UIPrefs.SEASONAL[panel.Theme]
+	if season then
+		out.Accent = season.Accent
+	end
 	if panel.Theme == "Custom" and type(panel.Custom) == "table" then
 		for _, name in ipairs(UIPrefs.PALETTE_KEYS) do
 			local c = UIPrefs.HexToColor(panel.Custom[name])

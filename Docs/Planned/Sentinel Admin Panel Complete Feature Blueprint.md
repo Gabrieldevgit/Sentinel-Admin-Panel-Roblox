@@ -549,20 +549,20 @@ Poll system
 - ✅ Server-wide polls.
 - Global polls.
 Live events
-- Create custom events.
-- Start event.
-- Stop event.
-- Schedule event.
-- Event duration.
-- Event countdown.
-- Event presets.
-- Event announcements.
-- Event history.
-- Event management.
+- ✅ Create custom events.
+- ✅ Start event.
+- ✅ Stop event.
+- ✅ Schedule event.
+- ✅ Event duration.
+- ✅ Event countdown.
+- ✅ Event presets.
+- ✅ Event announcements.
+- ✅ Event history.
+- ✅ Event management.
 Event examples
-- Double Coins.
-- Double XP.
-- Double Gems.
+- ✅ Double Coins.
+- ✅ Double XP.
+- ✅ Double Gems.
 - Low Gravity.
 - Meteor Shower.
 - Snow Day.
@@ -809,9 +809,9 @@ Additional tools
 - Warning notifications.
 - ✅ Information notifications.
 - Command results.
-- Moderation alerts.
+- ✅ Moderation alerts.
 - Player reports.
-- Server alerts.
+- ✅ Server alerts.
 - Global event notifications.
 - Cross-server notifications.
 - Persistent notification history.
@@ -889,7 +889,7 @@ Advanced
 - Scheduled server events.
 - Automatic event expiration.
 - Recurring events.
-- Scheduled shutdown.
+- ✅ Scheduled shutdown.
 - Maintenance scheduling.
 - Automatic server locking.
 - Automatic server unlocking.

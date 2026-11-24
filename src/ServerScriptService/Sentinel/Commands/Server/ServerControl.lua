@@ -5,7 +5,9 @@
 	Purpose:
 		Whole-server control commands wrapping ServerStateService.
 
-		;shutdown [seconds] [message...]   kick everyone (optional countdown)
+		;shutdown [time] [message...]      kick everyone (optional countdown)
+		;restart [time] [message...]       M gaps: scheduled restart (migration)
+		;cancelshutdown (cancelrestart)    M gaps: cancel a pending one
 		;lockserver [message...]           custom message for turned-away joiners
 		;unlockserver
 		;maintenancemode on|off [message...]
@@ -35,6 +37,8 @@ local ServerStateService = require(Systems:WaitForChild("ServerStateService"))
 local CrossServerService = require(Systems:WaitForChild("CrossServerService"))
 local RankService = require(Systems:WaitForChild("RankService"))
 local TextFilterService = require(Systems:WaitForChild("TextFilterService"))
+local ShutdownService = require(Systems:WaitForChild("ShutdownService"))
+local DurationParser = require(Core:WaitForChild("Parser"):WaitForChild("DurationParser"))
 
 -- Staff-written text shown to other players goes through the filter; on a
 -- filter failure the command refuses instead of showing the original.
@@ -52,57 +56,89 @@ end
 
 local FILTER_FAILED = { Success = false, Message = "The message couldn't be filtered right now - try again or leave it out." }
 
-local shuttingDown = false
+-- "30" = seconds, "10m" / "1h" = duration (DurationParser). nil = not a time.
+local function parseTime(word: string?): number?
+	if not word then
+		return nil
+	end
+	local n = tonumber(word)
+	if n then
+		return n
+	end
+	local parsed = DurationParser.Parse(word)
+	if parsed and not parsed.IsPermanent then
+		return parsed.Seconds
+	end
+	return nil
+end
+
+local function schedule(ctx: Types.CommandContext, kind: string): Types.CommandResult
+	local seconds = parseTime(ctx.Arguments[1])
+	local from = if seconds then 2 else 1
+	local ok, message = filtered(ctx, ctx.Arguments, from)
+	if not ok then
+		return FILTER_FAILED
+	end
+	if kind == "shutdown" and (not seconds or seconds <= 0) then
+		local text = message or "The server is shutting down."
+		ServerStateService.SetLocked(true, text)
+		for _, player in ipairs(Players:GetPlayers()) do
+			player:Kick(text)
+		end
+		return { Success = true, Message = "Server shutdown initiated." }
+	end
+	local done, text = ShutdownService.Schedule(kind, seconds or 300, message, ctx.Executor)
+	return { Success = done, Message = text }
+end
 
 CommandRegistry.Register({
 	Name = "shutdown",
 	Aliases = {},
-	Description = "Kicks every player and ends this server, optionally after an on-screen countdown (5-300 s). To move players to a fresh server instead, use ;migrateserver.",
-	Usage = "/shutdown [seconds] [message...]",
+	Description = "Kicks every player and ends this server. With a time (30, 10m, 1h; 5 s - 3 h) it counts down with warnings at 30m / 15m / 10m / 5m / 2m / 1m / 30s / 10s and can be stopped with ;cancelshutdown. To move players to a fresh server instead, use ;restart.",
+	Usage = "/shutdown [time] [message...]",
+	ArgHints = { time = { Type = "string", Description = "Seconds or a duration (10m, 1h); none = now" } },
 	Permission = "server.shutdown",
 	Category = "Server",
 	Log = true,
 	Undoable = false,
 	RequiresTarget = false,
-	Examples = { "shutdown", "shutdown 30 Updating the map" },
+	Examples = { "shutdown", "shutdown 30 Updating the map", "shutdown 10m" },
 	Execute = function(ctx: Types.CommandContext): Types.CommandResult
-		if shuttingDown then
-			return { Success = false, Message = "A shutdown is already counting down." }
-		end
-		local seconds = tonumber(ctx.Arguments[1])
-		local from = if seconds then 2 else 1
-		local ok, message = filtered(ctx, ctx.Arguments, from)
-		if not ok then
-			return FILTER_FAILED
-		end
-		local text = message or "The server is shutting down."
-		local function kickEveryone()
-			ServerStateService.SetLocked(true, text)
-			for _, player in ipairs(Players:GetPlayers()) do
-				player:Kick(text)
-			end
-		end
-		if not seconds or seconds <= 0 then
-			kickEveryone()
-			return { Success = true, Message = "Server shutdown initiated." }
-		end
-		local total = math.clamp(math.floor(seconds), 5, 300)
-		shuttingDown = true
-		local countdown = SentinelShared:FindFirstChild("CountdownRemote") :: RemoteEvent?
-		task.spawn(function()
-			for remaining = total, 1, -1 do
-				if countdown then
-					countdown:FireAllClients("tick", "Server shutting down", remaining, total)
-				end
-				task.wait(1)
-			end
-			if countdown then
-				countdown:FireAllClients("done", "Server shutting down", 0, total)
-			end
-			kickEveryone()
-			shuttingDown = false
-		end)
-		return { Success = true, Message = ("Server shuts down in %d seconds."):format(total) }
+		return schedule(ctx, "shutdown")
+	end,
+})
+
+CommandRegistry.Register({
+	Name = "restart",
+	Aliases = { "scheduledrestart", "schedulerestart" },
+	Description = "Scheduled restart: counts down (default 5 min, 5 s - 3 h) with warnings at 30m / 15m / 10m / 5m / 2m / 1m / 30s / 10s, then moves everyone to a fresh server (like ;migrateserver). Stop it with ;cancelrestart.",
+	Usage = "/restart [time] [message...]",
+	ArgHints = { time = { Type = "string", Description = "Seconds or a duration (10m, 1h); default 5m" } },
+	Permission = "server.shutdown",
+	Category = "Server",
+	Risk = "critical",
+	Log = true,
+	Undoable = false,
+	RequiresTarget = false,
+	Examples = { "restart", "restart 10m New update", "restart 60" },
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		return schedule(ctx, "restart")
+	end,
+})
+
+CommandRegistry.Register({
+	Name = "cancelshutdown",
+	Aliases = { "cancelrestart", "abortshutdown", "stopshutdown" },
+	Description = "Cancels a pending ;shutdown or ;restart countdown (also a ;migrateserver countdown) and tells players.",
+	Usage = "/cancelshutdown",
+	Permission = "server.shutdown",
+	Category = "Server",
+	Log = true,
+	Undoable = false,
+	RequiresTarget = false,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local ok, text = ShutdownService.Cancel(ctx.Executor)
+		return { Success = ok, Message = text }
 	end,
 })
 

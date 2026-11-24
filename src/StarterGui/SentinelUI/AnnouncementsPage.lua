@@ -10,7 +10,9 @@
 		AnnounceGlobal    compose for every server                 (;gannounce)
 		AnnouncePlayers   compose for chosen players or staff only (;tannounce / ;sannounce)
 
-	A composer has: message, optional title, style (Banner / Full screen),
+	A composer has: message (with a character counter and saved template
+	chips - M-panel gaps; ;btemplate saves / removes, needs server.announce),
+	optional title, style (Banner / Full screen),
 	time (5 / 8 / 15 / 30 s), colour swatches, a live command line,
 	Preview (shows the real banner on your screen only) and Send. Sending
 	is a normal command through ExecuteCommandRemote, so permissions,
@@ -50,6 +52,7 @@ local COLOR_HEX = {
 	pink = "F472B6",
 }
 local TIMES = { 5, 8, 15, 30 }
+local MAX_MESSAGE = 400 -- AnnouncementService.MAX_TEXT
 local SCOPE_LABEL = { server = "Server", global = "Global", players = "Players", staff = "Staff" }
 
 local order = 0
@@ -378,6 +381,63 @@ function AnnouncementsPage.Build(containers: { [string]: Frame }, banner: any, o
 
 		caption(form, "Message")
 		local message = textBox(form, "Message", "What do you want to announce?", 84, true)
+		-- M-panel gaps: character counter + saved templates.
+		local counter = label(form, "Counter", ("0 / %d"):format(MAX_MESSAGE), { TextSize = 11, TextColor3 = Theme.Colors.TextSecondary, TextXAlignment = Enum.TextXAlignment.Right })
+		local function updateCounter()
+			local n = utf8.len(message.Text) or #message.Text
+			counter.Text = ("%d / %d"):format(n, MAX_MESSAGE)
+			counter.TextColor3 = if n > MAX_MESSAGE
+				then Theme.Colors.Error
+				elseif n > MAX_MESSAGE * 0.9 then Theme.Colors.Warning
+				else Theme.Colors.TextSecondary
+		end
+		message:GetPropertyChangedSignal("Text"):Connect(updateCounter)
+		caption(form, "Templates")
+		local templateRow = row(form, "Templates")
+		local saveRow = row(form, "SaveTemplate")
+		local templateName = textBox(saveRow, "TemplateName", "Template name", 30, false)
+		templateName.Size = UDim2.fromOffset(150, 30)
+		local saveTemplate = chipButton(saveRow, "Save", "Save message as template")
+		local removeTemplate = chipButton(saveRow, "Remove", "Remove template")
+		local function renderTemplates()
+			for _, c in ipairs(templateRow:GetChildren()) do
+				if c:IsA("GuiObject") then
+					c:Destroy()
+				end
+			end
+			local list = if type(snapshot.Templates) == "table" then snapshot.Templates else {}
+			for _, t in ipairs(list) do
+				local b = chipButton(templateRow, "Template_" .. tostring(t.Name), tostring(t.Name))
+				b.MouseButton1Click:Connect(function()
+					message.Text = tostring(t.Text)
+					templateName.Text = tostring(t.Name)
+				end)
+			end
+			if #list == 0 then
+				label(templateRow, "Empty", "No templates yet.", { Size = UDim2.fromOffset(160, 30), TextColor3 = Theme.Colors.TextSecondary })
+			end
+			saveRow.Visible = snapshot.CanEditTemplates == true
+		end
+		local function templateCommand(cmd: string)
+			if executeRemote then
+				executeRemote:FireServer(cmd)
+				task.delay(0.8, refresh)
+			end
+		end
+		saveTemplate.MouseButton1Click:Connect(function()
+			local name = templateName.Text:gsub("[^%w_]", "")
+			local text = clean(message.Text)
+			if name == "" or text == "" then
+				return
+			end
+			templateCommand(("btemplate add %s %s"):format(name:sub(1, 20), text:sub(1, 200)))
+		end)
+		removeTemplate.MouseButton1Click:Connect(function()
+			local name = templateName.Text:gsub("[^%w_]", "")
+			if name ~= "" then
+				templateCommand("btemplate remove " .. name)
+			end
+		end)
 		caption(form, "Title (optional)")
 		local titleBox = textBox(form, "Title", "e.g. Double XP", 32, false)
 
@@ -568,7 +628,9 @@ function AnnouncementsPage.Build(containers: { [string]: Frame }, banner: any, o
 				status.TextColor3 = Theme.Colors.TextSecondary
 			end,
 		}
+		renderTemplates()
 		table.insert(listeners, function()
+			renderTemplates()
 			if pickerRefresh then
 				pickerRefresh()
 			end

@@ -4,10 +4,15 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-23 (command bar scroll) - W23 Polls, UI fixes
-and the scrollable command-bar log are **committed and pushed** (not
-published to Roblox yet). Next: publish + live 2-server test of global
-polls, then **W24 Events** (W16 still skipped by the user). Start with §6._
+_Last updated: 2026-11-23 (seasonal themes) - **W24 Events + M-panel gaps
+(cancel shutdown / scheduled restart, chat log, alerts, broadcast
+templates, seasonal effects + Spooky Night) + minimalist Christmas /
+Halloween panel themes built and verified in Play, not committed.** Seasonal
+images filled in `Icons.Assets` (snowflake / star / light-string; pumpkin /
+bat / light-string) from the user's 59 uploads and seen in Play. Not
+loadable yet: SentinelChristmasHat, santa-hat, icicles, bat-small, web
+(LoadAsset failed - maybe still in moderation). Still excluded: staff activity page, fun / character
+commands. Next: commit when asked, then W25. Start with §6._
 
 ---
 
@@ -66,6 +71,16 @@ top of them (polls, events, reports, rewards, inventory, webhooks).
 lists HD Admin features worth adding (chat tags, map snapshots, teams,
 music, server bans, character scaling, ...) and where each fits in the W
 plan. Never add anything that needs custom (non-Roblox) animations.
+
+### 0.2d "M" panel feature gaps
+
+[`Docs/Planned/M Panel Feature Gaps.md`](Docs/Planned/M%20Panel%20Feature%20Gaps.md)
+lists features of the user's earlier "Sentinel / Halloween" panel (opens
+with **M**: `StarterPlayerScripts.AdminPanel` + the `ServerScriptService.
+AdminPanelServer` folder, testing place only) that Sentinel lacks: server
+chat log page, staff activity page, cancel shutdown / scheduled restart,
+broadcast templates, rainbow / confetti / set health / resetstats, a
+seasonal (Halloween) theme + seasonal effects (Spooky Night fits W25).
 
 ### 0.3 General working rules
 
@@ -131,7 +146,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls, 135 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events, 143 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -823,6 +838,104 @@ Control" UI, all driven by one command grammar
   old page slides out). The panel is **pre-built hidden after join** for
   staff (welcome flow), so F6 opens instantly; `buildUI(openAfter)` is
   guarded against double builds.
+- **W24 Events:**
+  - `Systems/EventService`: presets `doublecoins doublexp doublegems
+    doubleall custom`. `EventService.Define(def)` = custom-event API
+    (`{Id, Name, Description, Color hex, Multipliers {Coins,XP,Gems},
+    DefaultDuration?, Aliases?, OnStart(event)?, OnStop(event)?}`; W25
+    adds Low Gravity etc. through it). `ParseSpec(words)`: preset, then
+    `time=1m-24h|none` (default 15m), `in=10s-24h` (scheduled),
+    `announce=`, `coins= xp= gems=` (0.1-10), `name=Word_Word` (custom:
+    free words). Status scheduled -> active -> ended | stopped |
+    cancelled; every server runs timers from absolute StartsAt / EndsAt
+    (1 s tick). Max 6 per server. Multipliers = product of active events,
+    cap 10 (`Combine`, pure; Event.spec); published as attributes
+    `EventMultiplier_Coins/_XP/_Gems` on `ReplicatedStorage.Shared.Sentinel`
+    + EventBus `Events.Changed`. Start / end / scheduled banners via
+    `AnnouncementService.Show`. History (100) in DataStore
+    `Sentinel_Events_v1` key `History` (merged by Id, so every server may
+    record; server-only events still running at close are recorded
+    "stopped by server closed"). Global: kinds `evs` (start) / `evx`
+    (stop), plus key `Global` (active / scheduled global events) so a
+    server that starts later joins them (verified).
+    `CrossServerService.SetEventProvider` fills `LocalInfo().Events`.
+  - `EconomyService.Award(player, stat, amount)` = earned reward with the
+    event multiplier (staff `AddCoins` etc. stay exact);
+    `SetMultiplierProvider`, `Multiplier(stat)`. **Game scripts should use
+    Award** - the place's own money system (`ReplicatedStorage.
+    Multipliers`) doesn't know about Sentinel events (it could read the
+    attribute).
+  - Commands (`Commands/Server/Events.lua`, Server / Events): `;event`
+    (startevent; node `server.event`), `;gevent` (`crossserver.event`),
+    `;scheduleevent <delay> <preset> ...`, `;stopevent [id|preset]`
+    (endevent, cancelevent), `;events [history|presets]` (alias
+    multipliers; panel.open). `;reward target:amount [coins|xp|gems]` in
+    `Commands/Economy/Currency.lua` (economy.currency.give). Admin gets
+    `server.event` via `server.*`, SuperAdmin `crossserver.event`.
+  - Client: `SentinelUI/EventBar` (ScreenGui `SentinelEventBar`, every
+    player, loaded by init.client after AnnouncementBanner): pills in
+    Roblox's top-bar row right after the S / >_ pill
+    (`Row.Event_<id>.{Dot,Title,Bonus,Time}`); centred below the bar on
+    screens < 900 px. Not centred in the row: games put HUD there and the
+    announcement banner covered it below the bar. Remote `EventRemote`
+    ("state", views, serverTime). `EventsPage` = Announcements >
+    **Events** (page id `Events` in `UIPrefs.PAGE_IDS`; paths in its
+    header); data from `GetEventsRemote` (UIBridge). **Never name a child
+    "Name" / "Active"** - it shadows the property (labels are `Title`,
+    the box `NameBox`).
+- **M-panel gaps (2026-11-23):**
+  - `Systems/ShutdownService`: one pending shutdown or restart (5 s - 3 h),
+    banners at 30m/15m/10m/5m/2m/1m/30s/10s below the total, big countdown
+    (CountdownRemote) for the last 10 s, `Cancel` fires CountdownRemote
+    "cancel" (client hides the overlay) + an all-clear banner. Restart =
+    `CrossServerService.MigrateNow` (new; the teleport half of
+    StartMigration; dry run in Studio). `StartMigration` is now cancellable
+    (`CancelMigration`, `IsMigrating`). `LocalInfo().Shutdown` = pending
+    `{Kind, Remaining, By, ...}` (provider). CrossServerService is required
+    lazily there (it only loads in a running game - keeps specs loadable).
+    Commands (ServerControl.lua): `;shutdown [time] [msg]` (time = 30 /
+    10m / 1h; none = now), `;restart [time] [msg]` (default 5m, critical),
+    `;cancelshutdown` (cancelrestart; also stops a `;migrateserver`
+    countdown). Server page: Restart 30s / 5 min, Shutdown, Cancel buttons
+    + `ActionsRow.PendingShutdown` label.
+  - `Systems/ChatLogService`: server-wide chat buffer (300 lines, memory,
+    filtered ForBroadcast at capture, `Command` flag), `Search`,
+    `ParseQuery` (`player:name words`), `Clear`. `Systems/AlertService`:
+    feed (200, memory) fed by an After hook (`Classify`: critical / high
+    risk, mass = `all/others/everyone` or >= 3 targets, Environment
+    category) + flagged joins (PlayerExplorerService.Suspicion, 6 s after
+    join); push `AlertRemote` ("alert", entry) / ("clear") to staff.
+    Commands (`Commands/Moderation/StaffFeeds.lua`): `;chatlog [query]`,
+    `;clearchatlog` (node `moderation.chatlog`), `;alerts [n] [kind]`,
+    `;clearalerts` (`moderation.alerts`); both nodes added to the default
+    Moderator rank + Moderation preset (**saved ranks not migrated**).
+    Remotes `GetChatLogRemote(query, limit)`, `GetAlertsRemote(limit)`.
+    UI `StaffFeedsPage.lua` = Moderation > **Chat Log** / **Alerts** (page
+    ids `ChatLog`, `Alerts`; paths in its header).
+  - Broadcast templates: ConfigService key `BroadcastTemplates`
+    (AnnouncementService `GetTemplates` / `SetTemplate`, 20 max),
+    `;btemplate [list|add|remove]` (edit needs server.announce);
+    GetAnnouncementsRemote returns `Templates`, `CanEditTemplates`. Each
+    composer has a `Counter` (n / 400) and `Templates.Template_<name>` chips
+    + `SaveTemplate.{TemplateName,Save,Remove}`.
+  - **Seasonal panel themes (minimalist):** `UIPrefs.THEMES.Christmas /
+    Halloween` + `UIPrefs.SEASONAL[theme]` = fixed Accent (overrides the
+    Accent setting), two-colour `Line`, Icons slot names `Badge` / `Topbar`
+    / `Corner`; `UIPrefs.Season(panel)`. Shell builds `Root.TopBar.
+    {SeasonLine (2 px gradient), SeasonCorner}` and `Title.Badge.
+    SeasonImage` (hidden) and `Shell.ApplySeason(panel)` (called from
+    ApplyPrefs) shows them; an image only shows once its id is non-zero in
+    `Icons.Assets`, otherwise the S badge / glyph stay.
+    `TopbarIcons.SetImage(id, image?)` swaps the top-bar S glyph
+    (init.client applyPrefs). Switch: `;theme theme Christmas` (note the
+    setting name) or Appearance > Theme.
+  - Seasonal (`Commands/Player/Seasonal.lua`, node player.effects,
+    DefaultSelf): `;pumpkin` / `;ghost` / `;bats` / `;unspooky`,
+    `;clearseasonal` (clearhalloween; also stops Spooky Night). Built from
+    plain parts (bats = anchored parts moved by one Heartbeat loop).
+    Pumpkin + ghost hand over saved transparencies so removal order doesn't
+    matter. Event preset **spookynight** (aliases spooky, halloween) via
+    `EventService.Define`: night + purple fog, lighting restored on end.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -923,6 +1036,20 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **M-panel gaps not verified:** the seasonal effects were checked by
+  instance state only (Studio's capture showed the world black under
+  Spooky Night) - look at them in game; a real (non-Studio) restart
+  teleport; a flagged-player join alert (needs a new / warned account).
+  Alerts and chat log are memory-only (this server).
+
+- **W24 not verified live:** `;gevent` / `;stopevent` of a global event
+  across 2 running servers (only one Studio server; the "server that
+  starts later joins" path was verified by restarting Play). "Global
+  event activation" (cross-server section) and "Custom game events" stay
+  unchecked. Event multipliers only reach rewards given through
+  `EconomyService.Award` / `;reward`; the place's own money system ignores
+  them (ask the user whether to hook it).
 
 - **W23 not verified live:** global polls were only run on one Studio
   server (origin path, `;gpoll`, change=off, cancel). Needs the 2-server
@@ -1168,6 +1295,26 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-23 (latest): M-panel gaps built + verified in Play, NOT
+  committed** (on top of the uncommitted W24 work). New: `Systems/
+  {ShutdownService,ChatLogService,AlertService}.lua`, `Commands/Moderation/
+  StaffFeeds.lua`, `Commands/Player/Seasonal.lua`, `SentinelUI/
+  StaffFeedsPage.lua`, `Tests/StaffFeeds.spec.lua`. Edited: ServerControl,
+  CrossServerService, AnnouncementService, Announce.lua, RankService,
+  UIBridge, UIPrefs, Icons, Shell, ServerPage, AnnouncementsPage,
+  init.client. Tests **148/148**. Excluded by the user for now: staff
+  activity page, rainbow / confetti / size / health / resetstats, seasonal
+  (Christmas / Halloween) panel themes - only the minimalist theme.
+
+- **2026-11-23 (later): W24 Events built + verified in Play, NOT
+  committed.** New: `Systems/EventService.lua`, `Commands/Server/Events.lua`,
+  `SentinelUI/EventBar.lua`, `SentinelUI/EventsPage.lua`,
+  `Tests/Event.spec.lua`, `Docs/Planned/M Panel Feature Gaps.md`. Edited:
+  EconomyService (Award), Currency.lua (`;reward`), CrossServerService
+  (event provider), UIBridge (GetEventsRemote), UIPrefs / Shell / Icons
+  (Events page), init.client (EventBar + page), blueprint. Tests
+  **143/143**. Testing place: a few test events in the Events history.
+
 - **2026-11-23, committed + pushed** (see git log): W23 polls, command bar history, emoji
   clean-up, page transitions, instant panel open (all verified in Play),
   plus the earlier uncommitted live-test fixes, `;control`,
@@ -1194,8 +1341,10 @@ Rules that keep it sound:
   for the biggest task in `Docs/Planned`; committed and pushed (`87bc1b7`). W22 (server management
   leftovers + live two-server test) is still open.
 - **Schedule position:** W15 done; W16 skipped for now (user); W17-W22
-  done (live-tested); W23 Polls built 2026-11-23; next is **W24 -
-  Events**. About 8 weekends
+  done (live-tested); W23 Polls + W24 Events built 2026-11-23; next is
+  **W25 - Event library** (Low Gravity, Meteor Shower, Snow Day, Blood
+  Moon, Disco Party, Special Rewards via `EventService.Define`; maybe
+  Spooky Night from the M panel list). About 8 weekends
   ahead of the dates in
   [`Docs/Planned/Implementation Schedule.md`](Docs/Planned/Implementation%20Schedule.md);
   keep the dates, just continue with the next undone row.
@@ -1205,7 +1354,9 @@ Rules that keep it sound:
   account's library only holds recent lines (test preset and favorites
   removed). Studio-only change (not in repo): `ServerScriptService.
   Datastore.DataHandler` reuses an existing `leaderstats` folder.
-- Feature blueprint: **363 bullets ✅** (W23 +13: 12 poll bullets + active polls) (live test +13: find player
+- Feature blueprint: **379 bullets ✅** (M gaps +3: scheduled shutdown, moderation alerts, server alerts) (W24 +13: create custom / start /
+  stop / schedule / duration / countdown / presets / announcements /
+  history / management, Double Coins / XP / Gems) (W23 +13: 12 poll bullets + active polls) (live test +13: find player
   across servers, shared punishment DB, punishment sync, restart/migrate,
   kick all, whitelist on/off, capacity, countdown, global shutdown, update
   countdown, graceful migration, global kick; W22 +12: server JobId, uptime,
@@ -1273,6 +1424,40 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-23 (seasonal images)** - User uploaded 59 seasonal decals. Added a `ChristmasHat` slot (Shell `Title.SeasonHat`, on the S of "Sentinel"; id 128416464466695 does not load yet - moderation?). Committed + pushed.
+  Resolved Decal -> Image ids, wired 6 into the theme slots, verified both
+  themes in Play. Test account back on Roblox theme. Not committed.
+
+- **2026-11-23 (seasonal themes)** - The user's third "exclude" bullet
+  actually asked for Christmas / Halloween panel themes, minimalist. Built
+  both (palettes, fixed accent, title-bar gradient line, empty image slots
+  for badge / top-bar icon / corner). Verified in Play: both themes via
+  `;theme theme <name>`, line + accent badge, image slots render with a
+  placeholder id. Test account theme reset to Roblox. Waiting on the
+  user's image ids. Not committed.
+
+- **2026-11-23 (M panel gaps)** - User: implement the M-panel gaps except
+  staff activity, fun/character and seasonal panel themes. Built cancel
+  shutdown / scheduled restart (warnings + cancellable migration), server
+  chat log page, alerts feed page, broadcast templates + character
+  counter, seasonal effects (pumpkin / ghost / bats / clearseasonal) and
+  the Spooky Night event. Verified in Play: restart schedule / refuse
+  second / pending info / cancel (also during the overlay), alerts (live
+  push, filters), chat log page, template chip by mouse + counter, effects
+  on / off in both orders (fixed a head-stays-hidden bug), Spooky Night
+  lighting on + restored. Tests 148/148. Blueprint +3 ✅ (scheduled
+  shutdown, moderation alerts, server alerts). Not committed.
+
+- **2026-11-23 (W24 events + M panel)** - User: continue with W24 (W16
+  still skipped) and list what the "M" panel has that Sentinel lacks.
+  Explored it -> `Docs/Planned/M Panel Feature Gaps.md`. Built W24
+  (EventService, Events.lua, `;reward`, EventBar, EventsPage, Event.spec).
+  Verified in Play: `;reward` 100 -> 200 under Double Coins, scheduled ->
+  auto start, timer end, Stop + Start by mouse on the page, banners,
+  `;gevent` on one server, global event rejoined by a new server, history
+  across restarts. Moved the bar into the top-bar row (the banner hid it).
+  Tests 143/143. Blueprint +13 ✅. Not committed.
 
 - **2026-11-23 (command bar scroll)** - User: still can't scroll the
   command bar. The output log was a plain Frame that dropped old lines;

@@ -87,6 +87,18 @@ do
 			warn("[Sentinel] AnnouncementBanner failed to load: " .. tostring(result))
 		end
 	end
+	-- W24: running / scheduled events bar (every player).
+	local eventBar = folder:WaitForChild("EventBar", 15)
+	if eventBar and eventBar:IsA("ModuleScript") then
+		task.spawn(function()
+			local ok, result = pcall(function()
+				require(eventBar).Init()
+			end)
+			if not ok then
+				warn("[Sentinel] EventBar failed to load: " .. tostring(result))
+			end
+		end)
+	end
 end
 
 -- ---------------------------------------------------------------------------
@@ -136,6 +148,11 @@ end
 local countdownRemote = SentinelShared:WaitForChild("CountdownRemote", 15)
 if countdownRemote and countdownRemote:IsA("RemoteEvent") then
 	countdownRemote.OnClientEvent:Connect(function(phase: string, label: string, remaining: number, _total: number)
+		if phase == "cancel" then
+			-- ;cancelshutdown / ;cancelrestart (M-panel gaps)
+			countdownFrame.Visible = false
+			return
+		end
 		countdownFrame.Visible = true
 		countdownLabelText.Text = label
 
@@ -552,6 +569,8 @@ if sentinelUIFolder then
 		{ Name = "InGameSettingsPage" },
 		{ Name = "TopbarIcons" },
 		{ Name = "PollsPage" },
+		{ Name = "EventsPage" },
+		{ Name = "StaffFeedsPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -633,6 +652,16 @@ if sentinelUIFolder then
 		end
 		if uiBuilt and Shell then
 			Shell.ApplyPrefs(newPrefs.Panel, newPrefs.Layout)
+		end
+		-- Seasonal themes: the top-bar "S" button image (Icons slot).
+		local topbarModule = sentinelUIFolder and sentinelUIFolder:FindFirstChild("TopbarIcons")
+		if topbarModule and topbarModule:IsA("ModuleScript") then
+			pcall(function()
+				local UIPrefsModule = require(SentinelShared:WaitForChild("UIPrefs")) :: any
+				local IconsModule = require(SentinelShared:WaitForChild("Icons")) :: any
+				local season = UIPrefsModule.Season(newPrefs.Panel)
+				require(topbarModule).SetImage("Sentinel", if season then IconsModule.image(season.Topbar) else nil)
+			end)
 		end
 		if NotificationCenterRef and type(newPrefs.Notifications) == "table" then
 			NotificationCenterRef.ApplyPrefs(newPrefs.Notifications)
@@ -728,6 +757,10 @@ if sentinelUIFolder then
 			Shell.ShowPage("Moderation")
 			ModerationPage.OpenCase(caseId)
 		end)
+		-- M-panel gaps: server chat log + alerts feed (Moderation section).
+		local StaffFeedsPage = require(loadedModules.StaffFeedsPage)
+		StaffFeedsPage.BuildChatLog(Shell.RegisterPage("ChatLog", "Chat Log", "💬"))
+		StaffFeedsPage.BuildAlerts(Shell.RegisterPage("Alerts", "Alerts", "⚠"))
 		require(loadedModules.LookupPage).Build(Shell.RegisterPage("Lookup", "Lookup", "🔎"), function(caseId: number)
 			Shell.ShowPage("Moderation")
 			ModerationPage.OpenCase(caseId)
@@ -747,6 +780,8 @@ if sentinelUIFolder then
 		end)
 		-- W23: polls (Announcements section).
 		require(loadedModules.PollsPage).Build(Shell.RegisterPage("Polls", "Polls", "📊"))
+		-- W24: events (Announcements section).
+		require(loadedModules.EventsPage).Build(Shell.RegisterPage("Events", "Events", "🎉"))
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		require(loadedModules.AuditLogPage).Build(Shell.RegisterPage("Logs", "Audit Log", "📋"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))

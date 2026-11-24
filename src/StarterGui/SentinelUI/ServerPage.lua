@@ -442,21 +442,28 @@ function ServerPage.Build(container: Frame)
 	local ACTIONS = {
 		{ "KickNonStaff", "Kick non-staff", "kicknonstaff" },
 		{ "KickAll", "Kick all", "kickall" },
-		{ "Restart", "Restart (30s)", "migrateserver 30" },
+		{ "Restart", "Restart (30s)", "restart 30" },
+		{ "Restart5", "Restart (5 min)", "restart 5m" },
 		{ "Shutdown", "Shutdown (30s)", "shutdown 30" },
+		{ "Cancel", "Cancel shutdown", "cancelshutdown" },
 	}
 	for i, action in ipairs(ACTIONS) do
-		local button = smallButton(actionsRow, "Action_" .. action[1], action[2], 120, if i >= 3 then Theme.Colors.Error else nil)
+		local danger = i >= 3 and action[1] ~= "Cancel"
+		local button = smallButton(actionsRow, "Action_" .. action[1], action[2], 120, if danger then Theme.Colors.Error else nil)
 		button.LayoutOrder = i
 		button.MouseButton1Click:Connect(function()
 			local command = action[3]
-			if command:match("^kick") then
+			if command:match("^kick") or command:match("^restart") or command:match("^shutdown") then
 				command = withMessage(command)
 			end
 			runCommand(command)
 		end)
 	end
-	local actionsNote = smallLabel(actionsRow, "Each action asks for confirmation. Restart moves players to a fresh server; Shutdown just ends this one.", UDim2.new(1, 0, 0, 18), Theme.Colors.TextSecondary)
+	-- M-panel gaps: the pending shutdown / restart (info.Shutdown).
+	local pendingLabel = smallLabel(actionsRow, "No shutdown or restart pending.", UDim2.new(1, 0, 0, 18), Theme.Colors.TextSecondary)
+	pendingLabel.Name = "PendingShutdown"
+	pendingLabel.LayoutOrder = 9
+	local actionsNote = smallLabel(actionsRow, "Each action asks for confirmation. Restart moves players to a fresh server (warnings at 5m / 2m / 1m / 30s / 10s); Shutdown just ends this one. ;restart 10m and ;shutdown 1h take longer times.", UDim2.new(1, 0, 0, 18), Theme.Colors.TextSecondary)
 	actionsNote.LayoutOrder = 10
 	actionsNote.TextSize = 11
 	actionsNote.TextWrapped = true
@@ -565,6 +572,20 @@ function ServerPage.Build(container: Frame)
 					renderInfo(info)
 					if type(info) == "table" then
 						whitelistHandle.Set(info.Whitelist == true)
+						local pending = info.Shutdown
+						if type(pending) == "table" then
+							local left = tonumber(pending.Remaining) or 0
+							pendingLabel.Text = ("Pending %s in %d:%02d (by %s)"):format(
+								tostring(pending.Kind),
+								math.floor(left / 60),
+								left % 60,
+								tostring(pending.By)
+							)
+							pendingLabel.TextColor3 = Theme.Colors.Warning
+						else
+							pendingLabel.Text = "No shutdown or restart pending."
+							pendingLabel.TextColor3 = Theme.Colors.TextSecondary
+						end
 						capacityLabel.Text = if info.Cap
 							then ("Soft player cap: %d of %d"):format(info.Cap, info.Max or 0)
 							else ("Soft player cap: off (Roblox maximum %d)"):format(info.Max or 0)

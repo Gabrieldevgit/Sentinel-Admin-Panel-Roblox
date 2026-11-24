@@ -81,6 +81,20 @@ Icons.Assets = {
 	-- Speaker icons (Decals 85550394171391 / 124944718313615 -> Image ids)
 	SoundIcon = 137866142678538,
 	MuteSoundIcon = 86539800505739,
+	-- Seasonal themes: Image ids go here (0 = not uploaded yet).
+	--   *Badge   256x256 next to "Sentinel" in the title bar (replaces the S badge)
+	--   *Topbar  256x256 replaces the "S" glyph of the top-bar button
+	--   *Corner  ~512x256 faint decoration in the window's top-right corner
+	ChristmasBadge = 81034076516220, -- snowflake (Decal 71558051820273)
+	ChristmasTopbar = 128733180980740, -- star (Decal 101040650665411)
+	ChristmasCorner = 73493654316616, -- light-string (Decal 104986065322595)
+	-- Hat perched on the "Sentinel" title (Christmas). The upload didn't load
+	-- yet (2026-11-23: "asset not found", likely moderation) - if it never
+	-- shows, it's a Decal id: resolve to the Image id with InsertService.
+	ChristmasHat = 128416464466695,
+	HalloweenBadge = 124129872373184, -- pumpkin-jack-1 (Decal 113525435087524)
+	HalloweenTopbar = 111403351128177, -- bat-medium (Decal 133579110607153)
+	HalloweenCorner = 133145944015039, -- light-string (Decal 77859948330509)
 }
 
 type Slot = { Asset: string?, Fallback: string }
@@ -96,6 +110,17 @@ Icons.Slots = {
 	Ranks = { Asset = "OwnerIcon", Fallback = "👑" },
 	Reports = { Asset = "Warning", Fallback = "🚩" },
 	Appeals = { Asset = "Moderator", Fallback = "⚖" },
+	ChatLog = { Asset = "TextChatButton", Fallback = "💬" },
+	-- Seasonal themes (UIPrefs.SEASONAL). Fill the asset ids in Icons.Assets
+	-- (keys below); while empty the themes show colours only.
+	ChristmasBadge = { Asset = "ChristmasBadge", Fallback = "" },
+	ChristmasTopbar = { Asset = "ChristmasTopbar", Fallback = "" },
+	ChristmasCorner = { Asset = "ChristmasCorner", Fallback = "" },
+	ChristmasHat = { Asset = "ChristmasHat", Fallback = "" },
+	HalloweenBadge = { Asset = "HalloweenBadge", Fallback = "" },
+	HalloweenTopbar = { Asset = "HalloweenTopbar", Fallback = "" },
+	HalloweenCorner = { Asset = "HalloweenCorner", Fallback = "" },
+	Alerts = { Asset = "NotificationsAwaiting", Fallback = "⚠" },
 	CommandsSection = { Asset = "Commands", Fallback = "📜" },
 	Commands = { Asset = "Commands", Fallback = "📜" },
 	Library = { Asset = "CommandLibrary", Fallback = "📚" },
@@ -109,6 +134,7 @@ Icons.Slots = {
 	AnnounceGlobal = { Asset = "Global", Fallback = "🌐" },
 	AnnouncePlayers = { Asset = "OnePersonButton", Fallback = "👤" },
 	Polls = { Asset = "Analitics2", Fallback = "📊" },
+	Events = { Asset = "Timer", Fallback = "🎉" },
 	InsightsSection = { Asset = "Stats1", Fallback = "📈" },
 	Analytics = { Asset = "Stats1", Fallback = "📈" },
 	Logs = { Asset = "Logs", Fallback = "📋" },

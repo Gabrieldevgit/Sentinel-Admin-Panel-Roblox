@@ -46,6 +46,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Theme = require(script.Parent:WaitForChild("Theme"))
 local Icons = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("Icons"))
+local UIPrefs = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("UIPrefs"))
 
 local Shell = {}
 
@@ -99,6 +100,8 @@ local SECTIONS = {
 			{ Id = "Moderation", Label = "Moderation", Icon = "🛡" },
 			{ Id = "Reports", Label = "Reports", Icon = "🚩" },
 			{ Id = "Appeals", Label = "Appeals", Icon = "⚖" },
+			{ Id = "ChatLog", Label = "Chat Log", Icon = "💬" },
+			{ Id = "Alerts", Label = "Alerts", Icon = "⚠" },
 			{ Id = "Ranks", Label = "Ranks", Icon = "👑" },
 		},
 	},
@@ -131,6 +134,7 @@ local SECTIONS = {
 			{ Id = "AnnounceGlobal", Label = "Global", Icon = "🌐" },
 			{ Id = "AnnouncePlayers", Label = "Some players", Icon = "👤" },
 			{ Id = "Polls", Label = "Polls", Icon = "📊" },
+			{ Id = "Events", Label = "Events", Icon = "🎉" },
 		},
 	},
 	{
@@ -621,6 +625,56 @@ function Shell.Init(): ScreenGui
 	badgeGlyph.TextColor3 = Color3.new(1, 1, 1)
 	badgeGlyph.Text = "S"
 	badgeGlyph.Parent = badge
+
+	-- Seasonal themes (UIPrefs.SEASONAL): an image over the badge, a thin
+	-- two-colour line under the title bar, a faint corner image. Hidden
+	-- unless a seasonal theme is on (and, for images, an id is set).
+	local seasonImage = Instance.new("ImageLabel")
+	seasonImage.Name = "SeasonImage"
+	seasonImage.BackgroundTransparency = 1
+	seasonImage.AnchorPoint = Vector2.new(0.5, 0.5)
+	seasonImage.Position = UDim2.fromScale(0.5, 0.5)
+	seasonImage.Size = UDim2.fromOffset(28, 28)
+	seasonImage.ScaleType = Enum.ScaleType.Fit
+	seasonImage.Visible = false
+	seasonImage.ZIndex = 3
+	seasonImage.Parent = badge
+	local seasonLine = Instance.new("Frame")
+	seasonLine.Name = "SeasonLine"
+	seasonLine.AnchorPoint = Vector2.new(0, 1)
+	seasonLine.Position = UDim2.new(0, 0, 1, 0)
+	seasonLine.Size = UDim2.new(1, 0, 0, 2)
+	seasonLine.BackgroundColor3 = Color3.new(1, 1, 1)
+	seasonLine.BorderSizePixel = 0
+	seasonLine.Visible = false
+	seasonLine.ZIndex = 2
+	seasonLine.Parent = topBar
+	local seasonGradient = Instance.new("UIGradient")
+	seasonGradient.Parent = seasonLine
+	local seasonCorner = Instance.new("ImageLabel")
+	seasonCorner.Name = "SeasonCorner"
+	seasonCorner.BackgroundTransparency = 1
+	seasonCorner.AnchorPoint = Vector2.new(1, 0)
+	seasonCorner.Position = UDim2.new(1, -80, 0, 0)
+	seasonCorner.Size = UDim2.fromOffset(160, 40)
+	seasonCorner.ScaleType = Enum.ScaleType.Fit
+	seasonCorner.ImageTransparency = 0.35
+	seasonCorner.Visible = false
+	seasonCorner.ZIndex = 1
+	seasonCorner.Parent = topBar
+	-- Hat sitting on the "Sentinel" word (Christmas).
+	local seasonHat = Instance.new("ImageLabel")
+	seasonHat.Name = "SeasonHat"
+	seasonHat.BackgroundTransparency = 1
+	seasonHat.AnchorPoint = Vector2.new(0.5, 1)
+	seasonHat.Position = UDim2.new(0, 7, 0, 21)
+	seasonHat.Size = UDim2.fromOffset(22, 22)
+	seasonHat.Rotation = -18
+	seasonHat.ScaleType = Enum.ScaleType.Fit
+	seasonHat.Visible = false
+	seasonHat.ZIndex = 4
+	seasonHat.Parent = brand
+	Shell.season = { Hat = seasonHat, Image = seasonImage, Glyph = badgeGlyph, Badge = badge, Line = seasonLine, Gradient = seasonGradient, Corner = seasonCorner }
 
 	local windowButtons = Instance.new("Frame")
 	windowButtons.Name = "WindowButtons"
@@ -1485,7 +1539,33 @@ end
 -- Panel prefs that the shell itself owns (size). Colours are handled by
 -- Theme.Apply + Theme.Retint in init.client; this re-applies the active
 -- states with the new palette.
+-- Seasonal theme decoration (see the title bar build). Images come from
+-- Icons slots; with no id set only the line and colours change.
+function Shell.ApplySeason(panel: any)
+	local parts = Shell.season
+	if not parts then
+		return
+	end
+	local season = UIPrefs.Season(panel)
+	local badgeImage = if season then Icons.image(season.Badge) else nil
+	local cornerImage = if season then Icons.image(season.Corner) else nil
+	parts.Image.Image = badgeImage or ""
+	parts.Image.Visible = badgeImage ~= nil
+	parts.Glyph.Visible = badgeImage == nil
+	parts.Badge.BackgroundTransparency = if badgeImage then 1 else 0
+	parts.Corner.Image = cornerImage or ""
+	parts.Corner.Visible = cornerImage ~= nil
+	local hatImage = if season and season.Hat then Icons.image(season.Hat) else nil
+	parts.Hat.Image = hatImage or ""
+	parts.Hat.Visible = hatImage ~= nil
+	parts.Line.Visible = season ~= nil
+	if season then
+		parts.Gradient.Color = ColorSequence.new(season.Line[1], season.Line[2])
+	end
+end
+
 function Shell.ApplyPrefs(panel: any, layoutPrefs: any?)
+	Shell.ApplySeason(panel)
 	baseScale = if panel and type(panel.Scale) == "number" then panel.Scale else 1
 	if Shell.uiScale then
 		Shell.uiScale.Scale = baseScale

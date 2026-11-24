@@ -224,4 +224,48 @@ CommandRegistry.Register({
 	end,
 })
 
+-- M-panel gaps: saved broadcast templates (Announcements page chips).
+local PermissionSystem = require(Sentinel:WaitForChild("Core"):WaitForChild("PermissionSystem"))
+
+CommandRegistry.Register({
+	Name = "btemplate",
+	Aliases = { "broadcasttemplate", "bctemplate" },
+	Description = "Saved announcement templates (server-wide). list shows them; add <name> <text> saves one; remove <name> deletes it. The Announcements page shows them as chips that fill the message box.",
+	Usage = "/btemplate [list|add|remove] [name] [text...]",
+	ArgHints = { list = { Type = "choice", Choices = { "list", "add", "remove" } } },
+	Examples = { "btemplate", "btemplate add maintenance Short maintenance in 5 minutes", "btemplate remove maintenance" },
+	Permission = "panel.open",
+	Category = "Server",
+	Subcategory = "Announcements",
+	Log = true,
+	Undoable = false,
+	RequiresTarget = false,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local action = (ctx.Arguments[1] or "list"):lower()
+		if action == "list" then
+			local parts = {}
+			for _, t in ipairs(AnnouncementService.GetTemplates()) do
+				table.insert(parts, ("%s: %s"):format(t.Name, t.Text))
+			end
+			return { Success = true, Message = if #parts > 0 then table.concat(parts, " | ") else "No templates." }
+		end
+		if action ~= "add" and action ~= "remove" then
+			return { Success = false, Message = "Usage: ;btemplate [list | add <name> <text...> | remove <name>]" }
+		end
+		if not PermissionSystem.Has(ctx.Executor, "server.announce") then
+			return { Success = false, Message = "Editing templates needs server.announce." }
+		end
+		local name = ctx.Arguments[2]
+		if not name then
+			return { Success = false, Message = "Give a template name." }
+		end
+		local text = if action == "add" then table.concat(ctx.Arguments, " ", 3) else nil
+		if action == "add" and (not text or text == "") then
+			return { Success = false, Message = "Give the template text." }
+		end
+		local ok, message = AnnouncementService.SetTemplate(name, text, ctx.Executor)
+		return { Success = ok, Message = message }
+	end,
+})
+
 return true

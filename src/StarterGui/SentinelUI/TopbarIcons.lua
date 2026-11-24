@@ -58,6 +58,40 @@ local function corner(parent: Instance)
 	c.Parent = parent
 end
 
+-- Seasonal themes: an image replaces a button's glyph (nil = glyph back).
+-- Remembered so it also applies when Init runs later.
+local seasonImages: { [string]: string? } = {}
+
+local function applyImage(id: string)
+	local button = buttons[id]
+	if not button then
+		return
+	end
+	local image = seasonImages[id]
+	local label = button:FindFirstChild("SeasonImage") :: ImageLabel?
+	if image and not label then
+		local l = Instance.new("ImageLabel")
+		l.Name = "SeasonImage"
+		l.BackgroundTransparency = 1
+		l.AnchorPoint = Vector2.new(0.5, 0.5)
+		l.Position = UDim2.fromScale(0.5, 0.5)
+		l.Size = UDim2.fromScale(0.72, 0.72)
+		l.ScaleType = Enum.ScaleType.Fit
+		l.Parent = button
+		label = l
+	end
+	if label then
+		label.Image = image or ""
+		label.Visible = image ~= nil
+	end
+	button.TextTransparency = if image then 1 else 0
+end
+
+function TopbarIcons.SetImage(id: string, image: string?)
+	seasonImages[id] = image
+	applyImage(id)
+end
+
 function TopbarIcons.SetVisible(id: string, visible: boolean)
 	local button = buttons[id]
 	if button then
@@ -241,6 +275,9 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 		group.Visible = anyVisible
 	end)
 
+	for id in pairs(seasonImages) do
+		applyImage(id)
+	end
 	return gui
 end
 

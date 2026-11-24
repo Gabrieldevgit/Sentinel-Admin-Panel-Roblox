@@ -26,6 +26,12 @@
 		EconomyService.SetLevel(player, level): ()
 		EconomyService.AddGems(player, amount): ()
 		EconomyService.GrantBadge(player, badgeId): boolean
+		EconomyService.Award(player, stat, amount): number   (W24)
+			Earned currency ("Coins" | "XP" | "Gems"): positive amounts are
+			multiplied by the active event multipliers (EventService), then
+			added. Returns the amount actually given. Game scripts should
+			use this for rewards; staff grants (AddCoins, ...) are exact.
+		EconomyService.SetMultiplierProvider(fn(stat) -> number)
 
 	Example usage:
 		EconomyService.AddCoins(target, 500)
@@ -193,6 +199,33 @@ end
 
 function EconomyService.SetLevel(player: Player, level: number)
 	setStat(player, "Level", level)
+end
+
+-- W24: event multipliers (EventService hands over its lookup).
+local multiplierProvider: ((string) -> number)? = nil
+function EconomyService.SetMultiplierProvider(fn: (string) -> number)
+	multiplierProvider = fn
+end
+
+function EconomyService.Multiplier(stat: string): number
+	if not multiplierProvider then
+		return 1
+	end
+	local ok, m = pcall(multiplierProvider, stat)
+	return if ok and type(m) == "number" and m > 0 then m else 1
+end
+
+function EconomyService.Award(player: Player, stat: string, amount: number): number
+	if stat ~= "Coins" and stat ~= "XP" and stat ~= "Gems" then
+		error("EconomyService.Award: stat must be Coins, XP or Gems")
+	end
+	local given = amount
+	if amount > 0 then
+		given = math.floor(amount * EconomyService.Multiplier(stat) + 0.5)
+	end
+	addToStat(player, stat, given)
+	EventBus.Publish("Economy.Awarded", player, stat, given, amount)
+	return given
 end
 
 function EconomyService.GetBalance(player: Player, statName: string): number

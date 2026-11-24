@@ -37,6 +37,13 @@
 		AnnouncementService.History(limit?) -> { record }
 		AnnouncementService.ColorHex(name) -> string?
 		AnnouncementService.COLORS, STYLES
+		AnnouncementService.GetTemplates() -> { {Name, Text} }   (M-panel gaps)
+		AnnouncementService.SetTemplate(name, text?, actor?) -> (ok, message)
+
+	Broadcast templates: ConfigService key BroadcastTemplates (server-wide,
+	at most 20, name = letters/digits/_ <= 20, text <= 200). The
+	Announcements page shows them as chips that fill the message box;
+	;btemplate add|remove edits them.
 --]]
 
 local Players = game:GetService("Players")
@@ -50,6 +57,7 @@ local Core = Sentinel:WaitForChild("Core")
 local PermissionSystem = require(Core:WaitForChild("PermissionSystem"))
 local Logger = require(Core:WaitForChild("Logger"))
 local TextFilterService = require(script.Parent:WaitForChild("TextFilterService"))
+local ConfigService = require(script.Parent:WaitForChild("ConfigService"))
 
 local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Sentinel")
 
@@ -343,6 +351,74 @@ function AnnouncementService.Send(actor: any, text: string, scope: string, optio
 	end
 	AnnouncementService.Record(record)
 	return true, "Announcement sent.", record
+end
+
+-- ---------------------------------------------------------------------------
+-- Broadcast templates (M-panel gaps)
+-- ---------------------------------------------------------------------------
+local DEFAULT_TEMPLATES = {
+	{ Name = "welcome", Text = "Welcome to the server! Have fun and follow the rules." },
+	{ Name = "rules", Text = "Reminder: be respectful, no exploiting, no spamming." },
+	{ Name = "restart", Text = "The server will restart soon for an update. You will be moved automatically." },
+	{ Name = "event", Text = "An event is starting now - join in!" },
+}
+AnnouncementService.MAX_TEMPLATES = 20
+AnnouncementService.MAX_TEMPLATE_TEXT = 200
+
+local function validTemplates(v: any): boolean
+	if type(v) ~= "table" or #v > AnnouncementService.MAX_TEMPLATES then
+		return false
+	end
+	local seen = {}
+	for _, t in ipairs(v) do
+		if type(t) ~= "table" or type(t.Name) ~= "string" or type(t.Text) ~= "string" then
+			return false
+		end
+		if not t.Name:match("^[%w_]+$") or #t.Name > 20 or #t.Text == 0 or #t.Text > AnnouncementService.MAX_TEMPLATE_TEXT or seen[t.Name] then
+			return false
+		end
+		seen[t.Name] = true
+	end
+	return true
+end
+
+ConfigService.Define("BroadcastTemplates", DEFAULT_TEMPLATES, validTemplates)
+
+function AnnouncementService.GetTemplates(): { { Name: string, Text: string } }
+	local v = ConfigService.Get("BroadcastTemplates")
+	return if type(v) == "table" then v else table.clone(DEFAULT_TEMPLATES)
+end
+
+function AnnouncementService.SetTemplate(name: string, text: string?, actor: Player?): (boolean, string)
+	if type(name) ~= "string" or not name:match("^[%w_]+$") or #name > 20 then
+		return false, "Template names are letters, digits and _ (max 20)."
+	end
+	local lower = name:lower()
+	local list = table.clone(AnnouncementService.GetTemplates())
+	local existed = false
+	for i = #list, 1, -1 do
+		if list[i].Name:lower() == lower then
+			table.remove(list, i)
+			existed = true
+		end
+	end
+	if text then
+		text = text:gsub("%c+", " "):gsub("&&", "&"):match("^%s*(.-)%s*$")
+		if not text or #text == 0 or #text > AnnouncementService.MAX_TEMPLATE_TEXT then
+			return false, ("Template text is 1-%d characters."):format(AnnouncementService.MAX_TEMPLATE_TEXT)
+		end
+		table.insert(list, { Name = lower, Text = text })
+	elseif not existed then
+		return false, ("No template named %s."):format(lower)
+	end
+	if #list > AnnouncementService.MAX_TEMPLATES then
+		return false, ("At most %d templates."):format(AnnouncementService.MAX_TEMPLATES)
+	end
+	local ok, err = ConfigService.Set("BroadcastTemplates", list, actor)
+	if not ok then
+		return false, err or "Could not save."
+	end
+	return true, if text then ("Template %s saved."):format(lower) else ("Removed template %s."):format(lower)
 end
 
 return AnnouncementService

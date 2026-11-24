@@ -173,6 +173,9 @@ local LIMITS: { [string]: { number } } = {
 	GetBanListRemote = { 3, 0.5 },
 	GetAnnouncementsRemote = { 4, 1 },
 	GetPollsRemote = { 4, 1 },
+	GetEventsRemote = { 4, 1 },
+	GetChatLogRemote = { 4, 1 },
+	GetAlertsRemote = { 4, 1 },
 	SearchReportsRemote = { 5, 1 },
 	GetReportRemote = { 6, 2 },
 	SearchAppealsRemote = { 5, 1 },
@@ -1315,6 +1318,19 @@ bindInvoke(getPollsRemote, function(player: Player)
 	return snapshot
 end)
 
+-- W24: running / scheduled events, presets, multipliers, history.
+local getEventsRemote = getOrCreate("GetEventsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getEventsRemote, function(player: Player)
+	if not isStaff(player) then
+		return nil
+	end
+	local EventService = require(script.Parent:WaitForChild("EventService")) :: any
+	local snapshot = EventService.Snapshot()
+	snapshot.CanServer = PermissionSystem.Has(player, "server.event")
+	snapshot.CanGlobal = PermissionSystem.Has(player, "crossserver.event")
+	return snapshot
+end)
+
 local getAnnouncementsRemote = getOrCreate("GetAnnouncementsRemote", "RemoteFunction") :: RemoteFunction
 bindInvoke(getAnnouncementsRemote, function(player: Player, limit: any)
 	if not isStaff(player) then
@@ -1335,6 +1351,35 @@ bindInvoke(getAnnouncementsRemote, function(player: Player, limit: any)
 		CanGlobal = PermissionSystem.Has(player, "crossserver.announce"),
 		Colors = AnnouncementService.COLORS,
 		Server = Logger.GetServerId(),
+		Templates = AnnouncementService.GetTemplates(),
+		CanEditTemplates = PermissionSystem.Has(player, "server.announce"),
+	}
+end)
+
+-- M-panel gaps: server chat log (query = ";chatlog" syntax) and alerts feed.
+local getChatLogRemote = getOrCreate("GetChatLogRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getChatLogRemote, function(player: Player, query: any, limit: any)
+	if not isStaff(player) then
+		return nil
+	end
+	local ChatLogService = require(script.Parent:WaitForChild("ChatLogService")) :: any
+	local filter = ChatLogService.ParseQuery(if type(query) == "string" then query:sub(1, 100) else "")
+	return {
+		Lines = ChatLogService.Search(filter, clampCount(limit, 150, 300)),
+		Total = ChatLogService.Count(),
+		CanClear = PermissionSystem.Has(player, "moderation.chatlog"),
+	}
+end)
+
+local getAlertsRemote = getOrCreate("GetAlertsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getAlertsRemote, function(player: Player, limit: any)
+	if not isStaff(player) then
+		return nil
+	end
+	local AlertService = require(script.Parent:WaitForChild("AlertService")) :: any
+	return {
+		Alerts = AlertService.List(clampCount(limit, 100, 200)),
+		CanClear = PermissionSystem.Has(player, "moderation.alerts"),
 	}
 end)
 

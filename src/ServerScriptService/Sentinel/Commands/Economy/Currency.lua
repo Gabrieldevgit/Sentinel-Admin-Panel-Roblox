@@ -204,4 +204,37 @@ CommandRegistry.Register({
 	end,
 })
 
+-- W24: an earned reward - active event multipliers apply (Double Coins...).
+CommandRegistry.Register({
+	Name = "reward",
+	Aliases = { "awardcurrency" },
+	Description = "Gives an earned reward (coins, xp or gems); active event multipliers apply, unlike ;givecurrency.",
+	Usage = "/reward target:amount [stat]",
+	ArgHints = { stat = { Type = "choice", Choices = { "coins", "xp", "gems" }, Description = "coins (default), xp or gems" } },
+	Examples = { "reward me:100", "reward all:50 xp" },
+	Permission = "economy.currency.give",
+	Category = "Economy",
+	Log = true,
+	Undoable = false,
+	RequiresTarget = true,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local quantity = QuantityParser.Parse(ctx.Modifier or "")
+		local amount = if quantity then quantity.Amount else nil
+		if not amount or amount <= 0 then
+			return { Success = false, Message = "Give a positive amount: ;reward player:100 [coins|xp|gems]" }
+		end
+		local which = (ctx.Arguments[1] or "coins"):lower()
+		local stat = if which == "xp" then "XP" elseif which == "gems" or which == "gem" then "Gems" elseif which == "coins" or which == "coin" then "Coins" else nil
+		if not stat then
+			return { Success = false, Message = "Stat must be coins, xp or gems." }
+		end
+		local given = 0
+		for _, target in ipairs(ctx.Targets) do
+			given = EconomyService.Award(target, stat, amount)
+		end
+		local m = EconomyService.Multiplier(stat)
+		return { Success = true, Message = ("Rewarded %d %s to %d player(s)%s."):format(given, stat, #ctx.Targets, if m ~= 1 then (" (%d x%s event multiplier)"):format(amount, tostring(m)) else "") }
+	end,
+})
+
 return true

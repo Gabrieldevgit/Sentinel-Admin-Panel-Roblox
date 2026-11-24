@@ -197,9 +197,11 @@ end
 --[[
 	W22: everything the Server page / ;serverinfo show about THIS server.
 	Location: Roblox has no server-region API, so it stays nil. Events and
-	polls: active polls from PollService (W23); events stay empty until W24.
+	polls: active polls from PollService (W23), events from EventService (W24).
 --]]
 local pollProvider: (() -> { any })? = nil
+local eventProvider: (() -> { any })? = nil
+local shutdownProvider: (() -> any)? = nil
 
 function CrossServerService.LocalInfo(): any
 	local record = buildRecord()
@@ -215,8 +217,9 @@ function CrossServerService.LocalInfo(): any
 	record.Reserved = game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0
 	record.Owner = if game.PrivateServerOwnerId ~= 0 then game.PrivateServerOwnerId else nil
 	record.Location = nil
-	record.Events = {}
+	record.Events = if eventProvider then eventProvider() else {}
 	record.Polls = if pollProvider then pollProvider() else {}
+	record.Shutdown = if shutdownProvider then shutdownProvider() else nil
 	return record
 end
 
@@ -224,6 +227,17 @@ end
 -- require each other in a cycle).
 function CrossServerService.SetPollProvider(fn: () -> { any })
 	pollProvider = fn
+end
+
+-- M-panel gaps: ShutdownService hands over its pending shutdown / restart
+-- ({Kind, EndsAt, By, Message} or nil).
+function CrossServerService.SetShutdownProvider(fn: () -> any)
+	shutdownProvider = fn
+end
+
+-- W24: EventService hands over its active / scheduled event names.
+function CrossServerService.SetEventProvider(fn: () -> { any })
+	eventProvider = fn
 end
 
 local function writeHeartbeat()
@@ -823,10 +837,40 @@ function CrossServerService.JoinServer(player: Player, idOrPrefix: string): (boo
 end
 
 local migrating = false
+local migrationCancelled = false
 
 local function getRemote(name: string): RemoteEvent?
 	local remote = SentinelShared:FindFirstChild(name)
 	return if remote and remote:IsA("RemoteEvent") then remote else nil
+end
+
+-- Lock this server and send everyone through a freshly reserved server
+-- (see StartMigration). Returns false in Studio (dry run) or on failure.
+function CrossServerService.MigrateNow(label: string?): (boolean, string?)
+	local announce = getRemote("AnnounceRemote")
+	if not CrossServerService.CanTeleport() then
+		if announce then
+			announce:FireAllClients("Migration dry run finished (teleports are disabled in Studio).", Color3.fromRGB(240, 180, 60))
+		end
+		return false, "teleports are disabled in Studio"
+	end
+	ServerStateService.SetLocked(true, label)
+	local ok, err = pcall(function()
+		local code = TeleportService:ReserveServer(game.PlaceId)
+		local options = Instance.new("TeleportOptions")
+		options.ReservedServerAccessCode = code
+		options:SetTeleportData({ SentinelMigration = true })
+		TeleportService:TeleportAsync(game.PlaceId, Players:GetPlayers(), options)
+	end)
+	if not ok then
+		warn("[Sentinel.CrossServerService] migration teleport failed: " .. tostring(err))
+		ServerStateService.SetLocked(false)
+		if announce then
+			announce:FireAllClients("The move to a new server failed - you can keep playing here.", Color3.fromRGB(235, 87, 87))
+		end
+		return false, tostring(err)
+	end
+	return true, nil
 end
 
 --[[
@@ -835,12 +879,14 @@ end
 	immediately sends them back to the public place. They land in servers
 	started on the current place version, and this one closes when empty.
 	In Studio the teleport is skipped (reported as a dry run).
+	M-panel gaps: CancelMigration() stops a running countdown.
 --]]
 function CrossServerService.StartMigration(seconds: number, message: string?): (boolean, number, string)
 	if migrating then
 		return false, 0, "a migration is already running"
 	end
 	migrating = true
+	migrationCancelled = false
 	local delaySeconds = math.clamp(math.floor(seconds), 5, 300)
 	local playerCount = #Players:GetPlayers()
 	local label = message or "Server restarting for an update"
@@ -851,40 +897,45 @@ function CrossServerService.StartMigration(seconds: number, message: string?): (
 			announce:FireAllClients(("%s in %d seconds. You will be moved to a new server automatically."):format(label, delaySeconds), Color3.fromRGB(240, 180, 60))
 		end
 		for remaining = delaySeconds, 1, -1 do
+			if migrationCancelled then
+				break
+			end
 			if countdown then
 				countdown:FireAllClients("tick", label, remaining, delaySeconds)
 			end
 			task.wait(1)
 		end
-		if countdown then
-			countdown:FireAllClients("done", label, 0, delaySeconds)
-		end
-		local can = CrossServerService.CanTeleport()
-		if not can then
-			if announce then
-				announce:FireAllClients("Migration dry run finished (teleports are disabled in Studio).", Color3.fromRGB(240, 180, 60))
+		if migrationCancelled then
+			if countdown then
+				countdown:FireAllClients("cancel", label, 0, delaySeconds)
 			end
 			migrating = false
 			return
 		end
-		ServerStateService.SetLocked(true)
-		local ok, err = pcall(function()
-			local code = TeleportService:ReserveServer(game.PlaceId)
-			local options = Instance.new("TeleportOptions")
-			options.ReservedServerAccessCode = code
-			options:SetTeleportData({ SentinelMigration = true })
-			TeleportService:TeleportAsync(game.PlaceId, Players:GetPlayers(), options)
-		end)
-		if not ok then
-			warn("[Sentinel.CrossServerService] migration teleport failed: " .. tostring(err))
-			ServerStateService.SetLocked(false)
-			if announce then
-				announce:FireAllClients("The move to a new server failed - you can keep playing here.", Color3.fromRGB(235, 87, 87))
-			end
+		if countdown then
+			countdown:FireAllClients("done", label, 0, delaySeconds)
 		end
+		CrossServerService.MigrateNow(nil)
 		migrating = false
 	end)
 	return true, playerCount, ("migration starts in %ds for %d player(s)"):format(delaySeconds, playerCount)
+end
+
+function CrossServerService.IsMigrating(): boolean
+	return migrating
+end
+
+-- Stops a running migration countdown. Returns true if one was running.
+function CrossServerService.CancelMigration(): boolean
+	if not migrating or migrationCancelled then
+		return false
+	end
+	migrationCancelled = true
+	local announce = getRemote("AnnounceRemote")
+	if announce then
+		announce:FireAllClients("The server restart was cancelled.", Color3.fromRGB(80, 200, 120))
+	end
+	return true
 end
 
 -- The reserved "waiting room" server: send migrating players straight back
