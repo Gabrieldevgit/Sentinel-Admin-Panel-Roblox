@@ -25,8 +25,9 @@ HD Admin's code or design.
 ## Worth adding
 
 ### Chat and player identity (no W row yet)
-- ChatTag / ChatTagColor: tag before a player's name in chat; could follow
-  Sentinel ranks automatically.
+- ✅ ChatTag / ChatTagColor: tag before a player's name in chat; could follow
+  Sentinel ranks automatically. (2026-11-24: `;chattag`, `;unchattag`,
+  `;chattags on|off`; rank tags by default.)
 - ChatName / ChatNameColor: change the name shown in chat.
 - SystemMessage: a chat line styled like a system message.
 - Name / HideName / Title: change or hide the overhead name, add a title.
@@ -46,7 +47,8 @@ HD Admin's code or design.
   ResetStats: any leaderstat, not only Sentinel currencies (W28).
 
 ### Moderation and server
-- ServerBan / UnServerBan: ban from this server only.
+- ✅ ServerBan / UnServerBan: ban from this server only. (2026-11-24:
+  `;serverban`, `;unserverban`, `;serverbans`.)
 - Punish: hide a player's character until undone.
 - LockServer by rank: kick everyone below a rank and block their joins.
 - Rejoin: send a player back into the same server.

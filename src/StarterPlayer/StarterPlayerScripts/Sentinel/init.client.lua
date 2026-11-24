@@ -39,6 +39,9 @@ local SentinelShared = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Se
 local PlayerForms = require(script:WaitForChild("PlayerForms"))
 PlayerForms.Init()
 
+-- HD Admin gap: rank / custom chat tags ([Admin] Player1: hi), every player.
+require(script:WaitForChild("ChatTags")).Init()
+
 -- ---------------------------------------------------------------------------
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------

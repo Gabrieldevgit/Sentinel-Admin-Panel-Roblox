@@ -4,15 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-23 (seasonal themes) - **W24 Events + M-panel gaps
-(cancel shutdown / scheduled restart, chat log, alerts, broadcast
-templates, seasonal effects + Spooky Night) + minimalist Christmas /
-Halloween panel themes built and verified in Play, not committed.** Seasonal
-images filled in `Icons.Assets` (snowflake / star / light-string; pumpkin /
-bat / light-string) from the user's 59 uploads and seen in Play. Not
-loadable yet: SentinelChristmasHat, santa-hat, icicles, bat-small, web
-(LoadAsset failed - maybe still in moderation). Still excluded: staff activity page, fun / character
-commands. Next: commit when asked, then W25. Start with §6._
+_Last updated: 2026-11-24 (HD gaps: server bans + chat tags) - **`;serverban`
+and rank / custom chat tags built, verified in Play, committed; the
+`ServerStorage."Sentinel Setup"` install folder was rebuilt from the
+current code (place saved, v233).** Next: not pushed; the user picks the
+next W row or HD gap. Start with §6._
 
 ---
 
@@ -146,7 +142,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events, 143 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps, 152 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -1037,6 +1033,17 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **HD gaps (2026-11-24) not verified with a 2nd player:** `;serverban`
+  on another player + their rejoin being refused (the kick message and
+  the join check were run on the test account through a module copy);
+  chat tags as seen by another client. Saved ranks are not migrated: on
+  an existing place run `;rankperm Moderator +moderation.serverban`
+  (Admin+ already has `moderation.*`). `;chattag` needs `player.chattag`
+  (Admin+ via `player.*`). Chat tags set `TextChatService.
+  OnIncomingMessage` (a script can't read the old callback, so another
+  script setting it later wins). Testing place: `RankChatTags` config is
+  stored as `true` (was default).
+
 - **M-panel gaps not verified:** the seasonal effects were checked by
   instance state only (Studio's capture showed the world black under
   Spooky Night) - look at them in game; a real (non-Studio) restart
@@ -1295,6 +1302,25 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-24 (latest): HD Admin gaps - server bans + chat tags,
+  committed.** New: `Commands/Moderation/ServerBan.lua` (`;serverban
+  target[:dur] [reason]`, `;unserverban name|id|all`, `;serverbans`;
+  memory only, this server; node `moderation.serverban`, undoable),
+  `Systems/ChatTagService.lua` (custom tag > top rank in rank colour;
+  config `RankChatTags`; player attributes `SentinelChatTag` /
+  `SentinelChatTagColor`; 10 s sweep for rank edits),
+  `Commands/Player/ChatTags.lua` (`;chattag target text [color=..]`,
+  `;unchattag`, `;chattags on|off`), client
+  `StarterPlayerScripts/Sentinel/ChatTags.lua` (OnIncomingMessage
+  prefix), `Tests/HDGaps.spec.lua`. Tests **152/152**.
+- **Install package:** `ServerStorage."Sentinel Setup"` (Studio only, not
+  in the repo) = README (disabled Script with install steps) + copies of
+  the four Rojo trees + optional SentinelTools. Rebuild it after big
+  changes: destroy and re-clone `ReplicatedStorage.Shared.Sentinel`
+  (ModuleScripts only - skip runtime remotes), `ServerScriptService.
+  Sentinel`, `StarterPlayerScripts.Sentinel`, `StarterGui.SentinelUI`
+  into it, then save the place.
+
 - **2026-11-23 (latest): M-panel gaps built + verified in Play, NOT
   committed** (on top of the uncommitted W24 work). New: `Systems/
   {ShutdownService,ChatLogService,AlertService}.lua`, `Commands/Moderation/
@@ -1424,6 +1450,16 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-24 (HD gaps)** - User: implement 2 HD Admin gaps, commit,
+  rebuild the Sentinel Setup folder. Picked server bans and chat tags.
+  Verified in Play: rank tag attribute (Owner, gold), `;chattag me
+  Builder color=lime`, bad colour refused, `;chattags off/on`,
+  `;unchattag` back to rank tag, incoming chat PrefixText =
+  `[Owner]` in gold, `;serverbans` empty, self-ban refused, unknown
+  unserverban refused, server-ban kick message. Tests 152/152. Rebuilt
+  `ServerStorage."Sentinel Setup"` (+2 README lines), saved v233. HD gap
+  doc items ✅ (no blueprint bullet covers them). Committed.
 
 - **2026-11-23 (seasonal images)** - User uploaded 59 seasonal decals. Added a `ChristmasHat` slot (Shell `Title.SeasonHat`, on the S of "Sentinel"; id 128416464466695 does not load yet - moderation?). Committed + pushed.
   Resolved Decal -> Image ids, wired 6 into the theme slots, verified both
