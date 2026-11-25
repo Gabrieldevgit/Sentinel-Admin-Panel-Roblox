@@ -25,7 +25,9 @@
 		PunishmentService.AddWarning(target, issuer, reason): {WarningRecord}
 		PunishmentService.AddWarningOffline(userId, issuer, reason): number?
 		PunishmentService.GetWarnings(userId): {WarningRecord}
-		PunishmentService.ClearWarnings(userId): ()
+		PunishmentService.ClearWarnings(userId): boolean
+		PunishmentService.SetWarnings(userId, list): boolean
+		PunishmentService.PlanRemoval(list, "all"|"<n>"|"#i"|"#i-j") -> (kept, removed)
 		PunishmentService.RegisterEscalationRule(threshold, action): ()
 			-- action: (target: Player, warnings: {WarningRecord}) -> ()
 
@@ -193,14 +195,70 @@ function PunishmentService.AddWarningOffline(userId: number, issuer: any, reason
 	return count
 end
 
-function PunishmentService.ClearWarnings(userId: number)
-	cache[userId] = {}
+function PunishmentService.ClearWarnings(userId: number): boolean
+	return PunishmentService.SetWarnings(userId, {})
+end
+
+-- Replaces a player's whole warning list (clear / remove / undo). Returns
+-- whether the DataStore write worked (the cache is updated either way).
+function PunishmentService.SetWarnings(userId: number, warnings: { WarningRecord }): boolean
+	cache[userId] = warnings
 	local ok, err = pcall(function()
-		WarningStore:SetAsync(tostring(userId), {})
+		WarningStore:SetAsync(tostring(userId), warnings)
 	end)
 	if not ok then
-		warn(("[Sentinel.PunishmentService] failed to clear warnings for %d: %s"):format(userId, tostring(err)))
+		warn(("[Sentinel.PunishmentService] failed to save warnings for %d: %s"):format(userId, tostring(err)))
+		return false
 	end
+	EventBus.Publish("Player.WarningsChanged", userId, #warnings)
+	return true
+end
+
+--[[
+	Pure (Warnings.spec): which warnings to drop.
+		spec "all"            every warning
+		spec "<n>"            the newest n (n >= 1)
+		spec "#<i>"           warning number i as ;warnings lists it (1 = oldest)
+		spec "#<i>-<j>"       numbers i..j
+	Returns (kept, removed) or (nil, error).
+--]]
+function PunishmentService.PlanRemoval(warnings: { WarningRecord }, spec: string): ({ WarningRecord }?, any)
+	local total = #warnings
+	if total == 0 then
+		return nil, "has no warnings"
+	end
+	spec = tostring(spec):lower()
+	local from, to
+	if spec == "all" then
+		from, to = 1, total
+	elseif spec:match("^#%d+%-%d+$") then
+		local a, b = spec:match("^#(%d+)%-(%d+)$")
+		from, to = math.min(tonumber(a) :: number, tonumber(b) :: number), math.max(tonumber(a) :: number, tonumber(b) :: number)
+	elseif spec:match("^#%d+$") then
+		from = tonumber(spec:sub(2)) :: number
+		to = from
+	elseif spec:match("^%d+$") then
+		local n = tonumber(spec) :: number
+		if n < 1 then
+			return nil, "the number must be at least 1"
+		end
+		n = math.min(n, total)
+		from, to = total - n + 1, total
+	else
+		return nil, "give a number (newest n), #index, #from-to or all"
+	end
+	if from < 1 or to > total then
+		return nil, ("only has %d warning(s)"):format(total)
+	end
+	local kept, removed = {}, {}
+	for i, w in ipairs(warnings) do
+		if i >= from and i <= to then
+			table.insert(removed, w)
+		else
+			table.insert(kept, w)
+		end
+	end
+	return kept, removed
 end
 
 -- W14 (accepted warn appeals): removes the one warning issued closest to

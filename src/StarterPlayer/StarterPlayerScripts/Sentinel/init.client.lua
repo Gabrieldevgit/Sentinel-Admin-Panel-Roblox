@@ -45,6 +45,10 @@ require(script:WaitForChild("ChatTags")).Init()
 -- W-FINAL.1: client components of enabled Sentinel modules (every player).
 require(script:WaitForChild("ModuleHost")).Init()
 
+-- Soft Shutdown: "Servers are restarting" screen (every player, also in the
+-- waiting-room server).
+require(script:WaitForChild("SoftShutdown")).Init()
+
 -- ---------------------------------------------------------------------------
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------

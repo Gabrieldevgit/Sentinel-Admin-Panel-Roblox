@@ -311,7 +311,7 @@ Punishment management
 - ✅ Offline ban.
 - ✅ Offline unban.
 - ✅ Warning.
-- Warning removal.
+- ✅ Warning removal.
 - ✅ Mute.
 - ✅ Temporary mute.
 - Permanent mute.

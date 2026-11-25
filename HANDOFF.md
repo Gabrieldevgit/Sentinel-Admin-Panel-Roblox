@@ -4,10 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-24 (W16 Analytics + Module Manager / Shift To Run) -
-**W16 analytics and the first W-FINAL module (Shift To Run, on a Module
-Manager foundation) built + verified in Play, committed + pushed.** Next: the
-user picks the next W row / module. Start with §6._
+_Last updated: 2026-11-24 (Soft Shutdown + warning removal) - **Soft
+Shutdown (`;softshutdown`, automatic on server close) and `;clearwarnings` /
+`;removewarnings` built + verified in Play, committed + pushed.** Next: the user
+picks the next W row / module. Start with §6._
 
 ---
 
@@ -141,7 +141,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps + analytics + modules, 165 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps + analytics + modules + warnings, 168 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -980,6 +980,38 @@ Control" UI, all driven by one command grammar
   action `SentinelSprint` above Shift Lock priority (Key, AltKey, L3, touch
   "Run" button), Hold / Toggle, FOV boost, stamina bar `PlayerGui.
   SentinelSprint.Bar.Fill`. Warns when Shift Lock is on and the key is Shift.
+- **Soft Shutdown:** `Systems/SoftShutdownService` - `Evacuate(label)`:
+  lock, `SoftShutdownRemote("leaving")` (client screen, also
+  `SetTeleportGui`), ReserveServer (3 tries; none = send straight to public
+  servers), group TeleportAsync with TeleportData `{SentinelSoftShutdown =
+  1, Label}` (falls back to one by one); TeleportInitFailed retries 3x then
+  kicks with "please rejoin"; staff who bypass the lock and join get sent
+  too. Waiting room (reserved server + that data, old `SentinelMigration`
+  too): batches arrivals, sends them back together after `WAIT_IN_ROOM`
+  (8 s). **Automatic:** BindToClose on public servers with players when
+  ConfigService `SoftShutdown` is true (default; never Studio / private /
+  reserved) - this is what runs when the owner shuts down / restarts
+  servers from Creator Hub. `CrossServerService.MigrateNow` (`;restart`,
+  `;migrateserver`, `;gupdate`) now calls Evacuate; its old `bounceBack` is
+  a no-op. Studio = dry run (screen 4 s, "dry run" message). Client
+  `StarterPlayerScripts/Sentinel/SoftShutdown.lua` (every player, ScreenGui
+  `SentinelSoftShutdown.Card.{Title,Message,Status}`). Command
+  `;softshutdown [time|now|all [time]|cancel|status|auto on|off]
+  [message]` (softrestart, sshutdown; `Commands/Server/SoftShutdown.lua`;
+  node server.shutdown, `all` needs crossserver.migrate, `auto` needs
+  config.edit; critical = ;confirm except status / cancel / auto; default
+  countdown 30 s via `ShutdownService.Schedule("restart")`, so warnings /
+  cancel work as for ;restart).
+- **Warning removal** (Warn.lua): `;clearwarnings <player> [reason]`
+  (clearwarns, resetwarnings, clearwarn) and `;removewarnings <player>
+  [n|#i|#a-b|all] [reason]` (removewarns, unwarn, delwarn, removewarn; no
+  amount = newest 1). Username / UserId / me, online or offline
+  (PlayerProfileService.Resolve); online targets ranked >= you refused
+  (RankService.CanTarget). Undoable (restores the old list). Node
+  `moderation.clearwarnings` (Admin+ via moderation.*; Moderators don't
+  have it). `PunishmentService.SetWarnings` / `PlanRemoval` (pure);
+  `ClearWarnings` now returns a boolean; EventBus `Player.WarningsChanged`.
+  Before / after count goes to the audit log (`Logger.NoteChange`).
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -1080,6 +1112,14 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **Soft Shutdown not verified live** (Studio can't teleport - only the
+  dry run, screen, countdown, cancel, status and auto toggle were tested):
+  the real reserved-server bounce, the waiting room, teleport retries and
+  the automatic BindToClose path need the published place (e.g. Creator
+  Hub > "Restart servers for updates" with 2 accounts in one server).
+  Saved ranks are not migrated: grant Moderators warning removal with
+  `;rankperm Moderator +moderation.clearwarnings` if wanted.
 
 - **W16 / Shift To Run not verified yet:** moderation / staff / economy
   graphs and most-active moderators with real data (no moderation action or
@@ -1362,6 +1402,14 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-24 (latest): Soft Shutdown + warning removal, verified in Play,
+  committed + pushed.** New: `Systems/SoftShutdownService.lua`,
+  `Commands/Server/SoftShutdown.lua`, `StarterPlayerScripts/Sentinel/
+  SoftShutdown.lua`, `Tests/Warnings.spec.lua`. Edited: CrossServerService
+  (MigrateNow -> Evacuate, bounceBack removed), PunishmentService, Warn.lua,
+  init.client. Tests **168/168**. Blueprint **395 ✅** (+1 warning removal).
+  The test account still has its 5 warnings (removed + restored by ;undo).
+
 - **2026-11-24 (latest): W16 Analytics + Module Manager + Shift To Run,
   verified in Play, committed + pushed (`de43761`).** New: `Systems/{AnalyticsService,
   ModuleService}.lua`, `Commands/Server/{Analytics,Modules}.lua`,
@@ -1536,6 +1584,15 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-24 (Soft Shutdown + warnings)** - User: soft shutdown (all of
+  it triggerable by command) + a command to clear warnings and remove a
+  number of them. Verified in Play: `;removewarnings me 1` (5 -> 4) +
+  `;undo`, `;removewarnings me #9` refused, `;clearwarnings me` (5 -> 0) +
+  `;undo`, `;softshutdown now` asks ;confirm then shows the restart screen
+  and reports the Studio dry run, `;softshutdown 6` countdown ends on the
+  screen, `;softshutdown 2m` + status + cancel, `auto off` / `on`. No
+  console errors. Blueprint: "Warning removal" ✅.
 
 - **2026-11-24 (W16 + Shift To Run)** - User: implement W16 and ONE module
   (Shift To Run / Nickname GUI / Chat Tags Remastered). Picked Shift To Run

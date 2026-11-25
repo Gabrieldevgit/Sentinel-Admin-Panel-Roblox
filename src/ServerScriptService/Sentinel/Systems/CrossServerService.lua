@@ -845,32 +845,19 @@ local function getRemote(name: string): RemoteEvent?
 end
 
 -- Lock this server and send everyone through a freshly reserved server
--- (see StartMigration). Returns false in Studio (dry run) or on failure.
+-- (see StartMigration). Soft Shutdown: Systems/SoftShutdownService does the
+-- teleporting (restart screen, waiting room, retries). Returns false in
+-- Studio (dry run) or on failure.
 function CrossServerService.MigrateNow(label: string?): (boolean, string?)
-	local announce = getRemote("AnnounceRemote")
-	if not CrossServerService.CanTeleport() then
-		if announce then
-			announce:FireAllClients("Migration dry run finished (teleports are disabled in Studio).", Color3.fromRGB(240, 180, 60))
-		end
-		return false, "teleports are disabled in Studio"
-	end
-	ServerStateService.SetLocked(true, label)
-	local ok, err = pcall(function()
-		local code = TeleportService:ReserveServer(game.PlaceId)
-		local options = Instance.new("TeleportOptions")
-		options.ReservedServerAccessCode = code
-		options:SetTeleportData({ SentinelMigration = true })
-		TeleportService:TeleportAsync(game.PlaceId, Players:GetPlayers(), options)
-	end)
+	local SoftShutdownService = require(script.Parent:WaitForChild("SoftShutdownService")) :: any
+	local ok, message = SoftShutdownService.Evacuate(label)
 	if not ok then
-		warn("[Sentinel.CrossServerService] migration teleport failed: " .. tostring(err))
-		ServerStateService.SetLocked(false)
-		if announce then
+		local announce = getRemote("AnnounceRemote")
+		if announce and CrossServerService.CanTeleport() then
 			announce:FireAllClients("The move to a new server failed - you can keep playing here.", Color3.fromRGB(235, 87, 87))
 		end
-		return false, tostring(err)
 	end
-	return true, nil
+	return ok, if ok then nil else message
 end
 
 --[[
@@ -938,37 +925,9 @@ function CrossServerService.CancelMigration(): boolean
 	return true
 end
 
--- The reserved "waiting room" server: send migrating players straight back
--- to a public server. TeleportData comes from the client, so the only thing
--- it can trigger is a teleport to this same place.
-local function isReservedServer(): boolean
-	return game.PrivateServerId ~= "" and game.PrivateServerOwnerId == 0
-end
-
-local function bounceBack(player: Player)
-	if studio or not isReservedServer() then
-		return
-	end
-	local ok, joinData = pcall(player.GetJoinData, player)
-	local data = if ok and type(joinData) == "table" then joinData.TeleportData else nil
-	if type(data) ~= "table" or data.SentinelMigration ~= true then
-		return
-	end
-	task.delay(6, function()
-		for attempt = 1, 3 do
-			if player.Parent ~= Players then
-				return
-			end
-			local sent = pcall(function()
-				TeleportService:TeleportAsync(game.PlaceId, { player })
-			end)
-			if sent then
-				return
-			end
-			task.wait(attempt * 3)
-		end
-	end)
-end
+-- The reserved "waiting room" (players sent back to a public server) is
+-- Systems/SoftShutdownService now.
+local function bounceBack(_player: Player) end
 
 -- ---------------------------------------------------------------------------
 -- Stats

@@ -3,7 +3,9 @@
 	Warn.lua
 
 	Purpose:
-		Registers "/warn" and "/warnings". Delegates the actual ledger and
+		Registers "/warn", "/warnings", "/clearwarnings" and
+		"/removewarnings" (clear all, or remove a number of warnings; both
+		work for offline players and can be undone). Delegates the actual ledger and
 		escalation logic to PunishmentService and registers the escalation
 		actions (kick, mute, ban). The thresholds are admin config (W08).
 
@@ -144,5 +146,115 @@ CommandRegistry.Register({
 		return { Success = true, Message = table.concat(lines, " | ") }
 	end,
 })
+
+-- ---------------------------------------------------------------------------
+-- ;clearwarnings / ;removewarnings (online or offline, undoable)
+-- ---------------------------------------------------------------------------
+local Logger = require(Core:WaitForChild("Logger"))
+local PlayerProfileService = require(Sentinel:WaitForChild("Systems"):WaitForChild("PlayerProfileService"))
+local RankService = require(Sentinel:WaitForChild("Systems"):WaitForChild("RankService"))
+
+-- Resolves the player argument and refuses higher / equal ranks when online.
+local function resolveForWarnings(ctx: Types.CommandContext): (any, string?)
+	local user, err = PlayerProfileService.Resolve(ctx.Arguments[1], ctx.Executor)
+	if not user then
+		return nil, err
+	end
+	if user.Local and user.Local ~= ctx.Executor and not RankService.CanTarget(ctx.Executor, user.Local) then
+		return nil, ("%s is protected by rank."):format(user.Name)
+	end
+	return user, nil
+end
+
+local function applyRemoval(ctx: Types.CommandContext, spec: string, reasonFrom: number): Types.CommandResult
+	local user, err = resolveForWarnings(ctx)
+	if not user then
+		return { Success = false, Message = err or "Player not found." }
+	end
+	local before = table.clone(PunishmentService.GetWarnings(user.UserId))
+	local kept, removed = PunishmentService.PlanRemoval(before, spec)
+	if not kept then
+		return { Success = false, Message = ("%s %s."):format(user.Name, tostring(removed)) }
+	end
+	if not PunishmentService.SetWarnings(user.UserId, kept) then
+		return { Success = false, Message = "The warnings could not be saved (DataStore error) - try again." }
+	end
+	Logger.NoteChange(user.Name, "warnings", #before, #kept, ctx.Executor, "moderation.warnings")
+	local reason = table.concat(ctx.Arguments, " ", reasonFrom)
+	;(ctx :: any).Reason = if reason ~= "" then reason else nil
+	local what = if #kept == 0 then "all warnings" else ("%d warning(s)"):format(#removed)
+	return {
+		Success = true,
+		Message = ("Removed %s from %s (%d -> %d)."):format(what, user.Name, #before, #kept),
+		Undoable = true,
+		UndoData = { UserId = user.UserId, Name = user.Name, Previous = before },
+	} :: any
+end
+
+local function restoreWarnings(_ctx: Types.CommandContext, result: any): Types.CommandResult
+	local data = result.UndoData or {}
+	if type(data.UserId) ~= "number" or type(data.Previous) ~= "table" then
+		return { Success = false, Message = "Nothing to restore." }
+	end
+	if not PunishmentService.SetWarnings(data.UserId, data.Previous) then
+		return { Success = false, Message = "The warnings could not be restored (DataStore error)." }
+	end
+	return { Success = true, Message = ("Restored %d warning(s) for %s."):format(#data.Previous, tostring(data.Name)) }
+end
+
+CommandRegistry.Register({
+	Name = "clearwarnings",
+	Aliases = { "clearwarns", "resetwarnings", "clearwarn" },
+	Description = "Removes every warning a player has (online or offline). Undo with ;undo.",
+	Usage = "/clearwarnings player [reason...]",
+	ArgHints = { player = { Type = "string", Description = "Username, UserId or me" } },
+	Examples = { "clearwarnings Player1", "clearwarnings 123456 Appeal accepted" },
+	Permission = "moderation.clearwarnings",
+	Category = "Moderation",
+	Subcategory = "Warnings",
+	Cooldown = 1,
+	Log = true,
+	Undoable = true,
+	RequiresTarget = false,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		if not ctx.Arguments[1] then
+			return { Success = false, Message = "Usage: ;clearwarnings <player> [reason]" }
+		end
+		return applyRemoval(ctx, "all", 2)
+	end,
+	Undo = restoreWarnings,
+} :: any)
+
+CommandRegistry.Register({
+	Name = "removewarnings",
+	Aliases = { "removewarns", "unwarn", "delwarn", "removewarn" },
+	Description = "Removes some of a player's warnings: the newest <count>, warning #n (as ;warnings numbers them) or #a-b. Online or offline; undo with ;undo.",
+	Usage = "/removewarnings player amount [reason...]",
+	ArgHints = {
+		player = { Type = "string", Description = "Username, UserId or me" },
+		amount = { Type = "string", Description = "Newest N (e.g. 2), #3 for warning 3, #2-4, or all", Suggestions = { "1", "2", "3", "#1", "all" } },
+	},
+	Examples = { "removewarnings Player1 1", "removewarnings Player1 2 Mistake", "removewarnings Player1 #3", "removewarnings 123456 #1-2" },
+	Permission = "moderation.clearwarnings",
+	Category = "Moderation",
+	Subcategory = "Warnings",
+	Cooldown = 1,
+	Log = true,
+	Undoable = true,
+	RequiresTarget = false,
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		if not ctx.Arguments[1] then
+			return { Success = false, Message = "Usage: ;removewarnings <player> <amount|#n|#a-b|all> [reason]" }
+		end
+		-- no amount = the newest one (;unwarn Player1)
+		local spec = ctx.Arguments[2]
+		local reasonFrom = 3
+		if not spec or not (spec:lower() == "all" or spec:match("^#?%d+$") or spec:match("^#%d+%-%d+$")) then
+			spec, reasonFrom = "1", 2
+		end
+		return applyRemoval(ctx, spec, reasonFrom)
+	end,
+	Undo = restoreWarnings,
+} :: any)
 
 return true
