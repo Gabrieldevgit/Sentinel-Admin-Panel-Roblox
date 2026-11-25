@@ -4,10 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-24 (HD gaps 2: map snapshots + server music) -
-**`;savemap`/`;loadmap`/`;clearmap` and `;music`/`;volume`/`;pitch` built,
-verified in Play, committed + pushed; `ServerStorage."Sentinel Setup"`
-rebuilt.** Next: the user picks the next W row or HD gap. Start with §6._
+_Last updated: 2026-11-24 (W16 Analytics + Module Manager / Shift To Run) -
+**W16 analytics and the first W-FINAL module (Shift To Run, on a Module
+Manager foundation) built + verified in Play, NOT committed.** Next: the
+user picks the next W row / module. Start with §6._
 
 ---
 
@@ -141,7 +141,7 @@ Control" UI, all driven by one command grammar
   - Never `CharacterAdded:Wait()` in an `execute_luau` call when the
     character already exists — it blocks forever and drops the MCP link.
   - **Unit tests:** `src/ServerScriptService/Sentinel/Tests/` (parser +
-    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps, 156 cases). Run in Edit mode:
+    permissions + ranks + security + autocomplete + framework + cross-server + settings + audit + cases + polls + events + staff feeds + HD gaps + analytics + modules, 165 cases). Run in Edit mode:
     `local c = game.ServerScriptService.Sentinel:Clone(); require(c.Tests.TestRunner).Run(); c:Destroy()`
     Cloning the server folder does **not** refresh `ReplicatedStorage.Shared`
     modules (cached between calls) — a spec that tests Shared code must
@@ -931,6 +931,55 @@ Control" UI, all driven by one command grammar
     Pumpkin + ghost hand over saved transparencies so removal order doesn't
     matter. Event preset **spookynight** (aliases spooky, halloween) via
     `EventService.Define`: night + purple fog, lighting restored on end.
+- **W16 Analytics:** `Systems/AnalyticsService` = hourly buckets (players
+  peak / avg + all-server peak, staff online, staff commands, heartbeat FPS,
+  memory, ping, commands ok / failed / denied / cancelled, moderation
+  successes, economy = leaderstat changes + volume) fed by EventBus
+  `Log.Written` (skips SYSTEM and `Source = "modules"`), a 30 s sampler and
+  leaderstat watchers (first 10 s after join ignored). DataStore
+  `Sentinel_Analytics_v1` key `Day_<YYYYMMDD>` (UTC): each server merges its
+  deltas with UpdateAsync every 60 s + on close (sum / max / min), so the
+  stored day = all servers; per-day maps Cmd / Mods / Econ / Srv (top 60).
+  "This server" scope = memory (7 days). `Query({Range 24h|today|7d|30d|
+  custom, From, To, Scope all|server, Compare})` -> Series (1 h / 6 h / 1 d
+  steps), Totals, TopCommands, TopModerators, Economy, Previous; `Live()`.
+  Remote `GetAnalyticsRemote` (staff + node `analytics.view`, added to the
+  default Moderator rank - **saved ranks not migrated**). `;analytics
+  [range] [server] [compare]` (metrics, insights). `AnalyticsPage.lua`
+  rewritten (toolbar, live + range tiles with deltas, 6 bar charts with
+  hover readout and ghost previous-period bars, top lists; paths in header).
+- **Module Manager (W-FINAL.1, early on user request):**
+  `Systems/ModuleService` discovers manifests in `ServerScriptService.
+  Sentinel.Modules/*` (Id, Name, Category, Version, Config schema typed
+  number|integer|boolean|choice|key|string, Dependencies, Conflicts,
+  Integrations, Rigs, Platforms, Docs, Changelog, Client, Compatibility(cfg),
+  Activate / Deactivate / OnConfig / OnClientMessage / Diagnostics(ctx)).
+  ctx.Track cleans connections / instances / fns on deactivate; activation
+  errors are isolated (status Error). State in ConfigService key `Modules`
+  (DataStore + cross-server reconcile on `ConfigService.Changed`), admin
+  history in key `ModuleActivity` (50). Status Disabled / Needs Setup /
+  Enabled / Error / Incompatible / Restart Required. `ModuleRemote`
+  ("state" / "msg" both ways, 20/10 per s). Client `StarterPlayerScripts/
+  Sentinel/ModuleHost.lua` (every player) runs `Sentinel/Modules/<Client>`
+  components (`Start(cfg, api) -> {Stop, Update}`). Commands `;modules`,
+  `;module <id> [info|on|off|set <key> <value>|reset]` (nodes
+  `modules.view/activate/disable/configure/diagnostics`; no default rank -
+  Owner via `*`; reset confirms). Remote `GetModulesRemote([id])`. UI: nav
+  section **Modules** (`UIPrefs.NAV_SECTIONS` / `PAGE_IDS`; players with a
+  saved Layout.Tabs must show it in Appearance > Navigation),
+  `ModulesPage.lua` (overview counts / warnings / activity, library cards,
+  detail tabs Overview / Configuration / Dependencies / Permissions /
+  Activity; paths in header).
+- **Shift To Run** (`Modules/ShiftToRun.lua` + client `Modules/ShiftToRun`):
+  server-authoritative - client sends ("sprint", bool); server raises
+  WalkSpeed to SprintSpeed (never lowers; refuses frozen / dead / already
+  faster), restores the old speed unless something else changed it, keeps
+  stamina (drain while moving, regen after delay, exhausted until
+  MinStamina, auto-resume while still held). Attributes SentinelSprinting /
+  SentinelStamina / SentinelStaminaMax / SentinelExhausted. Client: CAS
+  action `SentinelSprint` above Shift Lock priority (Key, AltKey, L3, touch
+  "Run" button), Hold / Toggle, FOV boost, stamina bar `PlayerGui.
+  SentinelSprint.Bar.Fill`. Warns when Shift Lock is on and the key is Shift.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -1031,6 +1080,18 @@ Rules that keep it sound:
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
 
 ## 5. Known issues & open work
+
+- **W16 / Shift To Run not verified yet:** moderation / staff / economy
+  graphs and most-active moderators with real data (no moderation action or
+  leaderstat change happened in the test), custom date range through the UI
+  (unit-tested), cross-server merge with 2 live servers (merge logic
+  unit-tested; Studio restarts showed "2 servers seen"). Shift To Run: touch
+  Run button and gamepad L3 (no device), R6 rig, a custom sprint key,
+  toggle mode, interaction with `;speed` / freeze live. Each enable / config
+  change writes ConfigService `Modules` + `ModuleActivity` back to back, so
+  Studio logs "DataStore request was added to queue" (harmless; could merge
+  into one key). Testing place: Shift To Run left **enabled** (Stamina off,
+  Drain 60).
 
 - **HD gaps (2026-11-24) not verified with a 2nd player:** `;serverban`
   on another player + their rejoin being refused (the kick message and
@@ -1301,6 +1362,16 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-24 (latest): W16 Analytics + Module Manager + Shift To Run,
+  verified in Play, NOT committed.** New: `Systems/{AnalyticsService,
+  ModuleService}.lua`, `Commands/Server/{Analytics,Modules}.lua`,
+  `Modules/ShiftToRun.lua` (server), `StarterPlayerScripts/Sentinel/
+  {ModuleHost.lua, Modules/ShiftToRun.lua}`, `SentinelUI/ModulesPage.lua`,
+  `Tests/{Analytics,Modules}.spec.lua`. Edited: UIBridge, RankService,
+  UIPrefs, Icons, Shell, AnalyticsPage (rewritten), init.client. Tests
+  **165/165**. Blueprint **394 ✅** (+15). `ServerStorage."Sentinel Setup"`
+  not rebuilt yet.
+
 - **2026-11-24 (latest): HD gaps 2 - map snapshots + server music.**
   New: `Systems/MapService.lua` (named snapshots of Workspace children +
   Terrain region in `ServerStorage.SentinelMapSnapshots`, memory only, max
@@ -1465,6 +1536,19 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-24 (W16 + Shift To Run)** - User: implement W16 and ONE module
+  (Shift To Run / Nickname GUI / Chat Tags Remastered). Picked Shift To Run
+  (built the Module Manager foundation for it). Rojo had stopped mid-
+  session; restarted it and the user reconnected the plugin. Verified in
+  Play: `;analytics`, Analytics page (tiles, charts, Compare deltas), data
+  kept across a Play restart (DataStore), `;modules`, enable from the panel
+  card, Shift sprint 16 -> 26 + FOV 70 -> 76 and back on release, live
+  config (Stamina on, Drain 60, out-of-range speed refused, Stamina chip off
+  from the Configuration tab), exhaustion at 0 and auto-resume at 21 while
+  held, `;module shifttorun off` unbinds + removes bar / attributes,
+  re-enabled after restart. Blueprint +15 ✅ (11 dashboard analytics, 4
+  visual analytics); W-FINAL Shift To Run: 3 sub-bullets ✅.
 
 - **2026-11-24 (HD gaps 2)** - User: 2 more HD gaps, commit + push,
   rebuild the setup folder. Picked map snapshots and server music.

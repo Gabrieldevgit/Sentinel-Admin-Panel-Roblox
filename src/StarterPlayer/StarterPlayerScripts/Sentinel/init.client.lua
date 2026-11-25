@@ -42,6 +42,9 @@ PlayerForms.Init()
 -- HD Admin gap: rank / custom chat tags ([Admin] Player1: hi), every player.
 require(script:WaitForChild("ChatTags")).Init()
 
+-- W-FINAL.1: client components of enabled Sentinel modules (every player).
+require(script:WaitForChild("ModuleHost")).Init()
+
 -- ---------------------------------------------------------------------------
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------
@@ -574,6 +577,7 @@ if sentinelUIFolder then
 		{ Name = "PollsPage" },
 		{ Name = "EventsPage" },
 		{ Name = "StaffFeedsPage" },
+		{ Name = "ModulesPage" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -788,6 +792,8 @@ if sentinelUIFolder then
 		AnalyticsPage.Build(Shell.RegisterPage("Analytics", "Analytics", "📈"))
 		require(loadedModules.AuditLogPage).Build(Shell.RegisterPage("Logs", "Audit Log", "📋"))
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
+		-- W-FINAL.1: Module Manager (own nav section).
+		require(loadedModules.ModulesPage).Build(Shell.RegisterPage("Modules", "Modules", "🧩"))
 		NotificationCenter.Init()
 		NotificationCenterRef = NotificationCenter
 		if effectivePrefs and type(effectivePrefs.Notifications) == "table" then

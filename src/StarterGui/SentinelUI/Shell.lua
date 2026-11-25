@@ -148,6 +148,14 @@ local SECTIONS = {
 		},
 	},
 	{
+		Id = "Modules",
+		Label = "Modules",
+		Icon = "🧩",
+		Pages = {
+			{ Id = "Modules", Label = "Modules", Icon = "🧩" },
+		},
+	},
+	{
 		Id = "System",
 		Label = "System",
 		Icon = "⚙",

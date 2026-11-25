@@ -174,6 +174,8 @@ local LIMITS: { [string]: { number } } = {
 	GetAnnouncementsRemote = { 4, 1 },
 	GetPollsRemote = { 4, 1 },
 	GetEventsRemote = { 4, 1 },
+	GetModulesRemote = { 6, 2 },
+	GetAnalyticsRemote = { 3, 0.5 }, -- may read up to 2 x 90 DataStore days
 	GetChatLogRemote = { 4, 1 },
 	GetAlertsRemote = { 4, 1 },
 	SearchReportsRemote = { 5, 1 },
@@ -1334,6 +1336,58 @@ bindInvoke(getEventsRemote, function(player: Player)
 	snapshot.CanServer = PermissionSystem.Has(player, "server.event")
 	snapshot.CanGlobal = PermissionSystem.Has(player, "crossserver.event")
 	return snapshot
+end)
+
+-- W16: analytics report (persisted metrics + graphs). Options are
+-- whitelisted here; AnalyticsService validates the range itself.
+local getAnalyticsRemote = getOrCreate("GetAnalyticsRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getAnalyticsRemote, function(player: Player, options: any)
+	if not isStaff(player) or not PermissionSystem.Has(player, "analytics.view") then
+		return { Error = "You need analytics.view to see analytics." }
+	end
+	options = if type(options) == "table" then options else {}
+	local function str(v: any, max: number): string?
+		return if type(v) == "string" and #v <= max then v else nil
+	end
+	local AnalyticsService = require(script.Parent:WaitForChild("AnalyticsService")) :: any
+	local report, err = AnalyticsService.Query({
+		Range = str(options.Range, 12) or "24h",
+		From = str(options.From, 10),
+		To = str(options.To, 10),
+		Scope = if options.Scope == "server" then "server" else "all",
+		Compare = options.Compare == true,
+	})
+	if not report then
+		return { Error = err }
+	end
+	report.Live = AnalyticsService.Live()
+	return report
+end)
+
+-- W-FINAL.1: Module Manager. (nil) -> { Modules = summaries, Activity,
+-- Can = {...} }; (id) -> one module's detail (schema, config, runtime log,
+-- diagnostics when the caller has modules.diagnostics).
+local getModulesRemote = getOrCreate("GetModulesRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(getModulesRemote, function(player: Player, id: any)
+	if not isStaff(player) or not PermissionSystem.Has(player, "modules.view") then
+		return nil
+	end
+	local ModuleService = require(script.Parent:WaitForChild("ModuleService")) :: any
+	local ConfigService = require(script.Parent:WaitForChild("ConfigService")) :: any
+	local can = {
+		Activate = PermissionSystem.Has(player, "modules.activate"),
+		Disable = PermissionSystem.Has(player, "modules.disable"),
+		Configure = PermissionSystem.Has(player, "modules.configure"),
+		Diagnostics = PermissionSystem.Has(player, "modules.diagnostics"),
+	}
+	if type(id) == "string" and #id <= 40 then
+		local detail = ModuleService.Get(id)
+		if detail and not can.Diagnostics then
+			detail.Diagnostics = nil
+		end
+		return { Module = detail, Can = can }
+	end
+	return { Modules = ModuleService.List(), Activity = ConfigService.Get("ModuleActivity") or {}, Can = can }
 end)
 
 local getAnnouncementsRemote = getOrCreate("GetAnnouncementsRemote", "RemoteFunction") :: RemoteFunction

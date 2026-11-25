@@ -87,11 +87,11 @@ Systems that modify player movement, character behavior, and game mechanics with
 
 1. **Shift To Run**
    - Sprint using keyboard and mobile controls.
-   - Configurable sprint speed.
+   - ✅ Configurable sprint speed.
    - Configurable sprint key.
-   - Optional stamina integration.
+   - ✅ Optional stamina integration.
    - Support for different character rigs where applicable.
-   - Use compatible default Roblox locomotion behavior; no custom sprint animation required.
+   - ✅ Use compatible default Roblox locomotion behavior; no custom sprint animation required.
 
 2. **Stamina System**
    - Stamina consumption.

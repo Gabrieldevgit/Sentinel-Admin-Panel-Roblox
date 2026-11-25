@@ -136,6 +136,8 @@ Icons.Slots = {
 	Polls = { Asset = "Analitics2", Fallback = "📊" },
 	Events = { Asset = "Timer", Fallback = "🎉" },
 	InsightsSection = { Asset = "Stats1", Fallback = "📈" },
+	ModulesSection = { Asset = "ToolsIcon", Fallback = "🧩" },
+	Modules = { Asset = "ToolsIcon", Fallback = "🧩" },
 	Analytics = { Asset = "Stats1", Fallback = "📈" },
 	Logs = { Asset = "Logs", Fallback = "📋" },
 	Developer = { Asset = "DevIcon", Fallback = "🔧" },

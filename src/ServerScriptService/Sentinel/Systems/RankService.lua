@@ -129,6 +129,7 @@ local MODERATOR_NODES = {
 	"moderation.chatlog",
 	"moderation.alerts",
 	"moderation.serverban", -- HD gap: ;serverban (this server only)
+	"analytics.view", -- W16: Insights > Analytics, ;analytics
 	"player.freeze",
 	"player.jail",
 	"player.goto",

@@ -593,19 +593,19 @@ forum.cfx.re
 
 
 Dashboard analytics
-- Current players.
-- Peak player count.
-- Staff online.
-- Server uptime.
-- Server FPS.
-- Heartbeat.
-- Memory usage.
-- Average ping.
-- Command executions.
-- Successful commands.
+- ✅ Current players.
+- ✅ Peak player count.
+- ✅ Staff online.
+- ✅ Server uptime.
+- ✅ Server FPS.
+- ✅ Heartbeat.
+- ✅ Memory usage.
+- ✅ Average ping.
+- ✅ Command executions.
+- ✅ Successful commands.
 - Failed commands.
 - Denied commands.
-- Most-used commands.
+- ✅ Most-used commands.
 - Most-active moderators.
 - Recent moderation actions.
 - Active punishments.
@@ -643,13 +643,13 @@ Log management
 - ✅ Failed-action logs.
 - ✅ Data modification history.
 Visual analytics
-- Player-count graphs.
-- Server performance graphs.
-- Command usage graphs.
+- ✅ Player-count graphs.
+- ✅ Server performance graphs.
+- ✅ Command usage graphs.
 - Moderation activity graphs.
 - Staff activity graphs.
 - Economy transaction graphs.
-- Historical comparisons.
+- ✅ Historical comparisons.
 - Custom date ranges.
 10. Developer Tools
 Essential differentiator
