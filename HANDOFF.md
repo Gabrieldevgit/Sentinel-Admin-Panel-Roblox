@@ -6,7 +6,7 @@
 
 _Last updated: 2026-11-24 (W16 Analytics + Module Manager / Shift To Run) -
 **W16 analytics and the first W-FINAL module (Shift To Run, on a Module
-Manager foundation) built + verified in Play, NOT committed.** Next: the
+Manager foundation) built + verified in Play, committed + pushed.** Next: the
 user picks the next W row / module. Start with §6._
 
 ---
@@ -1363,7 +1363,7 @@ Rules that keep it sound:
 ## 6. Current state
 
 - **2026-11-24 (latest): W16 Analytics + Module Manager + Shift To Run,
-  verified in Play, NOT committed.** New: `Systems/{AnalyticsService,
+  verified in Play, committed + pushed (`de43761`).** New: `Systems/{AnalyticsService,
   ModuleService}.lua`, `Commands/Server/{Analytics,Modules}.lua`,
   `Modules/ShiftToRun.lua` (server), `StarterPlayerScripts/Sentinel/
   {ModuleHost.lua, Modules/ShiftToRun.lua}`, `SentinelUI/ModulesPage.lua`,
