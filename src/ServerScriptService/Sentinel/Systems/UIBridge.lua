@@ -182,6 +182,7 @@ local LIMITS: { [string]: { number } } = {
 	GetReportRemote = { 6, 2 },
 	SearchAppealsRemote = { 5, 1 },
 	GetAppealRemote = { 6, 2 },
+	AntiCheatRemote = { 20, 6 }, -- Control Center (reads poll every few seconds)
 }
 local DEFAULT_LIMIT = { 10, 4 }
 
@@ -1274,6 +1275,7 @@ bindInvoke(getWelcomeRemote, function(player: Player)
 		Commands = count,
 		CanPanel = isStaff(player),
 		CanCommandBar = PrefsService.CanUseCommandBar(player),
+		CanAntiCheat = PermissionSystem.Has(player, "anticheat.view"), -- AC top-bar button
 		Prefixes = ConfigService.GetPrefixes(),
 	}
 end)
@@ -1440,6 +1442,15 @@ bindInvoke(getAlertsRemote, function(player: Player, limit: any)
 		Alerts = AlertService.List(clampCount(limit, 100, 200)),
 		CanClear = PermissionSystem.Has(player, "moderation.alerts"),
 	}
+end)
+
+-- Sentinel AntiCheat: the Anti-Cheat Control Center. One RemoteFunction,
+-- (action, payload); every action checks its anticheat.* node and
+-- validates its arguments in Systems/AntiCheat/AntiCheatBridge.
+local antiCheatRemote = getOrCreate("AntiCheatRemote", "RemoteFunction") :: RemoteFunction
+bindInvoke(antiCheatRemote, function(player: Player, action: any, payload: any)
+	local AntiCheatBridge = require(script.Parent:WaitForChild("AntiCheat"):WaitForChild("AntiCheatBridge")) :: any
+	return AntiCheatBridge.Handle(player, action, payload)
 end)
 
 return true

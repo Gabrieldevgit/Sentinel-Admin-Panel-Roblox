@@ -13,6 +13,7 @@
 			-- allowed?, and whether this is the FIRST drop of a burst (so
 			-- callers notify the player once instead of once per request)
 		limiter:Reset(player)
+		RateLimiter.SetDropListener(fn(player, limiterName))   -- AntiCheat
 
 		Repeated drops are logged (once per 10 s per player and limiter) as
 		a security warning, so spam/exploit attempts show up in the logs.
@@ -36,6 +37,12 @@ export type Limiter = typeof(setmetatable(
 ))
 
 local all: { Limiter } = {}
+-- AntiCheat: told about every dropped request (RemoteSpamCheck input).
+local dropListener: ((Player, string) -> ())? = nil
+
+function RateLimiter.SetDropListener(fn: ((Player, string) -> ())?)
+	dropListener = fn
+end
 
 function RateLimiter.new(name: string, capacity: number, refillPerSecond: number): Limiter
 	local self = setmetatable({
@@ -65,6 +72,9 @@ function RateLimiter.Allow(self: Limiter, player: Player): (boolean, boolean)
 	local firstDrop = not bucket.InBurst
 	bucket.InBurst = true
 	bucket.Dropped += 1
+	if dropListener then
+		pcall(dropListener :: any, player, self.Name)
+	end
 	if now - bucket.LastReport >= 10 then
 		bucket.LastReport = now
 		Logger.Write({

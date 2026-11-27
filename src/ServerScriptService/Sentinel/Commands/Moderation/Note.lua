@@ -59,6 +59,7 @@ end
 -- pattern Ban.lua already uses for GetActiveBan.
 local NoteCommand = {
 	GetNotes = getNotes,
+	AddNote = addNote, -- AntiCheat: Review Queue "Add note"
 }
 require(script.Parent.Parent.Parent:WaitForChild("Systems"):WaitForChild("PlayerProfileService")).SetProviders({
 	GetNotes = getNotes, -- W13 offline profiles

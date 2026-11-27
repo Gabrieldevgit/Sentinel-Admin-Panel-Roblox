@@ -20,6 +20,8 @@
 			Icon = { Id, Glyph, Font?, GlyphSize?, Tooltip, OnClick: () -> (),
 			         IsActive: (() -> boolean)? }
 		TopbarIcons.SetVisible(id, visible)
+		TopbarIcons.SetBadge(id, on)   -- red dot (AntiCheat: unreviewed high-severity flags)
+		TopbarIcons.Add(icon)          -- add a button after Init (AntiCheat "AC")
 --]]
 
 local Players = game:GetService("Players")
@@ -99,6 +101,43 @@ function TopbarIcons.SetVisible(id: string, visible: boolean)
 	end
 end
 
+function TopbarIcons.SetBadge(id: string, on: boolean)
+	local button = buttons[id]
+	if not button then
+		return
+	end
+	local dot = button:FindFirstChild("Badge") :: Frame?
+	if not dot then
+		local d = Instance.new("Frame")
+		d.Name = "Badge"
+		d.AnchorPoint = Vector2.new(1, 0)
+		d.Position = UDim2.new(1, -2, 0, 2)
+		d.Size = UDim2.fromOffset(9, 9)
+		d.BackgroundColor3 = Color3.fromRGB(235, 70, 70)
+		d.BorderSizePixel = 0
+		d.ZIndex = 3
+		d.Parent = button
+		corner(d)
+		dot = d
+	end
+	(dot :: Frame).Visible = on
+end
+
+local pendingIcons: { Icon } = {}
+local addIcon: ((Icon) -> ())? = nil
+
+-- Adds a button after Init (or queues it until Init runs).
+function TopbarIcons.Add(icon: Icon)
+	if buttons[icon.Id] then
+		return
+	end
+	if addIcon then
+		addIcon(icon)
+	else
+		table.insert(pendingIcons, icon)
+	end
+end
+
 function TopbarIcons.Init(icons: { Icon }): ScreenGui
 	if screenGui then
 		return screenGui
@@ -171,7 +210,7 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 		tooltip.Visible = true
 	end
 
-	for i, icon in ipairs(icons) do
+	local function makeButton(icon: Icon, i: number)
 		local button = Instance.new("TextButton")
 		button.Name = icon.Id .. "Button"
 		button.LayoutOrder = i
@@ -208,6 +247,9 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 			icon.OnClick()
 		end)
 		button:SetAttribute("Active", false)
+	end
+	for i, icon in ipairs(icons) do
+		makeButton(icon, i)
 	end
 
 	-- Follow Roblox's top bar: its height and the free space to the right
@@ -246,6 +288,15 @@ function TopbarIcons.Init(icons: { Icon }): ScreenGui
 		end
 	end
 	place()
+	addIcon = function(icon: Icon)
+		table.insert(icons, icon)
+		makeButton(icon, #icons)
+		place()
+	end
+	for _, icon in ipairs(pendingIcons) do
+		addIcon(icon)
+	end
+	table.clear(pendingIcons)
 	GuiService:GetPropertyChangedSignal("TopbarInset"):Connect(place)
 	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(place)
 

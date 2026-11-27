@@ -366,7 +366,7 @@ end
 -- ---------------------------------------------------------------------------
 UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Announcements", "Insights", "Modules" }
 UIPrefs.PAGE_IDS = {
-	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "ChatLog", "Alerts", "Ranks", "Commands", "Library", "Server", "CrossServer",
+	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "ChatLog", "Alerts", "AntiCheat", "Ranks", "Commands", "Library", "Server", "CrossServer",
 	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers", "Polls", "Events",
 	"Analytics", "Logs", "Developer", "Modules", "Settings", "Appearance", "Keybinds", "Sounds", "Administration", "Notifications",
 }
@@ -435,6 +435,7 @@ UIPrefs.SPEC = {
 		QuickGod = key("Toggle god mode on yourself"),
 		NextPage = key("Next panel page"),
 		PrevPage = key("Previous panel page"),
+		AntiCheat = key("Open / close the Anti-Cheat Control Center"),
 		Custom = { Kind = "binds", Description = "Your own key -> command shortcuts" },
 	},
 	Notifications = {
@@ -467,7 +468,7 @@ UIPrefs.SECTIONS = { "Panel", "CommandBar", "Keys", "Notifications", "Sounds", "
 UIPrefs.ORDER = {
 	Panel = { "Theme", "Accent", "Font", "Animations", "AnimationSpeed", "ReducedMotion", "HighContrast", "Scale" },
 	CommandBar = { "Preset", "Position", "Width", "Opacity", "FontSize", "MaxLines", "Rows", "Key" },
-	Keys = { "Panel", "ClosePanel", "Palette", "QuickFly", "QuickNoclip", "QuickGod", "NextPage", "PrevPage" },
+	Keys = { "Panel", "ClosePanel", "Palette", "QuickFly", "QuickNoclip", "QuickGod", "NextPage", "PrevPage", "AntiCheat" },
 	Notifications = { "Toasts", "Duration", "Position" },
 	Sounds = { "Enabled", "Volume", "Success", "Error", "Warning", "Info" },
 	Layout = { "Mode", "Compact", "StatusBar", "Labels" },
@@ -503,6 +504,7 @@ UIPrefs.BUILTIN = {
 		QuickGod = "None",
 		NextPage = "Ctrl+PageDown",
 		PrevPage = "Ctrl+PageUp",
+		AntiCheat = "F7",
 		Custom = {},
 	},
 	Notifications = { Toasts = true, Duration = 5, Position = "BottomRight" },

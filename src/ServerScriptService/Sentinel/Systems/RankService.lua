@@ -130,6 +130,8 @@ local MODERATOR_NODES = {
 	"moderation.alerts",
 	"moderation.serverban", -- HD gap: ;serverban (this server only)
 	"analytics.view", -- W16: Insights > Analytics, ;analytics
+	"anticheat.view", -- AntiCheat: open the Control Center, see flags
+	"anticheat.review", -- AntiCheat: evidence, false positives, cases
 	"player.freeze",
 	"player.jail",
 	"player.goto",
@@ -170,6 +172,10 @@ local ADMIN_NODES = {
 	"crossserver.warn",
 	"crossserver.ban",
 	"crossserver.announce",
+	-- AntiCheat: exemptions and warn / kick / correct. Bans, config and
+	-- the master switch stay with SuperAdmin / Owner.
+	"anticheat.exempt",
+	"anticheat.act",
 }
 
 local function defaultState(): State
@@ -198,7 +204,7 @@ local function defaultState(): State
 				Color = { 255, 50, 50 },
 				Icon = "⚡",
 				Description = "Everything Admin has, plus managing lower ranks.",
-				Nodes = { "ranks.*", "crossserver.*" },
+				Nodes = { "ranks.*", "crossserver.*", "anticheat.ban", "anticheat.config" },
 				Inherits = { "Admin" },
 			},
 			Admin = {
@@ -1114,6 +1120,14 @@ local PRESETS: { [string]: { Description: string, Nodes: { string } } } = {
 		},
 	},
 	CrossServerOperations = { Description = "Everything cross-server incl. lockdown, shutdown, migration", Nodes = { "crossserver.*" } },
+	AntiCheatStaff = {
+		Description = "Anti-Cheat Control Center: view, review, exemptions, warn / kick",
+		Nodes = { "anticheat.view", "anticheat.review", "anticheat.exempt", "anticheat.act" },
+	},
+	AntiCheatAdmin = {
+		Description = "Anti-cheat bans and settings (not the master switch)",
+		Nodes = { "anticheat.view", "anticheat.review", "anticheat.exempt", "anticheat.act", "anticheat.ban", "anticheat.config" },
+	},
 	DevReadOnly = {
 		Description = "Read-only developer tools",
 		Nodes = { "developer.stats", "developer.console", "developer.remotemonitor", "developer.datastore.read" },

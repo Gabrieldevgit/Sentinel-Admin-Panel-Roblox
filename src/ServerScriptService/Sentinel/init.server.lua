@@ -57,6 +57,17 @@ for _, child in ipairs(Systems:GetChildren()) do
 	end
 end
 
+-- Sentinel AntiCheat (Systems/AntiCheat is a folder, so the loop above
+-- skips it). Started in a pcall: an anti-cheat failure never stops Sentinel.
+do
+	local okStart, err = pcall(function()
+		require(Systems:WaitForChild("AntiCheat"):WaitForChild("AntiCheatService")).Start()
+	end)
+	if not okStart then
+		warn("[Sentinel] AntiCheat failed to start: " .. tostring(err))
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- Load every command module so it registers itself. New commands only need
 -- to be dropped into Commands/<Category>/ — nothing here needs to change.

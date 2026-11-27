@@ -49,6 +49,9 @@ require(script:WaitForChild("ModuleHost")).Init()
 -- waiting-room server).
 require(script:WaitForChild("SoftShutdown")).Init()
 
+-- Sentinel AntiCheat: tiny client reporter (untrusted hints, every player).
+require(script:WaitForChild("AntiCheatReporter")).Init()
+
 -- ---------------------------------------------------------------------------
 -- Shared ScreenGui host
 -- ---------------------------------------------------------------------------
@@ -582,6 +585,8 @@ if sentinelUIFolder then
 		{ Name = "EventsPage" },
 		{ Name = "StaffFeedsPage" },
 		{ Name = "ModulesPage" },
+		{ Name = "ToggleSwitch" },
+		{ Name = "AntiCheatCenter" },
 	}
 	local loadedModules: { [string]: ModuleScript } = {}
 	local missingModules: { string } = {}
@@ -711,6 +716,67 @@ if sentinelUIFolder then
 	end
 	task.spawn(ensureCommandBar)
 
+	-- -----------------------------------------------------------------------
+	-- Sentinel AntiCheat: the Anti-Cheat Control Center (own window). Built
+	-- only when the server says this player has anticheat.view; opened by F7,
+	-- the AC top-bar button, Moderation > Anti-Cheat, Ctrl+K > anti and
+	-- ;anticheat / ;ac.
+	-- -----------------------------------------------------------------------
+	local AntiCheatCenter: any = nil
+	local antiCheatChecked = false
+	local antiCheatBusy = false
+	local function ensureAntiCheat(): boolean
+		if AntiCheatCenter and AntiCheatCenter.IsBuilt() then
+			return true
+		end
+		while antiCheatBusy do
+			task.wait()
+		end
+		if AntiCheatCenter and AntiCheatCenter.IsBuilt() then
+			return true
+		end
+		antiCheatBusy = true
+		local ok, result = pcall(function()
+			local folder = loadedModules.AntiCheatCenter
+			local Center = require(folder:WaitForChild("Center") :: ModuleScript) :: any
+			local NotificationCenter = require(notificationCenterModule) :: any
+			NotificationCenter.Init()
+			local built = Center.Init({
+				NotificationCenter = NotificationCenter,
+				ConfirmDialog = require(confirmDialogModule),
+				ToggleSwitch = require(loadedModules.ToggleSwitch),
+			})
+			if built then
+				Center.Badge = function(on: boolean)
+					pcall(function()
+						require(loadedModules.TopbarIcons).SetBadge("AntiCheat", on)
+					end)
+				end
+				AntiCheatCenter = Center
+			end
+			return built
+		end)
+		antiCheatBusy = false
+		antiCheatChecked = true
+		if not ok then
+			warn("[Sentinel] Anti-Cheat Control Center failed: " .. tostring(result))
+			return false
+		end
+		return result == true
+	end
+	local function toggleAntiCheat(page: string?, forceOpen: boolean?)
+		task.spawn(function()
+			if ensureAntiCheat() then
+				if forceOpen then
+					AntiCheatCenter.Open(page)
+				else
+					AntiCheatCenter.Toggle(page)
+				end
+			end
+		end)
+	end
+	local _ = antiCheatChecked
+
 	if prefsChangedRemote then
 		prefsChangedRemote.OnClientEvent:Connect(function(update: any)
 			if type(update) == "table" then
@@ -798,6 +864,17 @@ if sentinelUIFolder then
 		DeveloperPage.Build(Shell.RegisterPage("Developer", "Developer", "🛠"))
 		-- W-FINAL.1: Module Manager (own nav section).
 		require(loadedModules.ModulesPage).Build(Shell.RegisterPage("Modules", "Modules", "🧩"))
+		-- Sentinel AntiCheat: Moderation > Anti-Cheat (hidden without anticheat.view).
+		local antiCheatPage = Shell.RegisterPage("AntiCheat", "Anti-Cheat", "🛡")
+		Shell.SetPageVisible("AntiCheat", false)
+		task.spawn(function()
+			if ensureAntiCheat() then
+				Shell.SetPageVisible("AntiCheat", true)
+				require(loadedModules.AntiCheatCenter:WaitForChild("PanelPage") :: ModuleScript).Build(antiCheatPage, AntiCheatCenter, function()
+					toggleAntiCheat(nil, true)
+				end)
+			end
+		end)
 		NotificationCenter.Init()
 		NotificationCenterRef = NotificationCenter
 		if effectivePrefs and type(effectivePrefs.Notifications) == "table" then
@@ -984,8 +1061,14 @@ if sentinelUIFolder then
 		local alt = isDown(Enum.KeyCode.LeftAlt, Enum.KeyCode.RightAlt)
 		-- While typing (a text box has focus) only Ctrl / Alt chords count,
 		-- so plain letter shortcuts never fire mid-sentence.
+		-- F-keys are the exception: other scripts (or Studio) often mark them
+		-- processed via ContextActionService, yet they never type text, so
+		-- they still count unless a text box actually has focus.
 		if gameProcessed and not (ctrl or alt) then
-			return
+			local isFKey = input.KeyCode.Name:match("^F%d+$") ~= nil
+			if not isFKey or UserInputService:GetFocusedTextBox() ~= nil then
+				return
+			end
 		end
 		local keys = (effectivePrefs and effectivePrefs.Keys) or UIPrefs.BUILTIN.Keys
 		local name = input.KeyCode.Name
@@ -999,9 +1082,16 @@ if sentinelUIFolder then
 			if uiBuilt and Shell.IsOpen() then
 				Shell.Close()
 			end
+		elseif is("AntiCheat") then
+			toggleAntiCheat()
 		elseif is("Palette") then
 			if uiBuilt and CommandPalette then
-				CommandPalette.Toggle()
+				-- Inside the Control Center: anti-cheat commands first.
+				if AntiCheatCenter and AntiCheatCenter.IsOpen() and not CommandPalette.IsOpen() then
+					CommandPalette.Open("ac")
+				else
+					CommandPalette.Toggle()
+				end
 			end
 		elseif is("NextPage") or is("PrevPage") then
 			if uiBuilt and Shell.IsOpen() then
@@ -1142,6 +1232,23 @@ if sentinelUIFolder then
 				end,
 			})
 		end
+		if info.CanAntiCheat then
+			table.insert(icons, {
+				Id = "AntiCheat",
+				Glyph = "AC",
+				GlyphSize = 15,
+				Tooltip = ("Anti-Cheat (%s)"):format(keyLabel("AntiCheat", "F7")),
+				OnClick = function()
+					toggleAntiCheat()
+				end,
+				IsActive = function()
+					return AntiCheatCenter ~= nil and AntiCheatCenter.IsOpen()
+				end,
+			})
+			-- Build it in the background so the red dot (unreviewed
+			-- high-severity flags) shows before the first open.
+			task.spawn(ensureAntiCheat)
+		end
 		if #icons > 0 then
 			require(loadedModules.TopbarIcons).Init(icons)
 		end
@@ -1185,7 +1292,9 @@ if sentinelUIFolder then
 	local panelRemote = SentinelShared:WaitForChild("PanelRemote", 15) :: RemoteEvent?
 	if panelRemote then
 		panelRemote.OnClientEvent:Connect(function(action: any, page: any)
-			if action == "toggle" then
+			if action == "anticheat" then
+				toggleAntiCheat(if type(page) == "string" then page else nil, true)
+			elseif action == "toggle" then
 				tryOpenPanel()
 			elseif action == "open" then
 				if not (uiBuilt and Shell.IsOpen()) then

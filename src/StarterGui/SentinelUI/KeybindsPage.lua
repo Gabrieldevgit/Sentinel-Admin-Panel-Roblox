@@ -39,6 +39,7 @@ local LABELS = {
 	QuickGod = "Quick god mode",
 	NextPage = "Next page",
 	PrevPage = "Previous page",
+	AntiCheat = "Anti-Cheat Control Center",
 }
 
 local MODIFIER_KEYS = {
