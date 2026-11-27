@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	ExemptionService.lua (Sentinel AntiCheat)
 
@@ -90,11 +91,16 @@ function ExemptionService.InGrace(userId: number, module: string, now: number?):
 		return false, nil
 	end
 	local t = now or os.clock()
-	for _, key in ipairs({ "all", module, if ExemptionService.MOVEMENT[module] then "movement" else "" }) do
-		local w = g[key]
-		if w and w.Until > t then
-			return true, "grace: " .. w.Reason
-		end
+	-- Three direct lookups (this runs before every check: no table per call).
+	local w = g.all
+	if not (w and w.Until > t) then
+		w = g[module]
+	end
+	if not (w and w.Until > t) and ExemptionService.MOVEMENT[module] then
+		w = g.movement
+	end
+	if w and w.Until > t then
+		return true, "grace: " .. w.Reason
 	end
 	return false, nil
 end
@@ -128,8 +134,34 @@ local function persist(userId: number)
 	end)
 end
 
+-- Rank answers are cached briefly: the provider looks the rank up, and it
+-- used to run on every single check (most of the engine's per-check
+-- overhead at 50 players). A promotion takes effect within RANK_TTL.
+local RANK_TTL = 3
+local rankCache: { [number]: { At: number, Exempt: boolean, Rank: string? } } = {}
+
 function ExemptionService.SetRankProvider(fn: ((number) -> (boolean, string?))?)
 	rankProvider = fn
+	table.clear(rankCache)
+end
+
+function ExemptionService.ClearRankCache()
+	table.clear(rankCache)
+end
+
+local function rankExempt(userId: number): (boolean, string?)
+	if not rankProvider then
+		return false, nil
+	end
+	local t = os.clock()
+	local hit = rankCache[userId]
+	if hit and t - hit.At < RANK_TTL then
+		return hit.Exempt, hit.Rank
+	end
+	local ok, exempt, rank = pcall(rankProvider :: any, userId)
+	local value = ok and exempt == true
+	rankCache[userId] = { At = t, Exempt = value, Rank = if ok then rank else nil }
+	return value, if ok then rank else nil
 end
 
 -- Is the player exempt by staff rank (Core.ExemptRank)?
@@ -137,17 +169,14 @@ function ExemptionService.RankExempt(userId: number): boolean
 	if not rankProvider then
 		return false
 	end
-	local ok, exempt = pcall(rankProvider :: any, userId)
-	return ok and exempt == true
+	return (rankExempt(userId))
 end
 
 -- Should this module skip this player entirely right now?
 function ExemptionService.Check(userId: number, module: string, now: number?): (boolean, string?)
-	if rankProvider then
-		local ok, exempt, rank = pcall(rankProvider :: any, userId)
-		if ok and exempt then
-			return true, "staff rank " .. tostring(rank or "")
-		end
+	local exempt, rank = rankExempt(userId)
+	if exempt then
+		return true, "staff rank " .. tostring(rank or "")
 	end
 	local list = exemptions[userId]
 	if list then
@@ -395,6 +424,7 @@ end
 function ExemptionService.Forget(userId: number)
 	grace[userId] = nil
 	testing[userId] = nil
+	rankCache[userId] = nil
 end
 
 function ExemptionService.Flush(): number

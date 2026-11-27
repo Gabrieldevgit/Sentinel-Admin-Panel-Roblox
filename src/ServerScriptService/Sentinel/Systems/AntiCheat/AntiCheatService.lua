@@ -1020,6 +1020,7 @@ function AntiCheatService.Start()
 	-- Config changes on any server reach staff UIs here.
 	AntiCheatConfig.Changed:Connect(function(key: string)
 		if key == "Core" then
+			ExemptionService.ClearRankCache() -- ExemptRank may have changed
 			pushStatus()
 		end
 		AntiCheatService.PushToStaff("config", key)

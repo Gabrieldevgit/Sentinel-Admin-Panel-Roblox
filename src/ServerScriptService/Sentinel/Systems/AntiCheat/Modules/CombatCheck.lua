@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	CombatCheck.lua (Sentinel AntiCheat module)
 
@@ -20,7 +21,7 @@ return {
 	Name = "CombatCheck",
 	Description = "Hits from too far, through walls, or faster than the weapon allows.",
 	Enabled = true,
-	Interval = 1,
+	Interval = 2,
 	Severity = 6,
 	Defaults = {
 		MaxRange = 20, -- studs when the game gives no range

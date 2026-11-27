@@ -1,8 +1,10 @@
 --!strict
+--!native
 --[[
 	NoclipCheck.lua (Sentinel AntiCheat module)
 
-	Detects moving through solid geometry: a ray is cast along each recent
+	Detects moving through solid geometry: one gate ray is cast along the
+	whole new path; only if it hits a solid part is a ray cast along each
 	step between two server positions; a pass is counted only when the ray
 	hits an anchored, collidable part AND the reverse ray (end -> start)
 	hits the same part, so the player really went through it (not just
@@ -25,6 +27,18 @@ return {
 	Enabled = true,
 	Interval = 0.5,
 	Severity = 6,
+	SkipWhenSeated = true, -- seated, in a vehicle or anchored: nothing to measure
+	SkipWhenStill = true, -- moved < 0.5 studs in 1.2 s: no step, jump or pass to check
+	-- Called by the engine instead of Check when it skips this check (see
+	-- SkipWhenSeated / SkipWhenStill): does what Check would have done then.
+	OnSkip = function(m: any, why: string, _now: number, lastSampleT: number?)
+		if why == "seated" then
+			m.List = {}
+		end
+		if lastSampleT then
+			m.RayT = lastSampleT -- those steps needed no rays
+		end
+	end,
 	Defaults = {
 		MinPasses = 3, -- passes needed within the window
 		Window = 15, -- seconds
@@ -46,21 +60,48 @@ return {
 		if state.Character and not state.Seated and not state.InVehicle then
 			local params = ModuleUtil.Params(state.Character)
 			local minThickness = (state.Config and state.Config.MinThickness) or 0.6
+			local function solid(part: Instance?): boolean
+				if part and part:IsA("BasePart") and part.Anchored and part.CanCollide and not part:GetAttribute("SentinelPassable") then
+					local size = part.Size
+					return math.min(size.X, size.Y, size.Z) >= minThickness
+				end
+				return false
+			end
+			-- The new steps since the last check (not across a known teleport).
+			local steps = {}
 			for i = 2, #samples do
 				local a, b = samples[i - 1], samples[i]
 				local fresh = b.T > (m.RayT or -math.huge)
 				local acrossTeleport = state.LastTeleport ~= nil and state.LastTeleport >= a.T - 0.5
-				local delta = b.P - a.P
-				if fresh and not acrossTeleport and delta.Magnitude > 0.5 then
+				if fresh and not acrossTeleport and (b.P - a.P).Magnitude > 0.5 then
+					table.insert(steps, { A = a, B = b })
+				end
+			end
+			-- Cheap gate: one ray along the whole new path. Only when it hits
+			-- something solid are the per-step rays (and reverse rays) cast;
+			-- walking in the open costs one ray per check instead of one per
+			-- step. (A path that goes through a wall and back within one check,
+			-- ~0.5 s, can slip past the gate; passes still add up over Window.)
+			local gate = false
+			if #steps > 0 then
+				local from, to = steps[1].A.P, steps[#steps].B.P
+				if #steps == 1 or (to - from).Magnitude <= 0.5 then
+					gate = true -- one step, or a loop back: the step rays decide
+				else
+					local hit = Workspace:Raycast(from, to - from, params)
+					gate = hit ~= nil and solid(hit.Instance)
+				end
+			end
+			if gate then
+				for _, step in ipairs(steps) do
+					local a, b = step.A, step.B
+					local delta = b.P - a.P
 					local hit = Workspace:Raycast(a.P, delta, params)
 					local part = hit and hit.Instance
-					if part and part:IsA("BasePart") and part.Anchored and part.CanCollide and not part:GetAttribute("SentinelPassable") then
-						local size = part.Size
-						if math.min(size.X, size.Y, size.Z) >= minThickness then
-							local back = Workspace:Raycast(b.P, -delta, params)
-							if back and back.Instance == part then
-								table.insert(passes, { T = b.T, Part = part:GetFullName() })
-							end
+					if part and solid(part) then
+						local back = Workspace:Raycast(b.P, -delta, params)
+						if back and back.Instance == part then
+							table.insert(passes, { T = b.T, Part = part:GetFullName() })
 						end
 					end
 				end

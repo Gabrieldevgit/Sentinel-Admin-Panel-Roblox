@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	RemoteSpamCheck.lua (Sentinel AntiCheat module)
 

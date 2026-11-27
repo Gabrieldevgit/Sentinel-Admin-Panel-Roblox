@@ -87,6 +87,8 @@ AntiCheatConfig.SCHEMA = {
 		SetupDone = bool(false, "The setup wizard was finished"),
 		ExemptRank = str("Admin", 30, "Staff at or above this rank are exempt (None = nobody)"),
 		FrameBudget = int(12, 1, 200, "Most checks run in one frame"),
+		FrameMsCap = num(0.5, 0.1, 10, "Hard cap: ms of checks per frame; the rest wait for the next frame"),
+		CrowdPlayers = int(40, 5, 500, "Above this many players every interval scales by players / this"),
 		CostBudgetMs = num(2, 0.5, 50, "Budget: ms of server time per second for all checks"),
 	},
 	Bands = {

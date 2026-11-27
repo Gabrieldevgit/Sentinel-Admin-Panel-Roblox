@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	HealthCheck.lua (Sentinel AntiCheat module)
 
@@ -18,7 +19,7 @@ return {
 	Name = "HealthCheck",
 	Description = "Health that rises with no heal source, or never drops after damage.",
 	Enabled = true,
-	Interval = 0.5,
+	Interval = 1,
 	Severity = 5,
 	Defaults = {
 		RegenPerSecond = 0.01, -- share of MaxHealth regenerated per second (Roblox default 1 %)

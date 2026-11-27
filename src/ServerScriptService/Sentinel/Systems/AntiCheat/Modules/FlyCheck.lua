@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	FlyCheck.lua (Sentinel AntiCheat module)
 
@@ -22,6 +23,13 @@ return {
 	Enabled = true,
 	Interval = 0.5,
 	Severity = 6,
+	SkipWhenSeated = true, -- (not SkipWhenStill: hovering in place is exactly what this catches)
+	-- Called by the engine instead of Check when it skips this check (see
+	-- SkipWhenSeated / SkipWhenStill): does what Check would have done then.
+	OnSkip = function(m: any, _why: string, now: number)
+		m.Air = 0
+		m.LastNow = now
+	end,
 	Defaults = {
 		AirHeight = 8, -- studs above the nearest surface that count as airborne
 		MaxAirTime = 3, -- seconds airborne + holding height before a flag

@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	JumpCheck.lua (Sentinel AntiCheat module)
 
@@ -23,8 +24,17 @@ return {
 	Name = "JumpCheck",
 	Description = "Jumps higher or more often than the Humanoid allows.",
 	Enabled = true,
-	Interval = 0.25,
+	Interval = 0.5, -- exploit jumps last > 1 s; the peak is still sampled
 	Severity = 3,
+	SkipWhenSeated = true, -- seated, in a vehicle or anchored: nothing to measure
+	SkipWhenStill = true, -- moved < 0.5 studs in 1.2 s: no step, jump or pass to check
+	-- Called by the engine instead of Check when it skips this check (see
+	-- SkipWhenSeated / SkipWhenStill): does what Check would have done then.
+	OnSkip = function(m: any, why: string)
+		if why == "seated" then
+			m.Airborne = false -- a ride up a hill is not a jump
+		end
+	end,
 	Defaults = {
 		Margin = 3, -- studs on top of the allowed height
 		MaxJumpsPer10s = 18,

@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	DetectionEngine.lua (Sentinel AntiCheat)
 
@@ -14,13 +15,25 @@
 		Evidence?, Correct? }. Check is pure, so unit tests call it with a
 		hand-made state. A module never punishes; it only reports here.
 
-		Scheduling: one Heartbeat loop. Every (player, module) pair is a job
-		with its own next-run time (the module's Interval, staggered at
-		start). A frame runs at most Core.FrameBudget jobs; position sampling
-		(5 per second per player) runs in the same loop. Cost is measured
-		with os.clock per module (ms of server time per second); when the
-		total is over Core.CostBudgetMs every interval is stretched (up to
-		4x) until the cost fits again.
+		Scheduling: one Heartbeat loop over a min-heap of jobs ordered by
+		next-run time (no per-frame scan of every job). Every (player,
+		module) pair is a job (the module's Interval, staggered at start);
+		position sampling (5 Hz per player) is a job too and refreshes the
+		player's snapshot (character, humanoid, root, ping, Sentinel
+		attributes, seated / anchored, how far they moved in 1.2 s) that
+		every check of that player shares. A frame runs at most
+		Core.FrameBudget checks AND stops after Core.FrameMsCap ms; due jobs
+		left over wait for the next frame (deferred), so checks never pile
+		into one frame. Modules may declare SkipWhenSeated (seated / in a
+		vehicle / anchored) and SkipWhenStill (moved < 0.5 studs in 1.2 s);
+		those checks are skipped before any work, and the module's optional
+		OnSkip(scratch, "seated" | "still", now, lastSampleT) keeps its
+		state as Check would have (resets, decays). Above Core.CrowdPlayers
+		tracked players every interval scales by players / CrowdPlayers.
+		Cost = the whole engine step (checks + sampling + scheduler) in ms of
+		server time per second; when over Core.CostBudgetMs every interval is
+		stretched (up to 12x, MAX_STRETCH) until it fits. The worst single
+		frame (last 10 s, and since start) is tracked too.
 
 		Pipeline (Submit): fill the flag (id, time, server), clamp severity
 		1-10 and confidence 0-1, snapshot evidence (EvidenceService), add
@@ -57,6 +70,7 @@ local ScoreService = require(script.Parent:WaitForChild("ScoreService"))
 local ExemptionService = require(script.Parent:WaitForChild("ExemptionService"))
 local EvidenceService = require(script.Parent:WaitForChild("EvidenceService"))
 local ActionService = require(script.Parent:WaitForChild("ActionService"))
+local ModuleUtil = require(script.Parent:WaitForChild("ModuleUtil"))
 local Logger = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("Logger"))
 
 local DetectionEngine = {}
@@ -68,7 +82,6 @@ local EVENT_MAX = 120
 local modules: { any } = {}
 local byName: { [string]: any } = {}
 local jobs: { any } = {}
-local jobIndex = 1
 local tracked: { [number]: any } = {}
 local scratch: { [number]: { [string]: any } } = {}
 local events: { [number]: { [string]: { any } } } = {}
@@ -76,6 +89,11 @@ local hooks: { [string]: any } = {}
 local connection: RBXScriptConnection? = nil
 local flagSeq = 0
 local costFactor = 1
+-- How far intervals may stretch to stay in budget (12x: a 0.5 s check
+-- runs every 6 s at worst). Raised from 4x: at 50 players the default
+-- 2 ms/s budget needs roughly 6-10x.
+local MAX_STRETCH = 12
+local stretchLocked = false -- LockStretch: load tests measure the full cost
 
 -- Per-module cost accounting (rolling one-second windows, smoothed).
 local cost: { [string]: { Window: number, Ms: number, Checks: number, Flags: number, Errors: number, LastError: string? } } = {}
@@ -84,6 +102,22 @@ local windowTotal = 0
 local totalMsPerSecond = 0
 local checksPerSecond = 0
 local windowChecks = 0
+-- Engine-level accounting (see Stats): sampling, scheduler overhead, the
+-- worst frame, deferred and skipped checks, crowd scaling.
+local windowSampling = 0
+local windowWorst = 0
+local windowDeferred = 0
+local windowSkipped = 0
+local samplingMs = 0
+local schedulerMs = 0
+local recentWorst: { number } = {}
+local peakFrameMs = 0
+local deferredPerSecond = 0
+local skippedPerSecond = 0
+local crowdScale = 1
+local trackedCount = 0
+local STILL_STUDS = 0.5 -- SkipWhenStill: moved less than this ...
+local STILL_WINDOW = 1.2 -- ... over this many seconds of samples
 
 DetectionEngine.Context = {} :: { [string]: any }
 
@@ -242,33 +276,99 @@ local function scratchFor(userId: number, name: string): any
 	return m
 end
 
-function DetectionEngine.BuildState(player: Player, def: any, now: number): any
+-- Per-player snapshot, refreshed by the 5 Hz sampler and shared by every
+-- check of that player: one read of the character, ping and attributes
+-- per tick instead of one per module.
+local snapshots: { [number]: any } = {}
+
+-- Largest distance between the newest sample and any sample of the last
+-- STILL_WINDOW seconds (math.huge when there are too few samples to say).
+local function movedRecently(userId: number, now: number): number
+	local list = EvidenceService.RawSamples(userId)
+	local last = list[#list]
+	if not last then
+		return math.huge
+	end
+	local maxD, count = 0, 1
+	for i = #list - 1, 1, -1 do
+		local sample = list[i]
+		if now - sample.T > STILL_WINDOW then
+			break
+		end
+		count += 1
+		local d = (sample.P - last.P).Magnitude
+		if d > maxD then
+			maxD = d
+		end
+	end
+	return if count >= 3 then maxD else math.huge
+end
+
+local SLOW_REFRESH = 1 -- seconds between ping / FPS / lag / instance lookups
+
+local function refreshSnapshot(player: Player, now: number): any
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	local ping = 0
-	pcall(function()
-		ping = player:GetNetworkPing() * 1000
-	end)
-	local fps = EvidenceService.ServerFps()
-	local grace = AntiCheatConfig.Get("Grace")
+	local snap = snapshots[player.UserId]
+	if not snap or snap.Character ~= character or now - snap.SlowT >= SLOW_REFRESH then
+		-- Slow part: instance lookups and network numbers.
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local ping = 0
+		pcall(function()
+			ping = player:GetNetworkPing() * 1000
+		end)
+		local fps = EvidenceService.ServerFps()
+		snap = {
+			SlowT = now,
+			Character = character,
+			Humanoid = humanoid,
+			Root = root,
+			Ping = ping,
+			ServerFps = fps,
+			Lag = DetectionEngine.LagFactor(ping, fps, AntiCheatConfig.Get("Grace")),
+		}
+		snapshots[player.UserId] = snap
+	end
+	-- Fast part, every sample: state that can flip any moment.
+	local root = snap.Root :: BasePart?
+	snap.T = now
+	snap.Flying = player:GetAttribute("SentinelFlying") == true
+	snap.Noclip = player:GetAttribute("SentinelNoclip") == true
+	snap.God = player:GetAttribute("SentinelGod") == true
+	snap.Frozen = player:GetAttribute("SentinelFrozen") == true or (root ~= nil and root.Anchored)
+	snap.Seated = ModuleUtil.Seated(snap.Humanoid) or ModuleUtil.InVehicle(root)
+	snap.Moved = movedRecently(player.UserId, now)
+	return snap
+end
+
+local function snapshotFor(player: Player, now: number): any
+	local snap = snapshots[player.UserId]
+	if not snap or snap.Character ~= player.Character or now - snap.T > 0.5 then
+		snap = refreshSnapshot(player, now)
+	end
+	return snap
+end
+
+function DetectionEngine.BuildState(player: Player, def: any, now: number, moduleCfg: any?): any
+	local snap = snapshotFor(player, now)
 	return {
 		Player = player,
 		UserId = player.UserId,
-		Character = character,
-		Humanoid = humanoid,
-		Root = root,
+		Character = snap.Character,
+		Humanoid = snap.Humanoid,
+		Root = snap.Root,
 		Now = now,
-		Config = AntiCheatConfig.GetModule(def.Name),
-		Ping = ping,
-		ServerFps = fps,
-		Lag = DetectionEngine.LagFactor(ping, fps, grace),
+		Config = moduleCfg or AntiCheatConfig.GetModule(def.Name),
+		Ping = snap.Ping,
+		ServerFps = snap.ServerFps,
+		Lag = snap.Lag,
 		Samples = EvidenceService.RawSamples(player.UserId),
 		Module = scratchFor(player.UserId, def.Name),
-		Flying = player:GetAttribute("SentinelFlying") == true,
-		Noclip = player:GetAttribute("SentinelNoclip") == true,
-		God = player:GetAttribute("SentinelGod") == true,
-		Frozen = player:GetAttribute("SentinelFrozen") == true or (root ~= nil and (root :: BasePart).Anchored),
+		Flying = snap.Flying,
+		Noclip = snap.Noclip,
+		God = snap.God,
+		Frozen = snap.Frozen,
+		Moved = snap.Moved,
 	}
 end
 
@@ -375,25 +475,74 @@ end
 -- ---------------------------------------------------------------------------
 -- Tracking + scheduling
 -- ---------------------------------------------------------------------------
+-- Min-heap of jobs by NextAt: a frame only touches the jobs that are due.
+local heap: { any } = {}
+
+local function heapPush(job: any)
+	table.insert(heap, job)
+	local i = #heap
+	while i > 1 do
+		local parent = i // 2
+		if heap[parent].NextAt <= heap[i].NextAt then
+			break
+		end
+		heap[parent], heap[i] = heap[i], heap[parent]
+		i = parent
+	end
+end
+
+local function heapPop(): any
+	local top = heap[1]
+	local last = table.remove(heap)
+	local n = #heap
+	if n > 0 then
+		heap[1] = last
+		local i = 1
+		while true do
+			local l, r, smallest = i * 2, i * 2 + 1, i
+			if l <= n and heap[l].NextAt < heap[smallest].NextAt then
+				smallest = l
+			end
+			if r <= n and heap[r].NextAt < heap[smallest].NextAt then
+				smallest = r
+			end
+			if smallest == i then
+				break
+			end
+			heap[smallest], heap[i] = heap[i], heap[smallest]
+			i = smallest
+		end
+	end
+	return top
+end
+
 local function rebuildJobs()
 	table.clear(jobs)
+	table.clear(heap)
 	local now = os.clock()
+	trackedCount = 0
 	for userId, info in pairs(tracked) do
+		trackedCount += 1
 		for i, def in ipairs(modules) do
 			-- Stagger: spread each module's first run over its interval.
 			local offset = ((userId % 97) / 97 + i / (#modules + 1)) % 1
 			table.insert(jobs, { UserId = userId, Player = info.Player, Def = def, NextAt = now + def.Interval * offset })
 		end
-		table.insert(jobs, { UserId = userId, Player = info.Player, Sample = true, NextAt = now })
+		-- Samplers are staggered too, so 50 players don't all sample in one frame.
+		table.insert(jobs, { UserId = userId, Player = info.Player, Sample = true, NextAt = now + ((userId % 89) / 89) * SAMPLE_INTERVAL })
 	end
-	jobIndex = 1
+	for _, job in ipairs(jobs) do
+		heapPush(job)
+	end
 end
 
-function DetectionEngine.Track(player: Player)
+-- opts.LoadTest: a load-test dummy (;acloadtest) - checks run and are
+-- timed, but its flags are only counted, never scored or stored.
+function DetectionEngine.Track(player: Player, opts: { LoadTest: boolean? }?)
 	if tracked[player.UserId] then
 		return
 	end
-	tracked[player.UserId] = { Player = player }
+	tracked[player.UserId] = { Player = player, LoadTest = opts ~= nil and opts.LoadTest == true }
 	rebuildJobs()
 end
 
@@ -401,6 +550,7 @@ function DetectionEngine.Untrack(player: Player)
 	tracked[player.UserId] = nil
 	scratch[player.UserId] = nil
 	events[player.UserId] = nil
+	snapshots[player.UserId] = nil
 	rebuildJobs()
 end
 
@@ -415,12 +565,20 @@ local function sample(player: Player, now: number)
 	if root then
 		EvidenceService.AddSample(player.UserId, now, root.Position, root.AssemblyLinearVelocity)
 	end
+	refreshSnapshot(player, now)
 end
 
-local function runCheck(job: any, now: number)
+-- Gather then Check (a named function: no closure per check).
+local function runModule(def: any, player: Player, state: any): any
+	if def.Gather then
+		def.Gather(player, state, DetectionEngine.Context)
+	end
+	return def.Check(player, state)
+end
+
+local function runCheck(job: any, now: number, moduleCfg: any)
 	local def = job.Def
 	local player = job.Player
-	local moduleCfg = AntiCheatConfig.GetModule(def.Name)
 	if moduleCfg.Enabled == false then
 		return
 	end
@@ -433,19 +591,31 @@ local function runCheck(job: any, now: number)
 	if info and info.SpawnedAt and (moduleCfg.Grace or 0) > 0 and now - info.SpawnedAt < moduleCfg.Grace then
 		return
 	end
-	local started = os.clock()
-	local state = DetectionEngine.BuildState(player, def, now)
-	local ok, result = pcall(function()
-		if def.Gather then
-			def.Gather(player, state, DetectionEngine.Context)
+	-- Hot-path skips the module declared: nothing it measures can happen.
+	if def.SkipWhenSeated or def.SkipWhenStill then
+		local snap = snapshots[player.UserId]
+		if snap and snap.Character == player.Character then
+			local why = if def.SkipWhenSeated and (snap.Seated or snap.Frozen) then "seated"
+				elseif def.SkipWhenStill and snap.Moved < STILL_STUDS then "still"
+				else nil
+			if why then
+				windowSkipped += 1
+				if def.OnSkip then
+					local list = EvidenceService.RawSamples(player.UserId)
+					local last = list[#list]
+					pcall(def.OnSkip, scratchFor(player.UserId, def.Name), why, now, if last then last.T else nil)
+				end
+				return
+			end
 		end
-		return def.Check(player, state)
-	end)
+	end
+	local started = os.clock()
+	local state = DetectionEngine.BuildState(player, def, now, moduleCfg)
+	local ok, result = pcall(runModule, def, player, state)
 	local elapsed = (os.clock() - started) * 1000
 	local c = cost[def.Name]
 	c.Window += elapsed
 	c.Checks += 1
-	windowTotal += elapsed
 	windowChecks += 1
 	if not ok then
 		c.Errors += 1
@@ -453,6 +623,10 @@ local function runCheck(job: any, now: number)
 		return
 	end
 	if type(result) == "table" then
+		if info and info.LoadTest then
+			c.Flags += 1
+			return
+		end
 		result.Module = def.Name
 		if result.Severity == nil then
 			result.Severity = def.Severity
@@ -467,56 +641,86 @@ local function rollWindow(now: number)
 		return
 	end
 	local alpha = 0.3
+	local checksMs = 0
 	for _, c in pairs(cost) do
+		checksMs += c.Window
 		c.Ms = c.Ms * (1 - alpha) + (c.Window / span) * alpha
 		c.Window = 0
 	end
 	totalMsPerSecond = totalMsPerSecond * (1 - alpha) + (windowTotal / span) * alpha
+	samplingMs = samplingMs * (1 - alpha) + (windowSampling / span) * alpha
+	local overhead = math.max(0, windowTotal - checksMs - windowSampling)
+	schedulerMs = schedulerMs * (1 - alpha) + (overhead / span) * alpha
 	checksPerSecond = windowChecks / span
+	deferredPerSecond = windowDeferred / span
+	skippedPerSecond = windowSkipped / span
+	table.insert(recentWorst, windowWorst)
+	if #recentWorst > 10 then
+		table.remove(recentWorst, 1)
+	end
 	windowTotal = 0
 	windowChecks = 0
+	windowSampling = 0
+	windowWorst = 0
+	windowDeferred = 0
+	windowSkipped = 0
 	windowStart = now
 	-- Stay under the budget: stretch intervals while over it.
 	local budgetMs = AntiCheatConfig.Get("Core").CostBudgetMs or 2
-	if totalMsPerSecond > budgetMs then
-		costFactor = math.min(4, costFactor * 1.25)
+	if stretchLocked then
+		costFactor = 1
+	elseif totalMsPerSecond > budgetMs then
+		costFactor = math.min(MAX_STRETCH, costFactor * 1.25)
 	elseif totalMsPerSecond < budgetMs * 0.6 and costFactor > 1 then
 		costFactor = math.max(1, costFactor / 1.1)
 	end
 end
 
 local function step()
-	local now = os.clock()
-	rollWindow(now)
+	local frameStart = os.clock()
+	rollWindow(frameStart)
 	local core = AntiCheatConfig.Get("Core")
-	if core.Enabled == false or #jobs == 0 then
+	if core.Enabled == false or #heap == 0 then
 		return
 	end
-	local budget = core.FrameBudget or 12
+	local maxChecks = core.FrameBudget or 12
+	local capMs = core.FrameMsCap or 0.5
+	crowdScale = math.max(1, trackedCount / math.max(1, core.CrowdPlayers or 40))
+	local stretch = costFactor * crowdScale
 	local ran = 0
-	local scanned = 0
-	local total = #jobs
-	while ran < budget and scanned < total do
-		if jobIndex > #jobs then
-			jobIndex = 1
+	while heap[1] and heap[1].NextAt <= frameStart do
+		if ran >= maxChecks or (os.clock() - frameStart) * 1000 >= capMs then
+			-- Due jobs stay in the heap and run next frame (counted once per frame).
+			windowDeferred += 1
+			break
 		end
-		local job = jobs[jobIndex]
-		jobIndex += 1
-		scanned += 1
-		if job and job.NextAt <= now then
+		local job = heapPop()
+		if tracked[job.UserId] then
 			if job.Sample then
-				job.NextAt = now + SAMPLE_INTERVAL
-				sample(job.Player, now)
+				job.NextAt = frameStart + SAMPLE_INTERVAL
+				local t0 = os.clock()
+				sample(job.Player, frameStart)
+				windowSampling += (os.clock() - t0) * 1000
 			else
-				job.NextAt = now + job.Def.Interval * costFactor
-				ran += 1
-				local interval = AntiCheatConfig.GetModule(job.Def.Name).Interval
-				if type(interval) == "number" then
-					job.NextAt = now + interval * costFactor
+				local moduleCfg = AntiCheatConfig.GetModule(job.Def.Name)
+				local interval = moduleCfg.Interval
+				if type(interval) ~= "number" then
+					interval = job.Def.Interval
 				end
-				runCheck(job, now)
+				job.NextAt = frameStart + interval * stretch
+				ran += 1
+				runCheck(job, frameStart, moduleCfg)
 			end
+			heapPush(job)
 		end
+	end
+	local frameMs = (os.clock() - frameStart) * 1000
+	windowTotal += frameMs
+	if frameMs > windowWorst then
+		windowWorst = frameMs
+	end
+	if frameMs > peakFrameMs then
+		peakFrameMs = frameMs
 	end
 end
 
@@ -593,6 +797,13 @@ function DetectionEngine.Stats(): any
 			LastError = c.LastError,
 		}
 	end
+	-- Engine work outside the modules, so the bars add up to the total.
+	per["(sampling)"] = { MsPerSec = math.floor(samplingMs * 1000 + 0.5) / 1000, Checks = 0, Flags = 0, Errors = 0 }
+	per["(scheduler)"] = { MsPerSec = math.floor(schedulerMs * 1000 + 0.5) / 1000, Checks = 0, Flags = 0, Errors = 0 }
+	local worst = 0
+	for _, w in ipairs(recentWorst) do
+		worst = math.max(worst, w)
+	end
 	local memory = 0
 	pcall(function()
 		memory = math.floor(Stats:GetTotalMemoryUsageMb())
@@ -605,6 +816,12 @@ function DetectionEngine.Stats(): any
 		MsPerSec = math.floor(totalMsPerSecond * 1000 + 0.5) / 1000,
 		ChecksPerSec = math.floor(checksPerSecond * 10 + 0.5) / 10,
 		CostFactor = math.floor(costFactor * 100 + 0.5) / 100,
+		CrowdScale = math.floor(crowdScale * 100 + 0.5) / 100,
+		WorstFrameMs = math.floor(worst * 1000 + 0.5) / 1000, -- last 10 s
+		PeakFrameMs = math.floor(peakFrameMs * 1000 + 0.5) / 1000, -- since start
+		FrameMsCap = AntiCheatConfig.Get("Core").FrameMsCap,
+		DeferredPerSec = math.floor(deferredPerSecond * 10 + 0.5) / 10,
+		SkippedPerSec = math.floor(skippedPerSecond * 10 + 0.5) / 10,
 		Budget = AntiCheatConfig.Get("Core").CostBudgetMs,
 		Running = connection ~= nil,
 		Players = playerCount,
@@ -612,6 +829,20 @@ function DetectionEngine.Stats(): any
 		MemoryMb = memory,
 		Modules = per,
 	}
+end
+
+-- Holds the budget stretch at 1x (load tests); false restores normal.
+function DetectionEngine.LockStretch(locked: boolean)
+	stretchLocked = locked
+	if locked then
+		costFactor = 1
+	end
+end
+
+-- Clears the worst-frame records (load tests measure from a clean slate).
+function DetectionEngine.ResetPeak()
+	peakFrameMs = 0
+	table.clear(recentWorst)
 end
 
 function DetectionEngine.IsTracked(userId: number): boolean

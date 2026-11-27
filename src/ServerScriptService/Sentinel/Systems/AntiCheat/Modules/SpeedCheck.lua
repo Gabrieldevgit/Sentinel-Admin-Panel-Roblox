@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	SpeedCheck.lua (Sentinel AntiCheat module)
 
@@ -22,6 +23,13 @@ return {
 	Enabled = true,
 	Interval = 0.5,
 	Severity = 4,
+	SkipWhenSeated = true, -- seated, in a vehicle or anchored: nothing to measure
+	SkipWhenStill = true, -- moved < 0.5 studs in 1.2 s: no step, jump or pass to check
+	-- Called by the engine instead of Check when it skips this check (see
+	-- SkipWhenSeated / SkipWhenStill): does what Check would have done then.
+	OnSkip = function(m: any, why: string)
+		m.Strikes = if why == "seated" then 0 else math.max(0, (m.Strikes or 0) - 1)
+	end,
 	Defaults = {
 		Margin = 4, -- studs per second on top of WalkSpeed x lag
 		Strikes = 3, -- consecutive fast checks before a flag

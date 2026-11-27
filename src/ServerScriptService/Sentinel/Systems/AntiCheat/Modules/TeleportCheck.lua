@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	TeleportCheck.lua (Sentinel AntiCheat module)
 
@@ -21,8 +22,10 @@ return {
 	Name = "TeleportCheck",
 	Description = "Instant position jumps without a known teleport.",
 	Enabled = true,
-	Interval = 0.25,
+	Interval = 0.5,
 	Severity = 7,
+	SkipWhenSeated = true, -- seated, in a vehicle or anchored: nothing to measure
+	SkipWhenStill = true, -- moved < 0.5 studs in 1.2 s: no step, jump or pass to check
 	Defaults = {
 		MaxStep = 40, -- studs in one step beyond walking
 		Recent = 1, -- only steps in the last N seconds are examined

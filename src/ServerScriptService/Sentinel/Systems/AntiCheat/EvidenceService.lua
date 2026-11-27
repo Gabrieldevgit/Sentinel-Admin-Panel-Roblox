@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	EvidenceService.lua (Sentinel AntiCheat)
 

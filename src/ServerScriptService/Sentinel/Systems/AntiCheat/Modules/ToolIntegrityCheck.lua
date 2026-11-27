@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	ToolIntegrityCheck.lua (Sentinel AntiCheat module)
 
@@ -20,7 +21,7 @@ return {
 	Name = "ToolIntegrityCheck",
 	Description = "Tools the server never gave, or duplicated tools.",
 	Enabled = true,
-	Interval = 2,
+	Interval = 3,
 	Severity = 6,
 	Defaults = {
 		MaxDuplicates = 2, -- copies of one tool allowed

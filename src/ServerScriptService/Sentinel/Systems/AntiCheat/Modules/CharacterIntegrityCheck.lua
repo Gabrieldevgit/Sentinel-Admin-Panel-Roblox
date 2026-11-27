@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	CharacterIntegrityCheck.lua (Sentinel AntiCheat module)
 
@@ -15,11 +16,13 @@
 	the size tolerance allows rounding.
 --]]
 
+local ModuleUtil = require(script.Parent.Parent:WaitForChild("ModuleUtil"))
+
 return {
 	Name = "CharacterIntegrityCheck",
 	Description = "Missing Humanoid / parts, resized or non-collidable body parts, unexpected scripts.",
 	Enabled = true,
-	Interval = 2,
+	Interval = 5,
 	Severity = 5,
 	Defaults = {
 		BaselineDelay = 3, -- seconds after spawn before the baseline is taken
@@ -48,13 +51,8 @@ return {
 			end
 		end
 		state.Parts = parts
-		local scripts = {}
-		for _, d in ipairs(character:GetDescendants()) do
-			if d:IsA("BaseScript") then
-				table.insert(scripts, d:GetFullName():sub(#character:GetFullName() + 2))
-			end
-		end
-		state.Scripts = scripts
+		-- Kept current by events (ModuleUtil.Scripts): no descendant walk.
+		state.Scripts = ModuleUtil.Scripts(character)
 		state.SpawnedAt = if ctx.LastEvent then ctx.LastEvent(player.UserId, "spawn") else nil
 		state.RebaselineAt = if ctx.LastEvent then ctx.LastEvent(player.UserId, "baseline") else nil
 	end,

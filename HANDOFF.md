@@ -4,10 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-24 (Soft Shutdown + warning removal) - **Soft
-Shutdown (`;softshutdown`, automatic on server close) and `;clearwarnings` /
-`;removewarnings` built + verified in Play, committed + pushed.** Next: the user
-picks the next W row / module. Start with §6._
+_Last updated: 2026-11-27 (Sentinel AntiCheat, session 3) - **AntiCheat
+committed in two commits: f161672 (build + UI fixes) and the cost work
+after it.** 50-player cost measured in Studio with `;acloadtest`: still
+over the 2 ms/s budget (§5 first item - user decision on sampling / live
+test). Start with §6._
 
 ---
 
@@ -1012,6 +1013,60 @@ Control" UI, all driven by one command grammar
   have it). `PunishmentService.SetWarnings` / `PlanRemoval` (pure);
   `ClearWarnings` now returns a boolean; EventBus `Player.WarningsChanged`.
   Before / after count goes to the audit log (`Logger.NoteChange`).
+- **Sentinel AntiCheat** (spec: `Docs/Planned/Sentinel Anti-Cheat Build
+  Prompt.md`): server-authoritative; client hints only.
+  - `Systems/AntiCheat/` (a Folder: init.server requires
+    `AntiCheatService.Start()` in a pcall after the Systems loop).
+    `AntiCheatConfig` (ConfigService keys `AntiCheat.<Section>` and
+    `AntiCheat.Module.<Name>` - one key per section so each MessagingService
+    push stays < 1 kB; schema min/max/choices, `SetValue("Scoring.X", v)`,
+    presets, export/import; every change audit-logged with old/new),
+    `ScoreService` (pure: Sev x Conf x ModuleWeight x PlayerWeight, lazy
+    decay, cap, bands, false-positive weights), `ExemptionService` (grace
+    scopes all/movement/module, rank provider = Core.ExemptRank, exemptions
+    with expiry, testing mode, watch list; store `Sentinel_AC_Exemptions_v1`),
+    `EvidenceService` (10 s position samples, snapshots, flag ring + store
+    `Sentinel_AC_Flags_v1`, per-minute / per-hour counters),
+    `AntiCheatStore` (per-key batched UpdateAsync, budget, backoff, health),
+    `ActionService` (pure `Decide` = ladder rules; Execute: alert / correct /
+    warn / kick / tempban (ServerBan) / review queue / ban (Ban.SetBan,
+    provider set by Commands/AntiCheat); review queue is memory),
+    `DetectionEngine` (loads `Modules/*`, one Heartbeat scheduler with
+    Core.FrameBudget jobs/frame, 5 Hz sampler, cost per module, stretches
+    intervals up to 12x (MAX_STRETCH) when over Core.CostBudgetMs, `Submit` pipeline, event
+    hub `Note/Events/LastEvent`), `ModuleUtil` (cached RaycastParams + mover
+    counts), `AntiCheatService` (lifecycle, CFrame-write = known teleport,
+    seat-exit grace, After hook = grace / heal / economy / rebaseline for
+    Sentinel commands, RemoteEvent call counter, RateLimiter drop listener,
+    creator-tag hits, client reporter remote with session token,
+    cross-server kinds `acflag` / `acban` / `acwatch` rate-capped, game API
+    RegisterTeleport / NoteHeal / NoteDamage / ValidateHit /
+    NoteEconomySource / RegisterTool / Rebaseline / GuardRemote,
+    action log with undo), `AntiCheatBridge` (every Control Center action
+    -> node check + argument validation; UIBridge binds `AntiCheatRemote`).
+  - Modules (contract: Name, Interval, Severity, Defaults, Schema, Gather
+    (live), Check (pure)): Speed, Fly, Teleport, Noclip, Jump, Health,
+    RemoteSpam, ToolIntegrity, Combat, CharacterIntegrity, Animation
+    (quiet until its Allow list has ids), Economy, ClientReport,
+    AltAndBanEvasion.
+  - Nodes `anticheat.view/review/exempt/act/ban/config/master`: Moderator
+    view+review, Admin exempt+act, SuperAdmin ban+config, master = Owner
+    (`*`). Presets AntiCheatStaff / AntiCheatAdmin. **Saved ranks are not
+    migrated** - grant with `;rankpreset <rank> AntiCheatStaff`.
+  - `Commands/AntiCheat/AntiCheat.lua`: `;anticheat` (`;ac`), `;acstatus`,
+    `;acmode`, `;acmodule`, `;acscore`, `;acreset`, `;acexempt`,
+    `;acunexempt`, `;acwatch`, `;acreview`, `;actest`, `;acexport`,
+    `;acpanic`, `;acset`, `;acban` (critical -> owner approval / confirm).
+  - Client: `StarterGui/SentinelUI/AntiCheatCenter/` (Center window
+    `SentinelAntiCheat`, Widgets (table / forms / charts), 9 pages, Wizard,
+    PanelPage = Moderation > Anti-Cheat), `StarterPlayerScripts/Sentinel/
+    AntiCheatReporter.lua`. Open: F7 (`UIPrefs.Keys.AntiCheat`), AC top-bar
+    button (`TopbarIcons.Add/SetBadge`, red dot = unreviewed sev >= 7),
+    Moderation > Anti-Cheat, Ctrl+K "anti", `;ac` (PanelRemote "anticheat").
+  - Other edits: RateLimiter.SetDropListener, Note.lua exports AddNote,
+    UIBridge welcome `CanAntiCheat`, Shell page `AntiCheat`, PAGE_IDS.
+  - Studio test players can have negative UserIds: validators accept any
+    non-zero integer id.
 - `src/ServerScriptService/Sentinel/`
   - `init.server.lua` — bootstrap: roles, loads every `Systems/` and
     `Commands/**` module, ban enforcement, chat hook.
@@ -1110,8 +1165,48 @@ Rules that keep it sound:
 - `Player.Chatted` is the correct server-side chat hook;
   `TextChannel.MessageReceived` is client-only.
 - `/`-prefixed chat collides with Roblox commands; Sentinel uses `;`.
+- **F-keys can arrive with `gameProcessed = true`** (another script's
+  ContextActionService bind, or Studio): F7 never reached Sentinel. The
+  key handler lets F-keys through unless a TextBox has focus.
+- **Studio eats Ctrl+K** on the real keyboard (clears Output); test the
+  palette with the MCP `user_keyboard_input` tool. The MCP tool, in
+  turn, never delivered F7 - use real keys (pc-use-guard) for F-keys.
+- Benchmarks in a tight loop lie: a check that costs 0.018 ms warm costs
+  ~0.08 ms when run once per Heartbeat (cold). Measure inside Heartbeat.
+- Plugin `execute_luau` has its own `require` cache: requiring a running
+  service from it returns a fresh, empty copy (read stats via the UI).
 
 ## 5. Known issues & open work
+
+- **Sentinel AntiCheat - server cost still over budget (user decision).**
+  Measured 2026-11-27 in Studio Play with `;acloadtest 50 60` (50
+  server-side dummies, not live) - see the build prompt's acceptance item
+  for the full numbers. Full cost (stretch locked, `nostretch`): 29.4 ms/s,
+  ~0.07 ms per check, worst frame 0.93 ms; the 0.5 ms frame cap is hit
+  most frames, so checks queue. With the 2 ms/s budget: stretch maxes at
+  12x, 11.2 ms/s, ~1 check per player per second, worst frame 1.56 ms.
+  Floor now = position sampling (5.6 ms/s, fixed 5 Hz, never stretched).
+  Next options for the user: (a) run `;acloadtest 50 60 nostretch` on a
+  PRIVATE server of the published place (allowed there) to get live
+  numbers - Studio inflates; (b) scale sampling down in crowds (fewer
+  samples = coarser teleport / speed evidence); (c) then pick the budget by
+  the user's rule (<2 keep; 2-5 with no frame >1 ms -> ~3; else tune).
+- **Sentinel AntiCheat - verified in Play 2026-11-26:** F7, AC top-bar
+  button (+ red dot), Moderation > Anti-Cheat, Ctrl+K "anti" (palette;
+  `anti` is now also an alias), `;ac` / `;anti players`; wizard 4 steps ->
+  Turn on; Esc closes (Roblox also opens its menu - can't be prevented);
+  Live Flags (live rows, drawer with evidence, false positive, right-click
+  menu, Watch), Players (drawer, reset score, unwatch), Review Queue
+  (empty), Modules (Test, Configure form), Exemptions (add + Undo from
+  Logs), Settings (preset preview, export), Analytics (cost), Logs & Help.
+  Not tested: phone layout, Review Queue with items (needs score 80),
+  Approve ban, Spectate, kick/ban buttons, import, Panic. Not testable
+  solo: cross-server alerts / bans, rank protection with a 2nd player,
+  DataStore failure live (unit-tested). Testing place restored:
+  Core.ExemptRank = Admin, watch list empty, SetupDone = true.
+- Small leftovers: the Players page action bar says "Watch" for a player
+  who is watched but rank-exempt (it reads the row Status, which shows
+  "Exempt" first); the drawer is right.
 
 - **Soft Shutdown not verified live** (Studio can't teleport - only the
   dry run, screen, countdown, cancel, status and auto toggle were tested):
@@ -1402,6 +1497,20 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-26 (latest): Sentinel AntiCheat, NOT committed.** New:
+  `Systems/AntiCheat/*` (10 files + 14 modules), `Commands/AntiCheat/
+  AntiCheat.lua`, `Tests/AntiCheat.spec.lua` (44 cases), `Shared/
+  AntiCheatTypes.lua`, `SentinelUI/AntiCheatCenter/*` (14 files),
+  `StarterPlayerScripts/Sentinel/AntiCheatReporter.lua`. Edited:
+  init.server, UIBridge, RankService, RateLimiter, Note.lua, UIPrefs,
+  Shell, TopbarIcons, KeybindsPage, init.client. Tests **212/212**. All
+  new client modules compile (required in Edit). Control Center verified
+  in Play (session 2); server cost still over the 50-player budget (§5).
+  **Session 3: committed** - f161672 = build + UI fixes; the next commit =
+  cost work (heap scheduler, shared snapshot, skips + OnSkip, Noclip gate
+  ray, frame cap, crowd scaling, rank cache, native, `;acloadtest`). Revert
+  that second commit alone to roll back the cost work. Tests 216/216.
+
 - **2026-11-24 (latest): Soft Shutdown + warning removal, verified in Play,
   committed + pushed.** New: `Systems/SoftShutdownService.lua`,
   `Commands/Server/SoftShutdown.lua`, `StarterPlayerScripts/Sentinel/
@@ -1584,6 +1693,43 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-27 (Sentinel AntiCheat, session 3)** - User: measure before
+  choosing a budget, light redesign of the hot path, commit UI fixes apart
+  from the cost work. Committed f161672 (build + UI fixes, session-2 cost
+  changes held back). Cost work: min-heap scheduler (no per-frame scan),
+  one per-player snapshot per 5 Hz sample (slow fields 1 s), module
+  SkipWhenSeated / SkipWhenStill + OnSkip (keeps state; JumpCheck vehicle
+  ride regression test), Noclip gate ray, Core.FrameMsCap (0.5 ms) +
+  Core.CrowdPlayers (40) interval scaling, worst-frame stats, rank cache
+  (3 s), Params rebuilt on change only, script set by events
+  (CharacterIntegrity), JumpCheck 0.5 s, `--!native` on hot files, the
+  Studio/private-server `;acloadtest [n] [s] [nostretch]`. Numbers in §5.
+  Lessons: os.clock cost per check in Studio ~0.05-0.07 ms; a frame cap
+  turns "cost" into "throughput" (look at checks/s and deferred frames).
+
+- **2026-11-26 (Sentinel AntiCheat, session 2)** - Studio unstuck (clicked
+  Play by hand; Rojo serve had died - restarted on 34872 and reconnected).
+  Verified the Control Center in Play (see §5). Fixed: F7 ignored
+  (gameProcessed F-keys); window taller than the viewport hid its title
+  bar (now fits below the top bar, phone layout too); toasts / command bar
+  hidden behind it (DisplayOrder 80 -> 55); invisible text boxes
+  (SurfaceRaised); drawer stale after actions (RefreshDrawer) and left open
+  on page change; modals with no max height (scrolling card); tooltip
+  stuck after a click; `anti` alias. Cost: ground-ray cache in ModuleUtil,
+  longer intervals (Teleport 0.5, Health 1, Combat 2, CharIntegrity 5,
+  Tool 3, Animation 5), AnimationCheck skips when it has no lists, no
+  closure per check, stretch cap 4x -> 12x. Tests 212/212. Restored
+  ExemptRank = Admin.
+
+- **2026-11-26 (Sentinel AntiCheat)** - User: implement the whole
+  `Sentinel Anti-Cheat Build Prompt.md`. Built server core, 14 modules,
+  commands, bridge, Control Center (9 pages, wizard, drawer, shortcuts,
+  touch), 5 entry points. Verified: tests 212/212; Play: AntiCheat boots,
+  walking clean, teleport + fly flagged in Observe (logged only). Fixed:
+  negative test UserIds refused; Jump/Fly cost (cached params / movers).
+  Left: Play got stuck -> UI not verified; blueprint has no anti-cheat
+  bullets (nothing ticked).
 
 - **2026-11-24 (Soft Shutdown + warnings)** - User: soft shutdown (all of
   it triggerable by command) + a command to clear warnings and remove a

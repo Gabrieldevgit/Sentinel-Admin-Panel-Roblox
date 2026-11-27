@@ -19,7 +19,7 @@ return {
 	Name = "AnimationCheck",
 	Description = "Animation tracks that are not on the game's allowlist.",
 	Enabled = true,
-	Interval = 3,
+	Interval = 5,
 	Severity = 3,
 	Defaults = {
 		RequireAllowlist = true, -- stay quiet until Allow has entries
@@ -36,6 +36,14 @@ return {
 
 	Gather = function(player: Player, state: any, ctx: any)
 		local ids = {}
+		-- Nothing can flag with an empty Deny list and the allowlist not in
+		-- use: skip the track scan (it was this module's whole cost).
+		local cfg = state.Config or {}
+		if #(cfg.Deny or {}) == 0 and cfg.RequireAllowlist ~= false and #(cfg.Allow or {}) == 0 then
+			state.Playing = ids
+			state.Known = {}
+			return
+		end
 		local humanoid = state.Humanoid :: Humanoid?
 		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 		if animator then

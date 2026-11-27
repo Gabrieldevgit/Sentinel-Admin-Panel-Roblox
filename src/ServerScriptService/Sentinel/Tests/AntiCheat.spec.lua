@@ -629,4 +629,53 @@ return function(t)
 		AntiCheatStore.SetFailing(false)
 		t.eq(store:PendingCount(), 1, "still queued")
 	end)
+	t.test("engine: movement modules declare their hot-path skips (Fly never skips when still)", function()
+		for _, name in ipairs({ "SpeedCheck", "TeleportCheck", "NoclipCheck", "JumpCheck" }) do
+			t.ok(mod(name).SkipWhenSeated == true and mod(name).SkipWhenStill == true, name)
+		end
+		t.ok(mod("FlyCheck").SkipWhenSeated == true, "Fly skips seated")
+		t.ok(mod("FlyCheck").SkipWhenStill ~= true, "hovering in place is what Fly catches")
+	end)
+
+	t.test("engine: OnSkip keeps module state as Check would", function()
+		local m: any = { Strikes = 2 }
+		mod("SpeedCheck").OnSkip(m, "still")
+		t.eq(m.Strikes, 1, "still decays like a clean check")
+		mod("SpeedCheck").OnSkip(m, "seated")
+		t.eq(m.Strikes, 0)
+		local f: any = { Air = 2.5, LastNow = 1 }
+		mod("FlyCheck").OnSkip(f, "seated", 10)
+		t.eq(f.Air, 0)
+		t.eq(f.LastNow, 10)
+		local n: any = { List = { { T = 1, Part = "x" } }, RayT = 1 }
+		mod("NoclipCheck").OnSkip(n, "still", 5, 4.8)
+		t.eq(#n.List, 1, "still keeps passes (no reset by pausing)")
+		t.eq(n.RayT, 4.8)
+		mod("NoclipCheck").OnSkip(n, "seated", 6, 5.8)
+		t.eq(#n.List, 0)
+	end)
+
+	t.test("JumpCheck: a vehicle ride up a hill after a take-off is not a jump", function()
+		local def = mod("JumpCheck")
+		local s1 = state(def, { Height = 0, GroundDistance = 20, GroundLimit = 4.5, AllowedHeight = 7.2, Now = 0 })
+		t.eq(def.Check(nil, s1), nil, "take-off")
+		t.ok(s1.Module.Airborne == true)
+		def.OnSkip(s1.Module, "seated")
+		-- Out of the vehicle at the top: briefly airborne, then landing.
+		local s2 = state(def, { Height = 200, GroundDistance = 20, GroundLimit = 4.5, AllowedHeight = 7.2, Now = 30 })
+		s2.Module = s1.Module
+		t.eq(def.Check(nil, s2), nil, "airborne after the ride")
+		local s3 = state(def, { Height = 198, GroundDistance = 3, GroundLimit = 4.5, AllowedHeight = 7.2, Now = 30.5 })
+		s3.Module = s1.Module
+		t.eq(def.Check(nil, s3), nil, "landing is measured from the new take-off")
+	end)
+
+	t.test("engine: Stats reports sampling, scheduler, frames, skips", function()
+		local st = DetectionEngine.Stats()
+		t.ok(st.Modules["(sampling)"] ~= nil and st.Modules["(scheduler)"] ~= nil, "engine rows")
+		t.ok(type(st.WorstFrameMs) == "number" and type(st.PeakFrameMs) == "number", "frames")
+		t.ok(type(st.DeferredPerSec) == "number" and type(st.SkippedPerSec) == "number", "deferred / skipped")
+		t.ok(type(st.CrowdScale) == "number", "crowd scale")
+		t.ok(type(AntiCheatConfig.Get("Core").FrameMsCap) == "number" and type(AntiCheatConfig.Get("Core").CrowdPlayers) == "number", "config")
+	end)
 end

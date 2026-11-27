@@ -1,4 +1,5 @@
 --!strict
+--!native
 --[[
 	ModuleUtil.lua (Sentinel AntiCheat)
 
@@ -42,45 +43,84 @@ function ModuleUtil.Horizontal(a: Vector3, b: Vector3): number
 	return Vector3.new(b.X - a.X, 0, b.Z - a.Z).Magnitude
 end
 
--- One RaycastParams for every check, refreshed when the character list
--- changes (at most every 0.5 s) - building it per ray was the main cost.
+-- One RaycastParams for every check (building it per ray was the main
+-- cost). Rebuilt only when it is stale: a player joined or left, the extra
+-- list changed, or a character asked for is not in it yet (a respawn).
 local cachedParams: RaycastParams? = nil
-local cachedAt = -math.huge
-local cachedCount = -1
 local cachedList: { Instance } = {}
+local dirty = true
+
+Players.PlayerAdded:Connect(function()
+	dirty = true
+end)
+Players.PlayerRemoving:Connect(function()
+	dirty = true
+end)
+
+-- Extra characters excluded like players' (the load test's dummy rigs).
+local extraCharacters: { Instance } = {}
+function ModuleUtil.SetExtraCharacters(list: { Instance })
+	extraCharacters = list
+	dirty = true
+end
 
 function ModuleUtil.Params(character: Instance?): RaycastParams
-	local now = os.clock()
-	local players = Players:GetPlayers()
-	if cachedParams and now - cachedAt < 0.5 and #players == cachedCount then
-		if not character or table.find(cachedList, character) then
-			return cachedParams
-		end
+	if cachedParams and not dirty and (not character or table.find(cachedList, character)) then
+		return cachedParams
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	local list = {}
-	for _, p in ipairs(players) do
+	for _, p in ipairs(Players:GetPlayers()) do
 		if p.Character then
 			table.insert(list, p.Character)
 		end
+	end
+	for _, c in ipairs(extraCharacters) do
+		table.insert(list, c)
 	end
 	if character and not table.find(list, character) then
 		table.insert(list, character)
 	end
 	params.FilterDescendantsInstances = list
 	params.IgnoreWater = false
-	cachedParams, cachedAt, cachedCount, cachedList = params, now, #players, list
+	cachedParams, cachedList, dirty = params, list, false
 	return params
 end
 
 -- Distance from the root down to the first surface (water counts).
+-- One ray per character is reused while the root stays put (standing,
+-- hovering): JumpCheck and FlyCheck both ask, several times a second, and
+-- the ray was most of their cost. Rays are cast at least GROUND_DEPTH deep
+-- so one cached answer serves every caller's depth.
+local GROUND_DEPTH = 24
+local GROUND_MOVE = 0.25 -- studs the root may move before the ray is redone
+local GROUND_TTL = 1 -- seconds a cached ray stays valid
+type GroundHit = { P: Vector3, T: number, Depth: number, Distance: number?, Material: Enum.Material?, Part: BasePart? }
+local groundCache: { [Instance]: GroundHit } = setmetatable({}, { __mode = "k" }) :: any
+
 function ModuleUtil.Ground(character: Instance, root: BasePart, depth: number): (number?, Enum.Material?, BasePart?)
-	local result = Workspace:Raycast(root.Position, Vector3.new(0, -depth, 0), ModuleUtil.Params(character))
-	if not result then
+	local pos = root.Position
+	local now = os.clock()
+	local hit = groundCache[character]
+	if not (hit and hit.Depth >= depth and now - hit.T < GROUND_TTL and (pos - hit.P).Magnitude < GROUND_MOVE) then
+		local castDepth = math.max(depth, GROUND_DEPTH)
+		local result = Workspace:Raycast(pos, Vector3.new(0, -castDepth, 0), ModuleUtil.Params(character))
+		hit = {
+			P = pos,
+			T = now,
+			Depth = castDepth,
+			Distance = if result then (pos - result.Position).Magnitude else nil,
+			Material = if result then result.Material else nil,
+			Part = if result then result.Instance :: BasePart else nil,
+		}
+		groundCache[character] = hit :: GroundHit
+	end
+	local h = hit :: GroundHit
+	if h.Distance == nil or h.Distance > depth then
 		return nil, nil, nil
 	end
-	return (root.Position - result.Position).Magnitude, result.Material, result.Instance :: BasePart
+	return h.Distance, h.Material, h.Part
 end
 
 function ModuleUtil.Seated(humanoid: Humanoid?): boolean
@@ -135,6 +175,42 @@ function ModuleUtil.HasMover(character: Instance?): boolean
 		watch(character)
 	end
 	return (moverCounts[character] or 0) > 0
+end
+
+-- Scripts under a character, as paths relative to it ("Head.Script"),
+-- kept current by DescendantAdded / DescendantRemoving after one scan, so
+-- CharacterIntegrityCheck never walks every descendant on a check.
+local scriptSets: { [Instance]: { [Instance]: string } } = setmetatable({}, { __mode = "k" }) :: any
+
+local function relativeName(character: Instance, d: Instance): string
+	return d:GetFullName():sub(#character:GetFullName() + 2)
+end
+
+function ModuleUtil.Scripts(character: Instance): { string }
+	local set = scriptSets[character]
+	if not set then
+		local fresh: { [Instance]: string } = {}
+		set = fresh
+		scriptSets[character] = fresh
+		for _, d in ipairs(character:GetDescendants()) do
+			if d:IsA("BaseScript") then
+				fresh[d] = relativeName(character, d)
+			end
+		end
+		character.DescendantAdded:Connect(function(d)
+			if d:IsA("BaseScript") then
+				fresh[d] = relativeName(character, d)
+			end
+		end)
+		character.DescendantRemoving:Connect(function(d)
+			fresh[d] = nil
+		end)
+	end
+	local out = {}
+	for _, name in pairs(set :: any) do
+		table.insert(out, name)
+	end
+	return out
 end
 
 function ModuleUtil.Confidence(ratio: number, low: number?, high: number?): number

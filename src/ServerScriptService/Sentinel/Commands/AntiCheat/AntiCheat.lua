@@ -441,6 +441,30 @@ register({
 })
 
 register({
+	Name = "acloadtest",
+	Aliases = { "anticheatloadtest" },
+	Description = "Studio or a private server only: spawns dummy players for the anti-cheat engine and reports its cost (per module, worst frame). ;acloadtest result shows the last report.",
+	Usage = "/acloadtest [count] [seconds] [nostretch] | result",
+	Examples = { "acloadtest 50 60", "acloadtest 50 60 nostretch", "acloadtest result" },
+	Permission = "anticheat.master",
+	RequiresTarget = false,
+	Execute = function(ctx: CommandContext): CommandResult
+		local LoadTest = require(AC:WaitForChild("LoadTest")) :: any
+		if (ctx.Arguments[1] or ""):lower() == "result" then
+			local text = LoadTest.LastReport()
+			return { Success = text ~= nil, Message = text or (if LoadTest.Running() then "The load test is still running." else "No load test has run on this server yet.") }
+		end
+		local count = tonumber(ctx.Arguments[1]) or 50
+		local seconds = tonumber(ctx.Arguments[2]) or 60
+		local character = ctx.Executor.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local noStretch = table.find(ctx.Arguments, "nostretch") ~= nil
+		local ok, message = LoadTest.Start(count, seconds, if root then root.Position else nil, noStretch)
+		return { Success = ok, Message = message }
+	end,
+})
+
+register({
 	Name = "acset",
 	Aliases = { "anticheatset" },
 	Description = "Changes one anti-cheat setting (validated against its range), e.g. Scoring.DecayPerMinute 2.",
