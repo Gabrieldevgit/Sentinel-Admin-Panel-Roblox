@@ -584,6 +584,7 @@ if sentinelUIFolder then
 		{ Name = "PollsPage" },
 		{ Name = "EventsPage" },
 		{ Name = "StaffFeedsPage" },
+		{ Name = "BannedPage" },
 		{ Name = "ModulesPage" },
 		{ Name = "ToggleSwitch" },
 		{ Name = "AntiCheatCenter" },
@@ -838,9 +839,20 @@ if sentinelUIFolder then
 		local StaffFeedsPage = require(loadedModules.StaffFeedsPage)
 		StaffFeedsPage.BuildChatLog(Shell.RegisterPage("ChatLog", "Chat Log", "💬"))
 		StaffFeedsPage.BuildAlerts(Shell.RegisterPage("Alerts", "Alerts", "⚠"))
-		require(loadedModules.LookupPage).Build(Shell.RegisterPage("Lookup", "Lookup", "🔎"), function(caseId: number)
+		local LookupPage = require(loadedModules.LookupPage)
+		LookupPage.Build(Shell.RegisterPage("Lookup", "Lookup", "🔎"), function(caseId: number)
 			Shell.ShowPage("Moderation")
 			ModerationPage.OpenCase(caseId)
+		end)
+		-- Moderation > Banned: every active ban (hidden without moderation.banlist / .ban).
+		local bannedContainer = Shell.RegisterPage("Banned", "Banned", "⛔")
+		Shell.SetPageVisible("Banned", false)
+		task.spawn(function()
+			local visible = require(loadedModules.BannedPage).Build(bannedContainer, function(userId: number)
+				Shell.ShowPage("Lookup")
+				LookupPage.Show(tostring(userId))
+			end)
+			Shell.SetPageVisible("Banned", visible)
 		end)
 		CommandsPage.Build(Shell.RegisterPage("Commands", "Commands", "📜"), CommandPalette, CommandBuilder)
 		LibraryPage.Build(Shell.RegisterPage("Library", "Library", "📚"), CommandPalette, CommandBuilder)

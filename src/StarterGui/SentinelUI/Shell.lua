@@ -102,6 +102,7 @@ local SECTIONS = {
 			{ Id = "Appeals", Label = "Appeals", Icon = "⚖" },
 			{ Id = "ChatLog", Label = "Chat Log", Icon = "💬" },
 			{ Id = "Alerts", Label = "Alerts", Icon = "⚠" },
+			{ Id = "Banned", Label = "Banned", Icon = "⛔" },
 			{ Id = "AntiCheat", Label = "Anti-Cheat", Icon = "🛡" },
 			{ Id = "Ranks", Label = "Ranks", Icon = "👑" },
 		},

@@ -17,8 +17,11 @@
 
 	Sections:
 		Core        Enabled, Mode, Panic, SetupDone, ExemptRank, TrustExternalAdmins,
+		            TrustSentinelCommands,
 		            FrameBudget, CostBudgetMs, StretchMinPlayers
 		Bands       Thresholds + the action of each band per mode, ban rules
+		Bans        BanDays (15), DefaultType (temporary | permanent),
+		            AllowPermanent (false: permanent bans are refused)
 		Scoring     DecayPerMinute, ScoreCap, FalsePositiveFactor, MinPlayerWeight
 		Grace       SpawnGrace, TeleportGrace, SeatGrace, LagTolerance, MaxPingMs
 		Storage     HistoryLength, RetentionDays, FlushSeconds
@@ -88,6 +91,7 @@ AntiCheatConfig.SCHEMA = {
 		SetupDone = bool(false, "The setup wizard was finished"),
 		ExemptRank = str("Admin", 30, "Staff at or above this rank are exempt (None = nobody)"),
 		TrustExternalAdmins = bool(false, "Trust HD Admin flight: approved :fly / :noclip are not flagged (off = flagged like any cheat)"),
+		TrustSentinelCommands = bool(false, "Trust Sentinel boosts: ;speed / ;jumppower / ;fly / ;noclip / ;god / ;heal on a player are not flagged (off = measured against the player's normal values)"),
 		FrameBudget = int(12, 1, 200, "Most checks run in one frame"),
 		FrameMsCap = num(0.5, 0.1, 10, "Hard cap: ms of checks per frame; the rest wait for the next frame"),
 		CrowdPlayers = int(40, 5, 500, "Above this many players every interval scales by players / this"),
@@ -103,11 +107,15 @@ AntiCheatConfig.SCHEMA = {
 		Balanced = bandList({ "log", "alert", "warn", "kick", "review" }, "Balanced mode actions"),
 		Strict = bandList({ "log", "correct", "kick", "tempban", "ban" }, "Strict mode actions"),
 		RequireApproval = bool(true, "Automatic game bans need staff / owner approval"),
-		PatternModules = int(3, 3, 14, "Different modules needed for a pattern ban"),
+		PatternModules = int(3, 3, 18, "Different modules needed for a pattern ban"),
 		PatternMinutes = int(10, 1, 120, "Window for the multi-module pattern (minutes)"),
 		TempBanMinutes = int(60, 1, 10080, "Length of a temporary server ban"),
-		BanDays = int(30, 0, 3650, "Length of an anti-cheat game ban in days (0 = permanent)"),
 		DismissReduce = int(50, 0, 100, "Percent of the score removed when staff dismiss a review item"),
+	},
+	Bans = {
+		BanDays = int(15, 1, 3650, "Length of an anti-cheat game ban in days (temporary bans)"),
+		DefaultType = choice("temporary", { "temporary", "permanent" }, "Ban type for automatic bans and ;acban without a length"),
+		AllowPermanent = bool(false, "Allow PERMANENT anti-cheat bans (risky - off: a permanent request becomes a BanDays ban)"),
 	},
 	Scoring = {
 		DecayPerMinute = num(1, 0, 50, "Points the score loses every minute"),
@@ -141,7 +149,7 @@ AntiCheatConfig.SCHEMA = {
 	},
 }
 
-AntiCheatConfig.SECTIONS = { "Core", "Bands", "Scoring", "Grace", "Storage", "Alerts", "CrossServer" }
+AntiCheatConfig.SECTIONS = { "Core", "Bands", "Bans", "Scoring", "Grace", "Storage", "Alerts", "CrossServer" }
 
 -- Fields every module has, on top of its own Defaults.
 local MODULE_COMMON: { [string]: Field } = {

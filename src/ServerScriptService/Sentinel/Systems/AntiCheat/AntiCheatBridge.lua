@@ -48,6 +48,8 @@ AntiCheatBridge.ACTIONS = {
 	queueDismiss = R, queueAssign = R, queueEscalate = R, queueNote = R,
 	exemptAdd = E, exemptRemove = E, exemptExtend = E, watchAdd = E, watchRemove = E, testing = E,
 	warn = A, kick = A, correct = A, resetScore = A,
+	bans = V, -- checked inside: anticheat.ban or moderation.banlist / moderation.ban
+	banLift = "anticheat.ban", banEdit = "anticheat.ban",
 	setValue = C, saveSection = C, resetSection = C, resetAll = C, import = C, applyPreset = C,
 	moduleToggle = C, moduleWeight = C, moduleTest = C, setMode = C, setPanic = C, exemptRank = C,
 	watchAlerts = C, resetModule = C,
@@ -392,7 +394,7 @@ end
 -- ---------------------------------------------------------------------------
 local UNDO_NODE = {
 	["exempt.add"] = E, ["exempt.remove"] = E, ["exempt.extend"] = E, ["watch.add"] = E, ["watch.remove"] = E, testing = E,
-	["score.reset"] = A, mode = C, panic = C, ["module.toggle"] = C, ["module.weight"] = C, config = C, master = M,
+	["score.reset"] = A, unban = "anticheat.ban", banEdit = "anticheat.ban", mode = C, panic = C, ["module.toggle"] = C, ["module.weight"] = C, config = C, master = M,
 }
 
 local function target(id: any): (Player?, string?)
@@ -501,11 +503,18 @@ handlers.player = function(player, payload)
 	-- (HD Admin's only while Core.TrustExternalAdmins is on).
 	local flight = {}
 	if p then
+		local checked = if AntiCheatConfig.Get("Core").TrustSentinelCommands == true then "" else " (checked: trust off)"
 		if p:GetAttribute("SentinelFlying") == true then
-			table.insert(flight, "Sentinel fly")
+			table.insert(flight, "Sentinel fly" .. checked)
 		end
 		if p:GetAttribute("SentinelNoclip") == true then
-			table.insert(flight, "Sentinel noclip")
+			table.insert(flight, "Sentinel noclip" .. checked)
+		end
+		local boosts = ExemptionService.Boosts(uid)
+		if boosts then
+			for prop, natural in pairs(boosts) do
+				table.insert(flight, ("Sentinel %s boost (normal %s)%s"):format(prop, tostring(natural), checked))
+			end
 		end
 		local hdFly, hdNoclip = require(script.Parent:WaitForChild("ExternalAdmins")).Movement(uid, os.clock())
 		if hdFly then
@@ -1001,6 +1010,106 @@ handlers.correct = function(player, payload)
 	return { Ok = done, Message = if done then ("Moved %s back to a recent valid position."):format(t.Name) else "No valid position to restore." }
 end
 
+-- ---------------------------------------------------------------------------
+-- Banned players (anti-cheat bans: automatic + ;acban)
+-- ---------------------------------------------------------------------------
+local function banModule(): any
+	return require(Sentinel:WaitForChild("Commands"):WaitForChild("Moderation"):WaitForChild("Ban")) :: any
+end
+
+local function canSeeBans(player: Player): boolean
+	return PermissionSystem.Has(player, "anticheat.ban")
+		or PermissionSystem.Has(player, "moderation.banlist")
+		or PermissionSystem.Has(player, "moderation.ban")
+end
+
+handlers.bans = function(player, payload)
+	if not canSeeBans(player) then
+		return { Ok = false, Denied = true, Message = "You need anticheat.ban or moderation.banlist to see banned players." }
+	end
+	local all = type(payload) == "table" and payload.All == true
+	local list, err = banModule().ListDetailed()
+	local out = {}
+	for _, b in ipairs(list) do
+		if all or b.Source == "anticheat" then
+			table.insert(out, b)
+		end
+	end
+	return { Ok = true, Bans = out, Error = err, Config = AntiCheatConfig.Get("Bans"), CanAct = PermissionSystem.Has(player, "anticheat.ban") }
+end
+
+-- Lift / edit: only bans the anti-cheat wrote (staff bans belong to
+-- Sentinel moderation: ;unban / ;editban with moderation.ban).
+local function antiCheatBan(payload: any): (number?, any, string?)
+	local uid = userId(type(payload) == "table" and payload.UserId or nil)
+	if not uid then
+		return nil, nil, "invalid player"
+	end
+	local record = banModule().GetActiveBan(uid)
+	if not record then
+		return nil, nil, "That player is not banned."
+	end
+	if not ActionService.IsAntiCheatBan(record) then
+		return nil, nil, "Not an anti-cheat ban - use Sentinel's Banned page (;unban / ;editban)."
+	end
+	return uid, record, nil
+end
+
+handlers.banLift = function(player, payload)
+	local uid, record, err = antiCheatBan(payload)
+	if not uid then
+		return { Ok = false, Message = err }
+	end
+	local reason, refused = actReason(player, payload)
+	if not reason then
+		return refused
+	end
+	local Ban = banModule()
+	if not Ban.SetBan(uid, nil) then
+		return { Ok = false, Message = "The ban could not be removed (DataStore error)." }
+	end
+	local name = record.TargetName or tostring(uid)
+	pcall(function()
+		-- Same as ;unban: the ban's case becomes Revoked.
+		lazy("CaseService").Revoke(uid, { "ban" }, player)
+	end)
+	pcall(function()
+		lazy("CaseService").Record({ Type = "unban", TargetId = uid, TargetName = name, ModeratorId = player.UserId, ModeratorName = player.Name, Reason = "[AntiCheat] " .. reason, Source = "anticheat" })
+	end)
+	pcall(function()
+		require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Sentinel"):WaitForChild("EventBus")).Publish("Player.Unbanned", uid)
+	end)
+	AntiCheatService.LogAction(player, "unban", name, ("Lifted the anti-cheat ban on %s: %s"):format(name, reason), function()
+		return Ban.SetBan(uid, record), "Ban restored"
+	end)
+	return { Ok = true, Message = ("Unbanned %s."):format(name) }
+end
+
+handlers.banEdit = function(player, payload)
+	local uid, record, err = antiCheatBan(payload)
+	if not uid then
+		return { Ok = false, Message = err }
+	end
+	local permanent = payload.Permanent == true
+	local days = int(payload.Days, 1, 3650)
+	if not permanent and not days then
+		return { Ok = false, Message = "Give a number of days (1-3650) or permanent." }
+	end
+	if permanent and AntiCheatConfig.Get("Bans").AllowPermanent ~= true then
+		return { Ok = false, Message = "Permanent anti-cheat bans are disabled (Settings > Bans > AllowPermanent)." }
+	end
+	local ok, message, previous = banModule().EditBan(uid, if permanent then nil else (days :: number) * 86400, player.Name)
+	if not ok then
+		return { Ok = false, Message = message }
+	end
+	local name = record.TargetName or tostring(uid)
+	local what = if permanent then "permanent" else ("%d day(s) from now"):format(days :: number)
+	AntiCheatService.LogAction(player, "banEdit", name, ("Changed %s's anti-cheat ban to %s"):format(name, what), function()
+		return banModule().SetBan(uid, previous), "Previous ban length restored"
+	end)
+	return { Ok = true, Message = ("%s's ban is now %s."):format(name, what) }
+end
+
 handlers.resetScore = function(player, payload)
 	local uid = userId(type(payload) == "table" and payload.UserId or nil)
 	if not uid then
@@ -1090,7 +1199,7 @@ handlers.resetSection = function(player, payload)
 	local before = table.clone(AntiCheatConfig.Get(key))
 	if key == "Core" then
 		-- Never flip the master switch through a reset.
-		return handlers.saveSection(player, { Key = "Core", Values = { Mode = "observe", Panic = false, ExemptRank = "Admin", TrustExternalAdmins = false, FrameBudget = 12, CostBudgetMs = 2, StretchMinPlayers = 10 } })
+		return handlers.saveSection(player, { Key = "Core", Values = { Mode = "observe", Panic = false, ExemptRank = "Admin", TrustExternalAdmins = false, TrustSentinelCommands = false, FrameBudget = 12, CostBudgetMs = 2, StretchMinPlayers = 10 } })
 	end
 	local ok, message = AntiCheatConfig.Reset(key, player)
 	if ok then

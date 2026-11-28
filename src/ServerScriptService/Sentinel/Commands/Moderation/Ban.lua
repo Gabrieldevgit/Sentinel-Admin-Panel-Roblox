@@ -98,6 +98,11 @@ local function updateIndex(userId: number, record: any?)
 	end)
 end
 
+-- This server's latest writes (UserId -> { At, Record | false }): the index
+-- is updated in the background, so ListBans overlays these for a minute and
+-- a list read right after a ban / unban / edit is already correct.
+local recentWrites: { [number]: { At: number, Record: any } } = {}
+
 local function writeBan(userId: number, record: BanRecord?): boolean
 	local ok, err = pcall(function()
 		if record then
@@ -110,6 +115,7 @@ local function writeBan(userId: number, record: BanRecord?): boolean
 		warn(("[Sentinel.Ban] failed to persist ban for %d: %s"):format(userId, tostring(err)))
 		return false
 	end
+	recentWrites[userId] = { At = os.time(), Record = if record then record else false }
 	task.spawn(updateIndex, userId, record)
 	return true
 end
@@ -161,7 +167,17 @@ function BanCommand.ListBans(rebuild: boolean?): ({ any }, string?)
 	end
 	local list = {}
 	local now = os.time()
-	for _, entry in pairs(if type(index) == "table" then index else {}) do
+	local merged = if type(index) == "table" then table.clone(index) else {}
+	for userId, w in pairs(recentWrites) do
+		if now - w.At > 60 then
+			recentWrites[userId] = nil
+		elseif w.Record then
+			merged[tostring(userId)] = summarize(userId, w.Record)
+		else
+			merged[tostring(userId)] = nil
+		end
+	end
+	for _, entry in pairs(merged) do
 		if type(entry) == "table" and (entry.ExpiresAt == -1 or (entry.ExpiresAt or 0) > now) then
 			table.insert(list, entry)
 		end
@@ -170,6 +186,42 @@ function BanCommand.ListBans(rebuild: boolean?): ({ any }, string?)
 		return (a.IssuedAt or 0) > (b.IssuedAt or 0)
 	end)
 	return list, nil
+end
+
+-- Ban list entries with what the Banned Players sections show: Source
+-- ("anticheat" for bans the anti-cheat wrote, else "staff"), Permanent and
+-- the seconds left. Same order as ListBans (newest first).
+function BanCommand.ListDetailed(): ({ any }, string?)
+	local list, err = BanCommand.ListBans(false)
+	local now = os.time()
+	local out = {}
+	for _, b in ipairs(list) do
+		local e = table.clone(b)
+		local reason = tostring(e.Reason or "")
+		e.Source = if reason:sub(1, 11) == "[AntiCheat]" or e.BannedByName == "Sentinel AntiCheat" then "anticheat" else "staff"
+		e.Permanent = e.ExpiresAt == -1
+		e.SecondsLeft = if e.Permanent then nil else math.max(0, (e.ExpiresAt or now) - now)
+		table.insert(out, e)
+	end
+	return out, err
+end
+
+-- Changes how long an active ban lasts, counted from now (seconds nil =
+-- permanent). Returns (ok, message, previousRecord).
+function BanCommand.EditBan(userId: number, seconds: number?, actorName: string): (boolean, string, BanRecord?)
+	local record = BanCommand.GetActiveBan(userId)
+	if not record then
+		return false, "That player is not banned.", nil
+	end
+	local previous = table.clone(record)
+	local updated = table.clone(record) :: any
+	updated.ExpiresAt = if seconds then os.time() + seconds else math.huge
+	updated.EditedBy = actorName
+	updated.EditedAt = os.time()
+	if not writeBan(userId, updated) then
+		return false, "The ban could not be saved (DataStore error).", previous
+	end
+	return true, "", previous
 end
 
 CommandRegistry.Register({
@@ -289,6 +341,52 @@ CommandRegistry.Register({
 		end
 		EventBus.Publish("Player.Unbanned", user.UserId)
 		return { Success = true, Message = ("Unbanned %s (%d)."):format(user.Name, user.UserId) }
+	end,
+} :: any)
+
+CommandRegistry.Register({
+	Name = "editban",
+	Aliases = { "changeban", "banlength" },
+	Description = "Changes how long an active ban lasts, counted from now (e.g. 7d, 12h, perm). Works offline.",
+	Usage = "/editban player duration",
+	ArgHints = {
+		player = { Type = "string", Description = "Username or UserId" },
+		duration = { Type = "string", Description = "New length from now: 30m, 12h, 7d, perm" },
+	},
+	Permission = "moderation.ban",
+	Category = "Moderation",
+	Cooldown = 1,
+	Log = true,
+	Undoable = true,
+	RequiresTarget = false,
+	Examples = { "editban Player1 7d", "editban 123456 perm" },
+	Execute = function(ctx: Types.CommandContext): Types.CommandResult
+		local user, err = PlayerProfileService.Resolve(ctx.Arguments[1], ctx.Executor)
+		if not user then
+			return { Success = false, Message = err }
+		end
+		;(ctx :: any).CaseTarget = { UserId = user.UserId, Name = user.Name }
+		local duration = DurationParser.Parse(ctx.Arguments[2] or "")
+		if not duration then
+			return { Success = false, Message = "Give a length: 30m, 12h, 7d or perm." }
+		end
+		local ok, message, previous = BanCommand.EditBan(user.UserId, if duration.IsPermanent then nil else duration.Seconds, ctx.Executor.Name)
+		if not ok then
+			return { Success = false, Message = message }
+		end
+		return {
+			Success = true,
+			Message = ("%s's ban is now %s."):format(user.Name, if duration.IsPermanent then "permanent" else "for " .. duration.Raw .. " from now"),
+			Undoable = true,
+			UndoData = { UserId = user.UserId, Previous = previous },
+		}
+	end,
+	Undo = function(_ctx: Types.CommandContext, result: Types.CommandResult): Types.CommandResult
+		local data = result.UndoData or {}
+		if data.UserId and data.Previous then
+			setBan(data.UserId, data.Previous)
+		end
+		return { Success = true, Message = "Restored the previous ban length." }
 	end,
 } :: any)
 

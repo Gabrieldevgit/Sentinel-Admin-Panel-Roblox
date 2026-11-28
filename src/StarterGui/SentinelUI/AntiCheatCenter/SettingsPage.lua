@@ -23,6 +23,7 @@ local SettingsPage = {}
 
 local TITLES = {
 	Bands = "Mode and action bands",
+	Bans = "Bans (length, permanent bans)",
 	Scoring = "Scoring",
 	Grace = "Grace and lag",
 	Storage = "Storage",
@@ -30,7 +31,7 @@ local TITLES = {
 	CrossServer = "Cross-server",
 	Core = "Core",
 }
-local ORDER = { "Bands", "Scoring", "Grace", "Storage", "Alerts", "CrossServer", "Core" }
+local ORDER = { "Bands", "Bans", "Scoring", "Grace", "Storage", "Alerts", "CrossServer", "Core" }
 
 local function fmt(v: any): string
 	if type(v) == "table" then
@@ -176,7 +177,7 @@ function SettingsPage.Build(frame: ScrollingFrame, Center: any): any
 				end
 			end
 			local order2 = 10
-			for _, name in ipairs({ "RequireApproval", "PatternModules", "PatternMinutes", "TempBanMinutes", "BanDays", "DismissReduce" }) do
+			for _, name in ipairs({ "RequireApproval", "PatternModules", "PatternMinutes", "TempBanMinutes", "DismissReduce" }) do
 				if byKey[name] then
 					order2 += 1
 					fieldRow(byKey[name], order2)

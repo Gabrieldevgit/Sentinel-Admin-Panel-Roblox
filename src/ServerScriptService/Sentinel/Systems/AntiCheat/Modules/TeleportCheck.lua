@@ -38,6 +38,10 @@ return {
 	Gather = function(player: Player, state: any, ctx: any)
 		local humanoid = state.Humanoid :: Humanoid?
 		state.WalkSpeed = if humanoid then humanoid.WalkSpeed else 16
+		local boosts = state.Boosts -- Sentinel ;speed boost, not trusted
+		if boosts and boosts.WalkSpeed then
+			state.WalkSpeed = boosts.WalkSpeed
+		end
 		state.Seated = ModuleUtil.Seated(humanoid)
 		state.InVehicle = ModuleUtil.InVehicle(state.Root)
 		state.LastTeleport = if ctx.LastEvent then ctx.LastEvent(player.UserId, "teleport") else nil

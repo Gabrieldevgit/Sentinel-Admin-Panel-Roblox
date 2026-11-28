@@ -15,7 +15,14 @@
 		    CFrame or PivotTo - the CFrame change signal never fires for
 		    physics) -> teleport grace
 		  - an After hook gives grace / notes heals, economy sources and
-		    character rebaselines for Sentinel's own staff commands
+		    character rebaselines for Sentinel's own staff commands; boosts
+		    (;speed, ;jumppower, ;fly, ;noclip, ;god, ;heal ...) are only
+		    trusted while Core.TrustSentinelCommands is on. A middleware
+		    snapshots the targets around each command, so a Humanoid value a
+		    command raised is a "boost" over the player's natural value
+		    (ExemptionService.SetBoost) that SpeedCheck / JumpCheck see
+		  - tool activations (AutoClickerCheck) and the attacker's aim at
+		    each hit (AimbotCheck, KillAuraCheck)
 		  - counts calls on every RemoteEvent in ReplicatedStorage and the
 		    shared RateLimiter's drops (RemoteSpamCheck)
 		  - records hits from classic "creator" tags (CombatCheck)
@@ -29,7 +36,8 @@
 		AntiCheatService.RegisterTeleport(player, reason?)   -- before moving a player
 		AntiCheatService.NoteHeal(player)                    -- the game healed them
 		AntiCheatService.NoteDamage(player, amount)          -- before applying damage
-		AntiCheatService.ValidateHit(attacker, victim, { Range?, Cooldown?, Weapon? }) -> (ok, why?)
+		AntiCheatService.ValidateHit(attacker, victim, { Range?, Cooldown?, Weapon?, Headshot? }) -> (ok, why?)
+		AntiCheatService.ReportShot(attacker, { Hit, Headshot?, Victim?, Weapon? })  -- ranged weapons (AimbotCheck)
 		AntiCheatService.NoteEconomySource(player, stat, amount)
 		AntiCheatService.RegisterTool(player, toolName)
 		AntiCheatService.Rebaseline(player)                  -- character changed on purpose
@@ -86,6 +94,11 @@ local knownTools: { [string]: boolean } = {}
 local knownAnimations: { [string]: boolean } = {}
 local recentBans: { any } = {}
 local lastHit: { [number]: { [string]: number } } = {}
+-- Humanoid values the last Sentinel command wrote per player (prop ->
+-- value), so the deferred property-changed handler can tell the command's
+-- own write from a later game write.
+local commandWrites: { [number]: { [string]: number } } = {}
+local BOOST_PROPS = { "WalkSpeed", "JumpPower", "JumpHeight" }
 local actionLog: { any } = {}
 local undoFns: { [number]: () -> (boolean, string) } = {}
 local logSeq = 0
@@ -267,6 +280,9 @@ function AntiCheatService.Status(): any
 				.. (if core.TrustExternalAdmins == true
 					then " - trusted: its approved Fly / NoClip are not flagged"
 					else " - not trusted (Core.TrustExternalAdmins off): its flight is flagged like any cheat"),
+			if core.TrustSentinelCommands == true
+				then "Sentinel commands: trusted - ;speed / ;jumppower / ;fly / ;noclip / ;god boosts are not flagged"
+				else "Sentinel commands: not trusted (Core.TrustSentinelCommands off) - boosts are measured like any cheat",
 		},
 	}
 end
@@ -358,6 +374,22 @@ function AntiCheatService.Correct(player: Player, flag: any): boolean
 		DetectionEngine.Note(player.UserId, "teleport", { Reason = "correction" })
 		character:PivotTo(CFrame.new(target.P + Vector3.new(0, 0.5, 0)) * root.CFrame.Rotation)
 		return true
+	elseif flag.Correct == "humanoid" and type(flag.Restore) == "table" then
+		-- HumanoidStatsCheck: put boosted values back (WalkSpeed, JumpPower ...).
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then
+			return false
+		end
+		local fixed = false
+		for prop, value in pairs(flag.Restore) do
+			if (prop == "WalkSpeed" or prop == "JumpPower" or prop == "JumpHeight" or prop == "MaxHealth") and type(value) == "number" then
+				pcall(function()
+					(humanoid :: any)[prop] = value
+				end)
+				fixed = true
+			end
+		end
+		return fixed
 	elseif flag.Correct == "health" and type(flag.RestoreHealth) == "number" then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health > flag.RestoreHealth then
@@ -426,6 +458,51 @@ local function rootOf(target: any): BasePart?
 	return if model:IsA("Model") then model.PrimaryPart else nil
 end
 
+-- Angle (degrees) between a root's facing and the direction to a point,
+-- flat (yaw only).
+local function flatAngle(look: Vector3, dir: Vector3): number
+	local a = Vector3.new(look.X, 0, look.Z)
+	local b = Vector3.new(dir.X, 0, dir.Z)
+	if a.Magnitude < 1e-3 or b.Magnitude < 1e-3 then
+		return 0
+	end
+	return math.deg(math.acos(math.clamp(a.Unit:Dot(b.Unit), -1, 1)))
+end
+
+-- Aim data for a hit: how far the attacker faced off the victim, and how
+-- far they turned in the ~0.2-0.6 s before (from the 5 Hz samples).
+local function aimInfo(attacker: Player, a: BasePart, v: BasePart): (number, number?)
+	local look = a.CFrame.LookVector
+	local angle = flatAngle(look, v.Position - a.Position)
+	local turn: number? = nil
+	local list = EvidenceService.RawSamples(attacker.UserId)
+	local now = os.clock()
+	for i = #list, 1, -1 do
+		local e = list[i]
+		local age = now - e.T
+		if age > 0.6 then
+			break
+		end
+		if age >= 0.15 and e.L then
+			turn = flatAngle(e.L, look)
+			break
+		end
+	end
+	return angle, turn
+end
+
+local function victimId(victim: any): number?
+	if typeof(victim) ~= "Instance" then
+		return nil
+	end
+	local model = if victim:IsA("Player") then victim.Character elseif victim:IsA("Humanoid") then victim.Parent else victim
+	local p = if victim:IsA("Player") then victim else (model and Players:GetPlayerFromCharacter(model))
+	if p then
+		return p.UserId
+	end
+	return nil
+end
+
 -- For the game's own damage code. Records the hit for CombatCheck and
 -- says whether it looks valid (the game may refuse invalid hits).
 function AntiCheatService.ValidateHit(attacker: Player, victim: any, info: any?): (boolean, string?)
@@ -449,6 +526,7 @@ function AntiCheatService.ValidateHit(attacker: Player, victim: any, info: any?)
 	local now = os.clock()
 	local since = if perWeapon[weapon] then now - perWeapon[weapon] else nil
 	perWeapon[weapon] = now
+	local angle, turn = aimInfo(attacker, a, v)
 	DetectionEngine.Note(attacker.UserId, "hit", {
 		Distance = distance,
 		Range = tonumber(opts.Range),
@@ -456,6 +534,10 @@ function AntiCheatService.ValidateHit(attacker: Player, victim: any, info: any?)
 		Cooldown = tonumber(opts.Cooldown),
 		Since = since,
 		Weapon = weapon,
+		Angle = angle,
+		Turn = turn,
+		Victim = victimId(victim) or tostring(v.Parent and v.Parent.Name),
+		Headshot = if type(opts.Headshot) == "boolean" then opts.Headshot else nil,
 	})
 	local range = (tonumber(opts.Range) or AntiCheatConfig.GetModule("CombatCheck").MaxRange or 20) * 1.5 + 4
 	if distance > range then
@@ -466,6 +548,23 @@ function AntiCheatService.ValidateHit(attacker: Player, victim: any, info: any?)
 		return false, "too fast"
 	end
 	return true, nil
+end
+
+-- For the game's ranged weapons: one call per shot fired (hit or miss).
+-- AimbotCheck compares hit / headshot rates over many shots.
+function AntiCheatService.ReportShot(attacker: Player, info: any?)
+	local opts = if type(info) == "table" then info else {}
+	local data: any = {
+		Hit = opts.Hit == true,
+		Headshot = if opts.Headshot == true then true else nil,
+		Weapon = tostring(opts.Weapon or "default"):sub(1, 40),
+	}
+	local a, v = rootOf(attacker), if opts.Victim then rootOf(opts.Victim) else nil
+	if a and v then
+		data.Distance = (a.Position - v.Position).Magnitude
+		data.Angle, data.Turn = aimInfo(attacker, a, v)
+	end
+	DetectionEngine.Note(attacker.UserId, "shot", data)
 end
 
 -- Pure argument validation. spec = list of "type[:max]" / "type?" (optional)
@@ -747,6 +846,49 @@ local function onCharacter(player: Player, character: Model)
 			AntiCheatService.RegisterTeleport(player, "server move")
 		end
 	end)
+	-- Command boosts: the command middleware (commandMiddleware) records a
+	-- value a Sentinel command raised as a boost over the natural value.
+	-- Any other server write (the game, a sprint module, HD Admin, a timed
+	-- boost ending) makes the new value natural again. Property signals are
+	-- deferred (they run after the command), so the command's own write is
+	-- recognised by value (commandWrites).
+	ExemptionService.ClearBoost(player.UserId)
+	commandWrites[player.UserId] = nil
+	for _, prop in ipairs(BOOST_PROPS) do
+		humanoid:GetPropertyChangedSignal(prop):Connect(function()
+			local value = (humanoid :: any)[prop] :: number
+			local writes = commandWrites[player.UserId]
+			if writes and writes[prop] == value then
+				return -- the command's own write
+			end
+			if writes then
+				writes[prop] = nil
+			end
+			ExemptionService.ClearBoost(player.UserId, prop)
+		end)
+	end
+	-- Tool activations (AutoClickerCheck). Tool.Activated fires on the
+	-- server for every click the client sends.
+	local function watchTool(tool: Instance)
+		if tool:IsA("Tool") then
+			local name = tool.Name
+			tool.Activated:Connect(function()
+				if tool.Parent == character then
+					DetectionEngine.Note(player.UserId, "click", { Tool = name })
+				end
+			end)
+		end
+	end
+	for _, c in ipairs(character:GetChildren()) do
+		watchTool(c)
+	end
+	local seenTools: { [Instance]: boolean } = {}
+	character.ChildAdded:Connect(function(c)
+		if c:IsA("Tool") and not seenTools[c] then
+			seenTools[c] = true
+			watchTool(c)
+		end
+	end)
 	humanoid.Seated:Connect(function(active: boolean)
 		if not active then
 			ExemptionService.MarkGrace(player.UserId, AntiCheatConfig.Get("Grace").SeatGrace or 3, "movement", "seat exit")
@@ -762,7 +904,14 @@ local function onCharacter(player: Player, character: Model)
 			if attacker and attacker:IsA("Player") and attacker ~= player then
 				local a = rootOf(attacker)
 				if a then
-					DetectionEngine.Note(attacker.UserId, "hit", { Distance = (a.Position - root.Position).Magnitude, Weapon = "creator" })
+					local angle, turn = aimInfo(attacker, a, root)
+					DetectionEngine.Note(attacker.UserId, "hit", {
+						Distance = (a.Position - root.Position).Magnitude,
+						Weapon = "creator",
+						Angle = angle,
+						Turn = turn,
+						Victim = player.UserId,
+					})
 				end
 			end
 		end
@@ -815,6 +964,7 @@ local function onPlayerRemoving(player: Player)
 	playerTools[player.UserId] = nil
 	playerAnimations[player.UserId] = nil
 	lastHit[player.UserId] = nil
+	commandWrites[player.UserId] = nil
 	ExemptionService.Forget(player.UserId)
 	EvidenceService.Forget(player.UserId)
 	-- The score is per session; keep it a minute in case they rejoin this server.
@@ -835,6 +985,71 @@ local MOVE_COMMANDS = {
 	fly = true, unfly = true, noclip = true, clip = true, size = true, scale = true, ragdoll = true,
 }
 local HEAL_COMMANDS = { heal = true, god = true, ungod = true, health = true, sethealth = true, maxhealth = true, respawn = true, refresh = true }
+-- Commands that give the target an advantage. Trusted (grace, heal note)
+-- only while Core.TrustSentinelCommands is on; off = the AC measures them
+-- like any exploit (the owner tests detections with them). Teleports and
+-- punishments (tp, bring, fling, freeze ...) stay legitimate: a server
+-- move is never a cheat.
+local BOOST_COMMANDS = {
+	speed = true, walkspeed = true, ws = true, jumppower = true, jp = true, jumpheight = true,
+	fly = true, unfly = true, noclip = true, clip = true, unnoclip = true,
+	god = true, ungod = true, heal = true, health = true, sethealth = true, maxhealth = true, mhp = true,
+}
+AntiCheatService.BOOST_COMMANDS = BOOST_COMMANDS
+
+function AntiCheatService.TrustsCommands(): boolean
+	return AntiCheatConfig.Get("Core").TrustSentinelCommands == true
+end
+
+-- Middleware: snapshots every target's Humanoid values around the command.
+-- A value the command raised becomes a boost over the natural value (the
+-- value before the first command that raised it); a value it lowered back
+-- to (or under) normal clears the boost. See onCharacter.
+local function humanoidOf(p: Player): Humanoid?
+	local character = p.Character
+	return character and character:FindFirstChildOfClass("Humanoid")
+end
+
+local function commandMiddleware(_def: any, cmdCtx: any, nextFn: () -> any): any
+	local before = {}
+	for _, t in ipairs(cmdCtx.Targets or {}) do
+		if typeof(t) == "Instance" and t:IsA("Player") then
+			local h = humanoidOf(t)
+			if h then
+				local values = {}
+				for _, prop in ipairs(BOOST_PROPS) do
+					values[prop] = (h :: any)[prop]
+				end
+				table.insert(before, { Player = t, Humanoid = h, Values = values })
+			end
+		end
+	end
+	local result = nextFn()
+	for _, b in ipairs(before) do
+		local p, h = b.Player, b.Humanoid
+		if h.Parent ~= nil and humanoidOf(p) == h then
+			local uid = p.UserId
+			for _, prop in ipairs(BOOST_PROPS) do
+				local old, new = b.Values[prop], (h :: any)[prop] :: number
+				if new ~= old then
+					local boosts = ExemptionService.Boosts(uid)
+					local base = (boosts and boosts[prop]) or old
+					local writes = commandWrites[uid] or {}
+					commandWrites[uid] = writes
+					writes[prop] = new
+					if new > base then
+						ExemptionService.SetBoost(uid, prop, base)
+					else
+						ExemptionService.ClearBoost(uid, prop)
+					end
+				end
+			end
+		end
+	end
+	return result
+end
+AntiCheatService._CommandMiddleware = commandMiddleware
+
 local CHARACTER_COMMANDS = {
 	size = true, scale = true, r6 = true, r15 = true, char = true, morph = true, removelimbs = true, unchar = true,
 	pumpkin = true, ghost = true, unspooky = true, clearseasonal = true, invisible = true, visible = true, head = true,
@@ -856,6 +1071,9 @@ local function afterCommand(def: any, cmdCtx: any, result: any)
 		table.insert(targets, cmdCtx.Executor)
 	end
 	local grace = AntiCheatConfig.Get("Grace")
+	if BOOST_COMMANDS[name] and not AntiCheatService.TrustsCommands() then
+		return -- measured like any exploit (Core.TrustSentinelCommands off)
+	end
 	for _, p in ipairs(targets) do
 		if typeof(p) == "Instance" and p:IsA("Player") then
 			if MOVE_COMMANDS[name] or category == "Movement" then
@@ -998,6 +1216,7 @@ function AntiCheatService.Start()
 	})
 	DetectionEngine.SetHooks({ OnFlag = onFlag })
 	CommandRegistry.AddHook("After", afterCommand, "AntiCheat")
+	CommandRegistry.Use(commandMiddleware, "AntiCheatScope")
 
 	EventBus.Subscribe("Player.Banned", function(target: any)
 		if typeof(target) == "Instance" and target:IsA("Player") then

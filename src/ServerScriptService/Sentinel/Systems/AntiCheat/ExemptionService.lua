@@ -39,7 +39,15 @@
 		ExemptionService.Watch(userId, name, why, by) / Unwatch(userId) / IsWatched / WatchList()
 		ExemptionService.Active(userId) -> { string }   -- for evidence snapshots
 		ExemptionService.Load(userId) (yields) / Flush() / Health()
+		ExemptionService.SetBoost(userId, prop, natural) / ClearBoost(userId, prop?)
+		ExemptionService.Boosts(userId) -> { [prop]: natural }  -- see below
 		ExemptionService._Clear()
+
+	Command boosts: when a Sentinel command (;speed, ;jumppower ...) raises
+	a Humanoid value, AntiCheatService stores the value the player had
+	before it (the "natural" value). With Core.TrustSentinelCommands off,
+	SpeedCheck / JumpCheck measure against the natural value, so a boost
+	given by a command is detected like an exploit. Session only.
 --]]
 
 local HttpService = game:GetService("HttpService")
@@ -64,6 +72,34 @@ local testing: { [number]: { By: string, At: number } } = {}
 local watch: { [number]: any } = {}
 local names: { [number]: string } = {}
 local rankProvider: ((number) -> (boolean, string?))? = nil
+local boosts: { [number]: { [string]: number } } = {}
+
+-- ---------------------------------------------------------------------------
+-- Command boosts (natural Humanoid values before a Sentinel command)
+-- ---------------------------------------------------------------------------
+function ExemptionService.SetBoost(userId: number, prop: string, natural: number)
+	local b = boosts[userId]
+	if not b then
+		b = {}
+		boosts[userId] = b
+	end
+	b[prop] = natural
+end
+
+function ExemptionService.ClearBoost(userId: number, prop: string?)
+	if prop == nil then
+		boosts[userId] = nil
+	elseif boosts[userId] then
+		boosts[userId][prop] = nil
+		if next(boosts[userId]) == nil then
+			boosts[userId] = nil
+		end
+	end
+end
+
+function ExemptionService.Boosts(userId: number): { [string]: number }?
+	return boosts[userId]
+end
 
 -- ---------------------------------------------------------------------------
 -- Grace windows
@@ -431,6 +467,7 @@ function ExemptionService.Forget(userId: number)
 	grace[userId] = nil
 	testing[userId] = nil
 	rankCache[userId] = nil
+	boosts[userId] = nil
 end
 
 function ExemptionService.Flush(): number
@@ -446,6 +483,7 @@ function ExemptionService._Clear()
 	table.clear(exemptions)
 	table.clear(testing)
 	table.clear(watch)
+	table.clear(boosts)
 	rankProvider = nil
 end
 

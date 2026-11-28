@@ -366,7 +366,7 @@ end
 -- ---------------------------------------------------------------------------
 UIPrefs.NAV_SECTIONS = { "Dashboard", "Players", "Moderation", "Commands", "Server", "Announcements", "Insights", "Modules" }
 UIPrefs.PAGE_IDS = {
-	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "ChatLog", "Alerts", "AntiCheat", "Ranks", "Commands", "Library", "Server", "CrossServer",
+	"Dashboard", "Players", "Lookup", "Moderation", "Reports", "Appeals", "ChatLog", "Alerts", "Banned", "AntiCheat", "Ranks", "Commands", "Library", "Server", "CrossServer",
 	"Economy", "AnnounceHistory", "AnnounceServer", "AnnounceGlobal", "AnnouncePlayers", "Polls", "Events",
 	"Analytics", "Logs", "Developer", "Modules", "Settings", "Appearance", "Keybinds", "Sounds", "Administration", "Notifications",
 }

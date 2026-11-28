@@ -4,11 +4,10 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-27 (Sentinel AntiCheat, session 6) - **live-tested
-and PUBLISHED (twice), NOT committed.** Small servers no longer stretch
-check intervals, Testing mode checks staff, tool scripts + world tools
-(Gear Wall) no longer flagged. Control Center re-tested live: works (user
-fixed + published). Start with §6._
+_Last updated: 2026-11-27 (Sentinel AntiCheat, session 8) - AC ban
+settings (15-day temp bans, permanent off by default) + "Banned" sections
+in the Control Center and in Sentinel (Moderation > Banned). Sessions 4-8
+PUBLISHED (place v283), NOT committed. Start with §6._
 
 ---
 
@@ -1178,6 +1177,128 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **Session 8 (2026-11-27): AC ban settings + Banned sections (PUBLISHED
+  v282 + fixes in v283, NOT committed).**
+  - New config section **Bans** (Settings > "Bans (length, permanent
+    bans)"): `BanDays` 15 (was Bands.BanDays 30, removed from Bands),
+    `DefaultType` temporary | permanent, `AllowPermanent` **false**.
+    `ActionService.BanLength(bans, wantPermanent?)` (pure): permanent only
+    when AllowPermanent is on, otherwise a BanDays ban + a note. Automatic
+    "ban" band uses it (DetectionEngine passes `ctx.Bans`). `;acban user
+    [7d|30|perm] [reason]`: perm refused while AllowPermanent is off. The
+    Control Center ban prompt has a Length choice.
+  - Ban list helpers in `Commands/Moderation/Ban.lua`: `ListDetailed()`
+    (Source anticheat | staff, Permanent, SecondsLeft), `EditBan(userId,
+    seconds?, actor)`; new command `;editban player 7d|12h|perm` (aliases
+    changeban, banlength; moderation.ban; undoable).
+    `ActionService.IsAntiCheatBan(record)`: reason starts "[AntiCheat]" or
+    by "Sentinel AntiCheat".
+  - New node `moderation.banlist` (see banned players; Moderator default +
+    FullModeration preset). Saved ranks are NOT migrated: on the live place
+    run `;rankperm Moderator +moderation.banlist`. Admin+ already see it
+    through moderation.ban.
+  - Control Center page **Banned** (`AntiCheatCenter/BansPage.lua`, page 5,
+    glyph B; pages are now 10, key 0 = Logs & Help): anti-cheat bans (chip
+    "All bans" shows staff bans read-only), summary + current ban
+    settings, Unban (reason, undo from Logs) and Change length (days /
+    permanent if allowed) via bridge actions `bans` (anticheat.ban or
+    moderation.banlist / .ban), `banLift` / `banEdit` (anticheat.ban; only
+    anti-cheat bans), Player drawer.
+  - Sentinel page **Moderation > Banned** (`SentinelUI/BannedPage.lua`):
+    cards Active / Anti-cheat / Staff / Permanent / Ending in 24 h, chips
+    All / Anti-cheat / Staff / Permanent / Temporary, filter, rows with
+    source tag + time left; Unban / Change length (moderation.ban, via
+    ;unban / ;editban) and Profile (Lookup). Hidden without
+    moderation.banlist / moderation.ban. GetBanListRemote now returns
+    `ListDetailed` + `CanAct`.
+  - The ban index is updated in the background (a few seconds), so a list
+    read right after an edit was stale: `Ban.lua` keeps this server's
+    writes of the last 60 s (`recentWrites`) and overlays them in ListBans.
+  - Verified in Studio Play: tests 234/234; config defaults (15 / temporary
+    / permanent off); a permanent request -> 15 days + note; fake bans
+    (-4242 anti-cheat, -4343 staff) listed with the right source; bridge
+    refuses permanent edits and staff bans; edit 3d / 7d reflected at once;
+    lift needs a reason, then works; both pages rendered (screenshots).
+    `;unban` from the Sentinel page refuses negative test UserIds ("not a
+    valid UserId") - expected, real ids work (W13). Fake bans removed. Not
+    published (Studio-only), not live-tested. Studio was reopened (it had
+    closed itself after the session-7 publish); it now also holds the
+    unpublished HumanoidStats RepeatSeconds fix.
+  - **Live test (v282, alt's private server "gabrielgaming_offv1's
+    server", owner + alt online):** Control Center Banned page (key 5)
+    lists the real anti-cheat ban "Roblox (1)" with "temporary, 15 days,
+    permanent DISABLED"; Settings shows the Bans section (AllowPermanent
+    off, BanDays 15, DefaultType temporary); Sentinel Moderation > Banned
+    shows 2 real bans (Roblox anti-cheat 29d, builderman staff PERMANENT)
+    with cards / chips / actions. Change length was NOT applied live (the
+    auto-mode safety check refused changing a real ban; cancelled - no ban
+    was changed). Edit / lift were verified in Studio only.
+  - Found live + fixed (v283): the Control Center's Unban (`banLift`) did
+    not revoke the ban's case (`;unban` does it through a command hook) -
+    now calls `CaseService.Revoke(uid, {"ban"})`; verified in Studio (case
+    #51 -> Revoked). The Sentinel page's Change-length box covered the top
+    ban row - now top-right over the header. Test leftovers in the shared
+    case store: #49 / #51 (ban ACTestBan, Revoked), #50 / #52 (unban,
+    Closed) - harmless. Live AC mode currently shows **Balanced** (it was
+    Strict in session 7 - not changed by these sessions).
+
+- **Session 7 (2026-11-27): Sentinel commands detected + 4 new modules
+  (published, NOT committed).**
+  - Cause of "AC doesn't detect Sentinel commands / speed 1000 / jump
+    100": the AC TRUSTED Sentinel commands by design (Speed / Jump read the
+    server WalkSpeed / JumpPower, `SentinelFlying` / `SentinelNoclip` /
+    `SentinelGod` skipped Fly / Noclip / Health, and the After hook gave
+    every Movement / Player command target a 3 s grace). New
+    `Core.TrustSentinelCommands` (default **false**): boosts (`BOOST_COMMANDS`
+    in AntiCheatService: speed, jumppower, fly, noclip, god, heal, health,
+    maxhealth...) get no grace; a middleware (`AntiCheatScope`) snapshots
+    target Humanoids around each command and stores the pre-command value
+    as the "natural" one (`ExemptionService.SetBoost/Boosts`); Speed /
+    Jump / Teleport measure against it. Any non-command write (game,
+    ShiftToRun, HD Admin, timed boost ending) makes the value natural
+    again. Teleports / punishments (tp, bring, fling, freeze...) stay
+    trusted. Lesson: property-changed signals are DEFERRED - they run
+    after the command, so "inside a command" can't be read in the handler
+    (the first version failed live in Play for that reason).
+  - SpeedCheck measured NET displacement over 1 s: running back and forth
+    (or zig-zag) at 1000 nets ~0 and was missed. Now sums the path.
+  - New modules: **HumanoidStatsCheck** (server WalkSpeed > 50, JumpPower
+    > 80, JumpHeight > 16, MaxHealth off; Strikes 2; RepeatSeconds 15;
+    silent correction `Correct = "humanoid"` restores values; also catches
+    HD Admin server-side :speed and backdoors), **AutoClickerCheck**
+    (server `Tool.Activated` -> "click" events: > 20 CPS, or machine-regular
+    intervals), **AimbotCheck** (hits carry `Angle` off-target + `Turn`
+    before the hit from 5 Hz look samples: snap hits; plus hit / headshot
+    rate from the new `AntiCheatService.ReportShot`), **KillAuraCheck**
+    (> 3 distinct victims within 1 s twice in 10 s, or 4 behind-hits in
+    5 s). Samples now store `L` (LookVector). `ValidateHit` accepts
+    `Headshot`. PatternModules max 14 -> 18.
+  - Verified: tests 230/230 (Edit, before the RepeatSeconds tweak);
+    Studio Play with a probe Script: `;speed 1000/100` -> SpeedCheck
+    ("allowed 28 (WalkSpeed 16)"), `;jumppower 100` -> JumpCheck, `;fly`
+    -> FlyCheck, HumanoidStats for both; tool clicks reach "click" events
+    (classic Sword's cooldown drops clicks, so it can't auto-click).
+    **Live** (published, private server "GabrielDev's server", Strict,
+    owner in `;actest`): `speed me 1000` -> SpeedCheck "Moved 295 studs/s,
+    allowed 28.5 (WalkSpeed 16)" + TeleportCheck + HumanoidStats within
+    seconds; `jumppower me 100` -> JumpCheck "Jumped 14.2, allowed 12.7".
+    Cleaned up: resetspeed, resetjump, `actest me off`.
+  - NOT published: HumanoidStats `RepeatSeconds` (live it re-flagged every
+    2 s while boosted - spams the feed / score). Checked with a Lune script
+    only (Studio closed itself after the publish). Reopen Studio, let Rojo
+    sync, run the tests, publish.
+  - Not verified live: AutoClicker / Aimbot / KillAura (need a
+    cooldown-free tool, a ranged weapon calling `ReportShot` / `ValidateHit`,
+    and a 2nd player). Behaviour change: with trust off, a NON-staff player
+    given `;speed` / `;fly` by staff is flagged (Strict = kicked); turn
+    `Core.TrustSentinelCommands` on in Settings > Core for production use.
+    `;unfly` landing now gives a JumpCheck flag (no flight-end grace when
+    flight isn't trusted) - same as HD Admin with trust off.
+  - Live tip: `keybd_event` key holds (scratchpad `holdkeys.ps1`, VK + scan
+    code) move the character on this AZERTY PC; MCP `Humanoid:Move` from the
+    Client DataModel does not (the control script overrides it) - use
+    `user_keyboard_input` keyDown/keyUp in Studio Play.
+
 - **Session 6 (2026-11-27) live findings + fixes (published, uncommitted).**
   Read the user's live tests from `Sentinel_AC_Flags_v1` (key = UserId) and
   the audit store (`Sentinel_AuditIndex_v1` ordered by time ->
@@ -1573,6 +1694,21 @@ Rules that keep it sound:
 
 ## 6. Current state
 
+- **2026-11-27 (latest, session 8): AC ban settings + Banned sections,
+  PUBLISHED (v283), NOT committed.** New: `SentinelUI/BannedPage.lua`,
+  `AntiCheatCenter/BansPage.lua`. Edited: AntiCheatConfig, ActionService,
+  DetectionEngine, AntiCheatBridge, Commands/AntiCheat, Ban.lua, UIBridge,
+  RankService, AntiCheatTypes, Center, SettingsPage, Shell, UIPrefs,
+  init.client, AntiCheat.spec. See §5.
+
+- **2026-11-27 (latest, session 7): AntiCheat - Sentinel command trust
+  toggle, path-length SpeedCheck, 4 new modules (18). PUBLISHED, NOT
+  committed** (sessions 4-7 all uncommitted). Changed: AntiCheatService,
+  DetectionEngine, ExemptionService, EvidenceService, AntiCheatConfig,
+  AntiCheatBridge, Speed / Jump / TeleportCheck, AntiCheat.spec; new
+  Modules/{HumanoidStats,AutoClicker,Aimbot,KillAura}Check.lua. Tests
+  230/230 (+ RepeatSeconds tweak checked in Lune only, unpublished).
+
 - **2026-11-27 (latest): AntiCheat sessions 4-6 NOT committed but
   PUBLISHED to the live game** (session 6).
 - **2026-11-27: AntiCheat sessions 4 + 5 NOT committed**
@@ -1775,6 +1911,24 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-27 (Sentinel AntiCheat, session 8)** - User: AC ban setting
+  (temp 15 days default, permanent disabled by default) + a banned-players
+  section in the AC and in Sentinel for staff allowed to view / act.
+  Built Bans config, BanLength, ;acban length, ;editban, moderation.banlist,
+  Control Center "Banned" page, Sentinel Moderation > Banned page. Lune
+  compile check 29/29. Studio Play verified; published v282, live-tested (pages + settings), fixed
+  ban-case revoke + edit box, published v283 (see §5).
+
+- **2026-11-27 (Sentinel AntiCheat, session 7)** - User: AC doesn't detect
+  Sentinel commands (speed 1000 / jump 100 missed); add modules (aimbot,
+  autoclicker...); test live. Found the AC trusted Sentinel commands by
+  design + SpeedCheck used net displacement. Added
+  `Core.TrustSentinelCommands` (default off) with natural-value boosts via
+  a command middleware, path-length speed, HumanoidStats / AutoClicker /
+  Aimbot / KillAura modules. Tests 230/230; Studio Play + live private
+  server verified (details §5). Published (place v281 saved first). Not
+  committed. HumanoidStats re-flag interval unpublished.
 
 - **2026-11-27 (Sentinel AntiCheat, session 6)** - User: live test; some
   modules slow, some don't detect. Read the user's live flags + audit, fixed

@@ -14,7 +14,7 @@
 		AntiCheatTypes.ACTIONS        what an action band can do
 		AntiCheatTypes.NODES          permission nodes (RankService)
 		AntiCheatTypes.STATUSES       player status labels
-		AntiCheatTypes.PAGES          Control Center sidebar order (keys 1-9)
+		AntiCheatTypes.PAGES          Control Center sidebar order (keys 1-9, 0)
 		AntiCheatTypes.SeverityColor(n) -> Color3 (1 green .. 10 red)
 --]]
 
@@ -120,6 +120,7 @@ AntiCheatTypes.PAGES = {
 	{ Id = "Flags", Label = "Live Flags" },
 	{ Id = "Players", Label = "Players" },
 	{ Id = "Review", Label = "Review Queue" },
+	{ Id = "Bans", Label = "Banned" },
 	{ Id = "Modules", Label = "Modules" },
 	{ Id = "Exemptions", Label = "Exemptions" },
 	{ Id = "Settings", Label = "Settings" },

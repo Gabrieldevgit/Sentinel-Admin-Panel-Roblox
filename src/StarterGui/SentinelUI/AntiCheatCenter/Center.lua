@@ -8,7 +8,7 @@
 		  Top bar   title, master switch, mode badge, status pill
 		            (Healthy / Degraded / Off), global search ("/"), bell
 		            (alerts, Mark all read), close (X)
-		  Sidebar   the 9 pages (keys 1-9) with unread badges; on phones it
+		  Sidebar   the 10 pages (keys 1-9, 0 = Logs) with unread badges; on phones it
 		            folds into a menu button
 		  Main      the page; a detail drawer (flag / player) slides over it
 		            from the right and closes with Esc or its X
@@ -20,7 +20,7 @@
 		every action is checked again on the server (AntiCheatBridge).
 
 		Keys while open: F7 toggle (init.client), Esc drawer -> modal ->
-		window, Up / Down rows (or the sidebar), Enter open, 1-9 pages,
+		window, Up / Down rows (or the sidebar), Enter open, 1-9 / 0 pages,
 		/ search, R refresh, Ctrl+K palette with anti-cheat commands first.
 
 	Stable names (Studio MCP): PlayerGui.SentinelAntiCheat.Window.{TopBar.{
@@ -82,6 +82,7 @@ local PAGE_MODULES = {
 	Flags = "FlagsPage",
 	Players = "PlayersPage",
 	Review = "ReviewPage",
+	Bans = "BansPage",
 	Modules = "ModulesPage",
 	Exemptions = "ExemptionsPage",
 	Settings = "SettingsPage",
@@ -90,7 +91,7 @@ local PAGE_MODULES = {
 }
 
 local PAGE_GLYPHS = {
-	Overview = "O", Flags = "F", Players = "P", Review = "R", Modules = "M",
+	Overview = "O", Flags = "F", Players = "P", Review = "R", Bans = "B", Modules = "M",
 	Exemptions = "E", Settings = "S", Analytics = "A", Logs = "L",
 }
 
@@ -604,13 +605,18 @@ end
 -- Ban with the evidence attached: Sentinel's ban prompt, sending ;acban
 -- (critical risk -> owner approval / ;confirm on the server).
 function Center.BanPrompt(p: any)
+	local lengths = { "Default (Settings > Bans)", "1 day", "7 days", "15 days", "30 days", "Permanent (if allowed)" }
 	Widgets.form("Ban " .. p.Name, {
+		{ Key = "Length", Label = "Length", Kind = "choice", Choices = lengths, Default = lengths[1] },
 		{ Key = "Reason", Label = "Reason (the anti-cheat flags are attached automatically)", Default = "cheating" },
 	}, function(v)
-		Center.Command(("acban %s %s"):format(tostring(p.UserId), v.Reason))
+		local length = if v.Length == lengths[1] then ""
+			elseif v.Length == lengths[6] then "perm "
+			else (v.Length:match("^(%d+)") or "") .. "d "
+		Center.Command(("acban %s %s%s"):format(tostring(p.UserId), length, v.Reason))
 		Center.Toast(true, "Ban sent - confirm it, or wait for the Owner's approval.")
 		return nil
-	end, { SubmitText = "Ban", Danger = true, Description = "Bans game-wide for the configured length. A critical command: you confirm it, and while an Owner is online they approve it." })
+	end, { SubmitText = "Ban", Danger = true, Description = "Bans game-wide (default 15 days; permanent only when Settings > Bans > AllowPermanent is on). A critical command: you confirm it, and while an Owner is online they approve it." })
 end
 
 -- Right-click menu for player / flag rows.
@@ -901,7 +907,7 @@ local function buildSidebar(w: Frame)
 		}, sb)
 		Theme.corner(b, Theme.Radius.S)
 		Widgets.SetActive(b, false)
-		local key = Widgets.label(b, tostring(i), { Name = "Key", TextSize = 11, Color = Theme.Colors.TextSecondary, XAlign = Enum.TextXAlignment.Right, Size = UDim2.new(1, -10, 1, 0) })
+		local key = Widgets.label(b, if i == 10 then "0" elseif i > 10 then "" else tostring(i), { Name = "Key", TextSize = 11, Color = Theme.Colors.TextSecondary, XAlign = Enum.TextXAlignment.Right, Size = UDim2.new(1, -10, 1, 0) })
 		local _ = key
 		local badge = Widgets.label(b, "0", { Name = "Badge", Bold = true, TextSize = 11, Color = Color3.new(1, 1, 1), XAlign = Enum.TextXAlignment.Center, Size = UDim2.fromOffset(28, 18) })
 		badge.BackgroundTransparency = 0
@@ -1030,7 +1036,7 @@ end
 -- ---------------------------------------------------------------------------
 local DIGITS = {
 	[Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3, [Enum.KeyCode.Four] = 4,
-	[Enum.KeyCode.Five] = 5, [Enum.KeyCode.Six] = 6, [Enum.KeyCode.Seven] = 7, [Enum.KeyCode.Eight] = 8, [Enum.KeyCode.Nine] = 9,
+	[Enum.KeyCode.Five] = 5, [Enum.KeyCode.Six] = 6, [Enum.KeyCode.Seven] = 7, [Enum.KeyCode.Eight] = 8, [Enum.KeyCode.Nine] = 9, [Enum.KeyCode.Zero] = 10,
 }
 
 local function onKey(input: InputObject, processed: boolean)

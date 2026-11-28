@@ -62,7 +62,7 @@ return function(t)
 	-- -----------------------------------------------------------------------
 	-- Modules: clean + flagged
 	-- -----------------------------------------------------------------------
-	t.test("modules: all 14 load with the contract", function()
+	t.test("modules: all 18 load with the contract", function()
 		local names = {}
 		for _, def in ipairs(DetectionEngine.Modules()) do
 			t.ok(type(def.Check) == "function", def.Name .. " Check")
@@ -70,7 +70,7 @@ return function(t)
 			t.ok(def.Interval > 0, def.Name .. " Interval")
 			table.insert(names, def.Name)
 		end
-		for _, expected in ipairs({ "SpeedCheck", "FlyCheck", "TeleportCheck", "NoclipCheck", "JumpCheck", "HealthCheck", "RemoteSpamCheck", "ToolIntegrityCheck", "CombatCheck", "CharacterIntegrityCheck", "AnimationCheck", "EconomyCheck", "ClientReportCheck", "AltAndBanEvasion" }) do
+		for _, expected in ipairs({ "SpeedCheck", "FlyCheck", "TeleportCheck", "NoclipCheck", "JumpCheck", "HealthCheck", "RemoteSpamCheck", "ToolIntegrityCheck", "CombatCheck", "CharacterIntegrityCheck", "AnimationCheck", "EconomyCheck", "ClientReportCheck", "AltAndBanEvasion", "HumanoidStatsCheck", "AutoClickerCheck", "AimbotCheck", "KillAuraCheck" }) do
 			t.ok(table.find(names, expected) ~= nil, expected .. " loaded")
 		end
 	end)
@@ -759,12 +759,15 @@ return function(t)
 			return if key == "SentinelFlying" then flying else nil
 		end
 		local def = mod("SpeedCheck")
+		local trustBefore = AntiCheatConfig.Get("Core").TrustSentinelCommands
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", true)
 		DetectionEngine.BuildState(p, def, 100)
 		t.eq(ExemptionService.InGrace(-777, "SpeedCheck"), false, "flying: no grace needed yet")
 		flying = false
 		DetectionEngine.BuildState(p, def, 101)
 		t.eq(ExemptionService.InGrace(-777, "SpeedCheck"), true, "landing grace")
 		t.eq(ExemptionService.InGrace(-777, "HealthCheck"), false, "movement modules only")
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", trustBefore == true)
 		ExemptionService.Forget(-777)
 	end)
 
@@ -808,5 +811,203 @@ return function(t)
 		Instance.new("LocalScript", tool).Name = "Later"
 		t.eq(table.find(ModuleUtil.Scripts(character), "Sword.Later"), nil, "added later: still ignored")
 		character:Destroy()
+	end)
+
+	-- -----------------------------------------------------------------------
+	-- Sentinel command trust + new modules (session 7)
+	-- -----------------------------------------------------------------------
+	t.test("engine: Sentinel ;fly / ;god are checked unless Core.TrustSentinelCommands is on", function()
+		local p = fakePlayer(-790, "Boosted")
+		p.GetAttribute = function(_, key)
+			return if key == "SentinelFlying" or key == "SentinelGod" then true else nil
+		end
+		local def = mod("FlyCheck")
+		local before = AntiCheatConfig.Get("Core").TrustSentinelCommands
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", false)
+		local s = DetectionEngine.BuildState(p, def, 300)
+		t.eq(s.Flying, false, "trust off: Sentinel fly measured")
+		t.eq(s.God, false, "trust off: Sentinel god measured")
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", true)
+		s = DetectionEngine.BuildState(p, def, 301)
+		t.eq(s.Flying, true, "trust on: Sentinel fly skipped")
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", before == true)
+		ExemptionService.Forget(-790)
+		t.eq(AntiCheatConfig.SCHEMA.Core.TrustSentinelCommands.Default, false, "defaults to off")
+	end)
+
+	t.test("engine: a ;speed boost is measured against the natural WalkSpeed (trust off)", function()
+		local p = fakePlayer(-791, "Speedy")
+		ExemptionService.SetBoost(-791, "WalkSpeed", 16)
+		local before = AntiCheatConfig.Get("Core").TrustSentinelCommands
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", false)
+		local def = mod("SpeedCheck")
+		local st = DetectionEngine.BuildState(p, def, 310)
+		t.eq(st.Boosts and st.Boosts.WalkSpeed, 16, "boost visible")
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", true)
+		st = DetectionEngine.BuildState(p, def, 311.6)
+		t.eq(st.Boosts, nil, "trust on: no boost")
+		t.eq(st.CommandBoosts and st.CommandBoosts.WalkSpeed, 16, "still listed for HumanoidStats")
+		AntiCheatConfig.SetValue("Core.TrustSentinelCommands", before == true)
+		ExemptionService.Forget(-791)
+		t.eq(ExemptionService.Boosts(-791), nil, "forgotten")
+	end)
+
+	t.test("SpeedCheck: WalkSpeed 1000 from a command flags with trust off", function()
+		local def = mod("SpeedCheck")
+		local fast = track(6, Vector3.new(200 * 0.2, 0, 0))
+		local s = state(def, { Humanoid = { WalkSpeed = 1000 }, Samples = fast, Boosts = { WalkSpeed = 16 } })
+		def.Gather(nil :: any, s, {})
+		t.eq(s.WalkSpeed, 16, "natural WalkSpeed used")
+		local flag
+		for _ = 1, 3 do
+			flag = def.Check(nil, s) or flag
+		end
+		t.ok(flag ~= nil, "flagged")
+		local trusted = state(def, { WalkSpeed = 1000, Samples = fast })
+		for _ = 1, 4 do
+			t.eq(def.Check(nil, trusted), nil, "trusted boost clean")
+		end
+	end)
+
+	t.test("AntiCheat: boost commands listed, middleware runs the command", function()
+		t.ok(AntiCheatService.BOOST_COMMANDS.speed and AntiCheatService.BOOST_COMMANDS.jumppower and AntiCheatService.BOOST_COMMANDS.fly, "listed")
+		t.eq(AntiCheatService.BOOST_COMMANDS.tp, nil, "teleports stay legitimate")
+		local ran = 0
+		local result = AntiCheatService._CommandMiddleware({}, { Targets = {} }, function()
+			ran += 1
+			return { Success = true }
+		end)
+		t.eq(ran, 1, "middleware runs the command")
+		t.ok(result.Success, "returns its result")
+	end)
+
+	t.test("HumanoidStatsCheck: normal stats clean, WalkSpeed 1000 flags", function()
+		local def = mod("HumanoidStatsCheck")
+		local s = state(def, { Stats = { WalkSpeed = 16, JumpPower = 50, MaxHealth = 100 } })
+		for _ = 1, 3 do
+			t.eq(def.Check(nil, s), nil)
+		end
+		local bad = state(def, { Stats = { WalkSpeed = 1000, JumpPower = 100, MaxHealth = 100 }, Boosts = { WalkSpeed = 16 } })
+		local flag
+		for _ = 1, 2 do
+			flag = def.Check(nil, bad) or flag
+		end
+		t.ok(flag ~= nil, "flagged")
+		t.eq(flag.Correct, "humanoid")
+		t.eq(flag.Restore.WalkSpeed, 16, "restores the natural value")
+		t.eq(def.Check(nil, bad), nil, "no repeat flag right away")
+		bad.Now += 16
+		def.Check(nil, bad)
+		t.ok(def.Check(nil, bad) ~= nil, "flags again after RepeatSeconds")
+		local trusted = state(def, { Stats = { WalkSpeed = 1000 }, CommandBoosts = { WalkSpeed = 16 } })
+		for _ = 1, 3 do
+			t.eq(def.Check(nil, trusted), nil, "trusted command boost skipped")
+		end
+	end)
+
+	local function clicks(n: number, gap: number, jitter: number?): { any }
+		local out = {}
+		local tt = 0
+		for i = 1, n do
+			tt += gap + (if jitter then (if i % 2 == 0 then jitter else -jitter) * (i % 3) else 0)
+			table.insert(out, { T = tt, D = { Tool = "Sword" } })
+		end
+		return out
+	end
+
+	t.test("AutoClickerCheck: human clicking clean, macro and 30 CPS flag", function()
+		local def = mod("AutoClickerCheck")
+		local human = clicks(30, 0.12, 0.04)
+		t.eq(def.Check(nil, state(def, { Clicks = human, Now = human[#human].T })), nil, "human")
+		local macro = clicks(30, 0.1)
+		t.ok(def.Check(nil, state(def, { Clicks = macro, Now = macro[#macro].T })) ~= nil, "regular macro")
+		local burst = clicks(40, 1 / 30, 0.005)
+		local bs = state(def, { Clicks = burst, Now = burst[#burst].T, Module = { FlaggedT = math.huge } })
+		local flag = def.Check(nil, bs)
+		flag = def.Check(nil, bs) or flag
+		t.ok(flag ~= nil and flag.Reason:find("clicks in one second") ~= nil, "30 CPS")
+	end)
+
+	t.test("AimbotCheck: normal hits clean, repeated snap hits and perfect accuracy flag", function()
+		local def = mod("AimbotCheck")
+		local normal = {}
+		for i = 1, 6 do
+			table.insert(normal, { T = i, D = { Distance = 60, Angle = 12, Turn = 20 } })
+		end
+		t.eq(def.Check(nil, state(def, { Hits = normal, Now = 7 })), nil, "normal")
+		local snaps = {}
+		for i = 1, 5 do
+			table.insert(snaps, { T = i, D = { Distance = 80, Angle = 2, Turn = 150 } })
+		end
+		t.ok(def.Check(nil, state(def, { Hits = snaps, Now = 6 })) ~= nil, "snaps")
+		local shots = {}
+		for i = 1, 30 do
+			table.insert(shots, { T = i * 0.5, D = { Hit = true, Headshot = true, Distance = 50 } })
+		end
+		t.ok(def.Check(nil, state(def, { Shots = shots, Now = 16 })) ~= nil, "100% hits")
+	end)
+
+	t.test("KillAuraCheck: one target clean, crowd and behind-hits flag", function()
+		local def = mod("KillAuraCheck")
+		local one = {}
+		for i = 1, 8 do
+			table.insert(one, { T = i * 0.25, D = { Victim = 1, Angle = 10, Distance = 5 } })
+		end
+		t.eq(def.Check(nil, state(def, { Hits = one, Now = 2 })), nil, "single target")
+		local crowd = {}
+		for v = 1, 5 do
+			table.insert(crowd, { T = 0.9 + v * 0.01, D = { Victim = v, Angle = 20, Distance = 6 } })
+		end
+		local cs = state(def, { Hits = crowd, Now = 1 })
+		t.eq(def.Check(nil, cs), nil, "one crowded second is not enough")
+		cs.Now = 2.1
+		for v = 1, 5 do
+			table.insert(crowd, { T = 2 + v * 0.005, D = { Victim = v, Angle = 20, Distance = 6 } })
+		end
+		t.ok(def.Check(nil, cs) ~= nil, "crowd twice")
+		local behind = {}
+		for i = 1, 4 do
+			table.insert(behind, { T = i * 0.5, D = { Victim = 1, Angle = 170, Distance = 5 } })
+		end
+		t.ok(def.Check(nil, state(def, { Hits = behind, Now = 2.1 })) ~= nil, "behind-hits")
+	end)
+
+	-- -----------------------------------------------------------------------
+	-- Ban settings (session 8)
+	-- -----------------------------------------------------------------------
+	t.test("Bans config: 15-day temporary bans, permanent disabled by default", function()
+		local schema = AntiCheatConfig.SCHEMA.Bans
+		t.eq(schema.BanDays.Default, 15)
+		t.eq(schema.DefaultType.Default, "temporary")
+		t.eq(schema.AllowPermanent.Default, false)
+		t.ok(table.find(AntiCheatConfig.SECTIONS, "Bans") ~= nil, "section listed")
+		t.eq(AntiCheatConfig.SCHEMA.Bands.BanDays, nil, "moved out of Bands")
+	end)
+
+	t.test("ActionService.BanLength: temporary by default, permanent only when allowed", function()
+		local defaults = { BanDays = 15, DefaultType = "temporary", AllowPermanent = false }
+		t.eq((ActionService.BanLength(defaults)), 15, "default 15 days")
+		local days, note = ActionService.BanLength(defaults, true)
+		t.eq(days, 15, "permanent refused -> 15 days")
+		t.ok(note ~= nil, "says why")
+		local permDefault = { BanDays = 15, DefaultType = "permanent", AllowPermanent = false }
+		t.eq((ActionService.BanLength(permDefault)), 15, "permanent default still refused")
+		local allowed = { BanDays = 7, DefaultType = "permanent", AllowPermanent = true }
+		t.eq((ActionService.BanLength(allowed)), 0, "allowed: permanent (0)")
+		t.eq((ActionService.BanLength(allowed, false)), 7, "explicit temporary")
+		t.eq((ActionService.BanLength(nil)), 15, "no config: 15")
+	end)
+
+	t.test("ActionService.IsAntiCheatBan tells anti-cheat bans from staff bans", function()
+		t.ok(ActionService.IsAntiCheatBan({ Reason = "[AntiCheat] SpeedCheck: fast", BannedByName = "gabriel" }))
+		t.ok(ActionService.IsAntiCheatBan({ Reason = "x", BannedByName = "Sentinel AntiCheat" }))
+		t.eq(ActionService.IsAntiCheatBan({ Reason = "Exploiting", BannedByName = "gabriel" }), false)
+		t.eq(ActionService.IsAntiCheatBan(nil), false)
+	end)
+
+	t.test("bridge: ban actions are permission-gated", function()
+		t.eq(AntiCheatBridge.ACTIONS.banLift, "anticheat.ban")
+		t.eq(AntiCheatBridge.ACTIONS.banEdit, "anticheat.ban")
+		t.ok(AntiCheatBridge.ACTIONS.bans ~= nil, "list action exists")
 	end)
 end

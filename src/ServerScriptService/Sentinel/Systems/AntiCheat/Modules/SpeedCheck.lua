@@ -6,8 +6,10 @@
 	Detects moving faster than allowed: the real horizontal distance the
 	server saw the root move over the last second, compared with WalkSpeed
 	x time x the lag factor plus a margin. False positives handled: the
-	WalkSpeed used is the one the server sees, so staff-granted speed
-	(;speed, sprint modules) is already allowed; seats, vehicles (root welded
+	WalkSpeed used is the one the server sees, so game speed (sprint
+	modules) is allowed - a Sentinel ;speed boost only while
+	Core.TrustSentinelCommands is on (off: the natural WalkSpeed from
+	before the command is used, so ;speed 1000 is detected); seats, vehicles (root welded
 	to a bigger assembly) and PlatformStand are skipped; fast falling and
 	Sentinel fly are skipped; ping and server frame time widen the limit
 	(state.Lag); knockback / explosions are a single fast burst, so a flag
@@ -46,6 +48,12 @@ return {
 	Gather = function(_player: Player, state: any, _ctx: any)
 		local humanoid = state.Humanoid :: Humanoid?
 		state.WalkSpeed = if humanoid then humanoid.WalkSpeed else 16
+		-- A Sentinel command boost (Core.TrustSentinelCommands off): measure
+		-- against the WalkSpeed the player had before the command.
+		local boosts = state.Boosts
+		if boosts and boosts.WalkSpeed then
+			state.WalkSpeed = boosts.WalkSpeed
+		end
 		state.Seated = ModuleUtil.Seated(humanoid)
 		state.InVehicle = ModuleUtil.InVehicle(state.Root)
 	end,
@@ -86,7 +94,13 @@ return {
 		if math.abs(last.P.Y - first.P.Y) / dt > (cfg.FallSpeed or 40) then
 			return nil -- falling / launched: not a walking measurement
 		end
-		local speed = ModuleUtil.Horizontal(first.P, last.P) / dt
+		-- Path length, not net displacement: running back and forth (or in
+		-- circles) at a boosted speed nets out to ~0 but is still too fast.
+		local path = 0
+		for i = 2, #window do
+			path += ModuleUtil.Horizontal(window[i - 1].P, window[i].P)
+		end
+		local speed = path / dt
 		local allowed = walkSpeed * (state.Lag or 1) + (cfg.Margin or 4)
 		if speed <= allowed then
 			m.Strikes = math.max(0, (m.Strikes or 0) - 1)

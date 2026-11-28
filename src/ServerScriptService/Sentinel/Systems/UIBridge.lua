@@ -1302,13 +1302,16 @@ bindInvoke(getOfflineProfileRemote, function(player: Player, query: any)
 	return profile
 end)
 
+-- Banned Players section (Moderation > Banned) and Lookup > Ban list.
+-- Seeing it: moderation.banlist or moderation.ban; acting: moderation.ban.
 bindInvoke(getBanListRemote, function(player: Player)
-	if not isStaff(player) or not PermissionSystem.Has(player, "moderation.ban") then
-		return { Bans = {}, Error = "You need moderation.ban to see the ban list." }
+	local canAct = isStaff(player) and PermissionSystem.Has(player, "moderation.ban")
+	if not canAct and not (isStaff(player) and PermissionSystem.Has(player, "moderation.banlist")) then
+		return { Bans = {}, Denied = true, Error = "You need moderation.banlist to see banned players." }
 	end
 	local BanCommand = require(Sentinel:WaitForChild("Commands"):WaitForChild("Moderation"):WaitForChild("Ban")) :: any
-	local list, err = BanCommand.ListBans(false)
-	return { Bans = list, Error = err }
+	local list, err = BanCommand.ListDetailed()
+	return { Bans = list, Error = err, CanAct = canAct }
 end)
 
 -- ---------------------------------------------------------------------------

@@ -14,7 +14,8 @@
 		  kick     kick + a case
 		  tempban  temporary server ban (Bands.TempBanMinutes) + a case
 		  review   queue for staff review (Review Queue page)
-		  ban      game ban (Bands.BanDays) + a case + removal on every server
+		  ban      game ban (Bans.BanDays, 15 days; permanent only when
+		           Bans.AllowPermanent is on) + a case + removal on every server
 
 		Rules (enforced in Decide, which is pure and unit tested):
 		  1. Observe never punishes: only log / alert.
@@ -38,6 +39,8 @@
 		ActionService.SetProviders({ Ban = fn(userId, record), ServerBan = fn(record),
 		    Correct = fn(player, flag) -> boolean, Alert = fn(entry), Push = fn(kind, data) })
 		ActionService.Ban(target {UserId, Name}, reason, days, actorName, flags?) -> (ok, msg)
+		ActionService.BanLength(bansConfig, wantPermanent?) -> (days (0 = permanent), note?)  (pure)
+		ActionService.IsAntiCheatBan(record) -> boolean                                    (pure)
 		ActionService.Recent(limit?) / CountToday() / ByType(hours)
 		Review queue: AddReview(item) / GetReview(id) / Reviews(status?) /
 		  OpenReviews() / Dismiss(id, by) / Assign(id, by) / Escalate(id, by) /
@@ -184,6 +187,31 @@ local function reasonOf(flag: any): string
 	return ("[AntiCheat] %s: %s"):format(tostring(flag.Module), tostring(flag.Reason)):sub(1, 280)
 end
 
+-- How long an anti-cheat ban lasts. wantPermanent nil = the configured
+-- DefaultType. Permanent bans are refused unless Bans.AllowPermanent is on
+-- (risky); then the ban is a BanDays one and the note says why.
+function ActionService.BanLength(bans: any, wantPermanent: boolean?): (number, string?)
+	local cfg = if type(bans) == "table" then bans else {}
+	local days = math.max(1, math.floor(tonumber(cfg.BanDays) or 15))
+	local permanent = if wantPermanent == nil then cfg.DefaultType == "permanent" else wantPermanent
+	if permanent then
+		if cfg.AllowPermanent == true then
+			return 0, nil
+		end
+		return days, ("permanent bans are disabled (Bans.AllowPermanent) - banned for %d day(s)"):format(days)
+	end
+	return days, nil
+end
+
+-- A ban record / ban-list entry written by the anti-cheat (automatic or ;acban).
+function ActionService.IsAntiCheatBan(record: any): boolean
+	if type(record) ~= "table" then
+		return false
+	end
+	local reason = tostring(record.Reason or "")
+	return reason:sub(1, 11) == "[AntiCheat]" or record.BannedByName == "Sentinel AntiCheat"
+end
+
 function ActionService.Ban(target: any, reason: string, days: number, actorName: string, flags: { any }?): (boolean, string)
 	if not providers.Ban then
 		return false, "the ban store is not available"
@@ -284,8 +312,9 @@ function ActionService.Execute(player: any, decision: any, flag: any, ctx: any?)
 		record("review", player, flag, decision.Note)
 		return ("queued for review (#%d)"):format(item.Id)
 	elseif action == "ban" then
-		local ok, message = ActionService.Ban(player, reasonOf(flag), bands.BanDays or 30, "Sentinel AntiCheat")
-		record("ban", player, flag, message)
+		local days, note = ActionService.BanLength(ctx and ctx.Bans)
+		local ok, message = ActionService.Ban(player, reasonOf(flag), days, "Sentinel AntiCheat")
+		record("ban", player, flag, message .. (if note then " (" .. note .. ")" else ""))
 		return if ok then "banned" else message
 	end
 	return "logged"

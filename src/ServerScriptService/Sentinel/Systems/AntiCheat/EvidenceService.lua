@@ -57,13 +57,13 @@ local function round(n: number): number
 	return math.floor(n * 10 + 0.5) / 10
 end
 
-function EvidenceService.AddSample(userId: number, t: number, position: Vector3, velocity: Vector3?)
+function EvidenceService.AddSample(userId: number, t: number, position: Vector3, velocity: Vector3?, look: Vector3?)
 	local list = samples[userId]
 	if not list then
 		list = {}
 		samples[userId] = list
 	end
-	table.insert(list, { T = t, P = position, V = velocity })
+	table.insert(list, { T = t, P = position, V = velocity, L = look })
 	while #list > SAMPLE_MAX or (#list > 1 and t - list[1].T > SAMPLE_SECONDS) do
 		table.remove(list, 1)
 	end

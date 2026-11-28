@@ -129,6 +129,7 @@ local MODERATOR_NODES = {
 	"moderation.chatlog",
 	"moderation.alerts",
 	"moderation.serverban", -- HD gap: ;serverban (this server only)
+	"moderation.banlist", -- see the Banned Players section (lifting / editing needs moderation.ban)
 	"analytics.view", -- W16: Insights > Analytics, ;analytics
 	"anticheat.view", -- AntiCheat: open the Control Center, see flags
 	"anticheat.review", -- AntiCheat: evidence, false positives, cases
@@ -1092,7 +1093,7 @@ local PRESETS: { [string]: { Description: string, Nodes: { string } } } = {
 	PanelAccess = { Description = "Open the panel and view ranks", Nodes = { "panel.open", "ranks.view" } },
 	Moderation = {
 		Description = "Kick, mute, warn, notes, cases, reports, appeals, chat log, alerts, server bans, freeze, jail",
-		Nodes = { "moderation.kick", "moderation.mute", "moderation.warn", "moderation.notes", "moderation.cases", "moderation.reports", "moderation.appeals", "moderation.chatlog", "moderation.alerts", "moderation.serverban", "player.freeze", "player.jail" },
+		Nodes = { "moderation.kick", "moderation.mute", "moderation.warn", "moderation.notes", "moderation.cases", "moderation.reports", "moderation.appeals", "moderation.chatlog", "moderation.alerts", "moderation.serverban", "moderation.banlist", "player.freeze", "player.jail" },
 	},
 	FullModeration = { Description = "All moderation incl. bans and access lists", Nodes = { "moderation.*", "player.freeze", "player.jail" } },
 	Teleport = { Description = "Goto, bring, teleport, spawn", Nodes = { "player.goto", "player.bring", "player.teleport", "player.spawn" } },

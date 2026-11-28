@@ -496,10 +496,10 @@ register({
 register({
 	Name = "acban",
 	Aliases = { "anticheatban" },
-	Description = "Bans a player for cheating (game-wide, Bands.BanDays) with the anti-cheat evidence. Critical: needs owner approval or ;confirm.",
+	Description = "Bans a player for cheating (game-wide) with the anti-cheat evidence. Length: Bans settings (15 days), or give 7d / perm first (perm needs Bans.AllowPermanent). Critical: needs owner approval or ;confirm.",
 	Usage = "/acban user [reason...]",
 	ArgHints = { user = { Type = "string", Description = "Username or UserId (online or offline)" } },
-	Examples = { "acban bob speed + fly pattern" },
+	Examples = { "acban bob speed + fly pattern", "acban bob 7d fly", "acban bob perm repeated pattern" },
 	Permission = "anticheat.ban",
 	RequiresTarget = false,
 	Risk = "critical",
@@ -519,7 +519,22 @@ register({
 				return { Success = false, Message = ("%s is protected by rank."):format(info.Name) }
 			end
 		end
-		local typed = table.concat(ctx.Arguments, " ", 2)
+		-- Optional length right after the user: "7d" / "30" (days) / "perm".
+		local wantPermanent: boolean? = nil
+		local daysOverride: number? = nil
+		local first = (ctx.Arguments[2] or ""):lower()
+		local reasonStart = 2
+		if first == "perm" or first == "permanent" or first == "forever" then
+			wantPermanent, reasonStart = true, 3
+		elseif first:match("^%d+d?$") then
+			daysOverride = math.clamp(tonumber((first:gsub("d", ""))) or 0, 1, 3650)
+			wantPermanent, reasonStart = false, 3
+		end
+		local bansCfg = AntiCheatConfig.Get("Bans")
+		if wantPermanent == true and bansCfg.AllowPermanent ~= true then
+			return { Success = false, Message = "Permanent anti-cheat bans are disabled. Turn on Bans > AllowPermanent in the Control Center settings first." }
+		end
+		local typed = table.concat(ctx.Arguments, " ", reasonStart)
 		local reason = "[AntiCheat] cheating"
 		if typed ~= "" then
 			local filtered = TextFilterService.ForBroadcast(ctx.Executor.UserId, typed)
@@ -538,7 +553,7 @@ register({
 			end
 			reason = ("%s (flags: %s)"):format(reason, table.concat(modules, ", ")):sub(1, 280)
 		end
-		local days = AntiCheatConfig.Get("Bands").BanDays or 30
+		local days = daysOverride or (ActionService.BanLength(bansCfg, wantPermanent))
 		local ok, message = ActionService.Ban({ UserId = info.UserId, Name = info.Name }, reason, days, ctx.Executor.Name)
 		if ok then
 			local closed = ActionService.Approve(info.UserId, ctx.Executor.Name)

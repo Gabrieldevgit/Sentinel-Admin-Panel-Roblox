@@ -8,8 +8,9 @@
 	above it is compared with the height JumpPower (JumpPower^2 / 2g) or
 	JumpHeight allows, times the lag factor, plus a margin. Rate: take-offs
 	in the last 10 seconds. False positives handled: the allowed height uses
-	the server's JumpPower / JumpHeight, so staff-granted jump (;jump) is
-	allowed; stairs / ramps climb with the ground under the player (no
+	the server's JumpPower / JumpHeight (a Sentinel ;jumppower boost only
+	while Core.TrustSentinelCommands is on - off: the value from before the
+	command); stairs / ramps climb with the ground under the player (no
 	take-off); force sources the server sees (jump pads, launchers),
 	seats, vehicles and Sentinel fly are skipped; spawns and teleports are
 	in grace; landing on a higher platform is measured from the take-off,
@@ -54,9 +55,14 @@ return {
 		state.HasMover = ModuleUtil.HasMover(state.Character)
 		if humanoid then
 			local gravity = Workspace.Gravity
+			-- A Sentinel command boost (Core.TrustSentinelCommands off): the
+			-- natural JumpPower / JumpHeight from before the command.
+			local boosts = state.Boosts or {}
+			local power = boosts.JumpPower or humanoid.JumpPower
+			local height = boosts.JumpHeight or humanoid.JumpHeight
 			state.AllowedHeight = if humanoid.UseJumpPower
-				then (humanoid.JumpPower ^ 2) / (2 * math.max(gravity, 1))
-				else humanoid.JumpHeight
+				then (power ^ 2) / (2 * math.max(gravity, 1))
+				else height
 			state.HipHeight = humanoid.HipHeight
 		end
 		if root and state.Character then

@@ -342,8 +342,15 @@ local function refreshSnapshot(player: Player, now: number): any
 	if AntiCheatConfig.Get("Core").TrustExternalAdmins == true then
 		externalFly, externalNoclip = ExternalAdmins.Movement(player.UserId, now)
 	end
-	snap.Flying = player:GetAttribute("SentinelFlying") == true or externalFly
-	snap.Noclip = player:GetAttribute("SentinelNoclip") == true or externalNoclip
+	-- Sentinel's own ;fly / ;noclip / ;god (and ;speed / ;jumppower boosts,
+	-- see ExemptionService.Boosts) are only trusted while
+	-- Core.TrustSentinelCommands is on. Off (default): measured like a cheat.
+	local core = AntiCheatConfig.Get("Core")
+	local trustSentinel = core.TrustSentinelCommands == true
+	snap.Flying = (trustSentinel and player:GetAttribute("SentinelFlying") == true) or externalFly
+	snap.Noclip = (trustSentinel and player:GetAttribute("SentinelNoclip") == true) or externalNoclip
+	snap.CommandBoosts = ExemptionService.Boosts(player.UserId)
+	snap.Boosts = if trustSentinel then nil else snap.CommandBoosts
 	snap.ExternalFlight = externalFly
 	-- Flight just ended: the player is still in the air and the last second
 	-- of samples holds flight-speed steps. A short movement grace while they
@@ -355,7 +362,7 @@ local function refreshSnapshot(player: Player, now: number): any
 		ExemptionService.MarkGrace(player.UserId, seconds, "movement", "admin flight ended")
 	end
 	flightState[player.UserId] = airborneGrant
-	snap.God = player:GetAttribute("SentinelGod") == true
+	snap.God = trustSentinel and player:GetAttribute("SentinelGod") == true
 	snap.Frozen = player:GetAttribute("SentinelFrozen") == true or (root ~= nil and root.Anchored)
 	snap.Seated = ModuleUtil.Seated(snap.Humanoid) or ModuleUtil.InVehicle(root)
 	snap.Moved = movedRecently(player.UserId, now)
@@ -388,6 +395,8 @@ function DetectionEngine.BuildState(player: Player, def: any, now: number, modul
 		Flying = snap.Flying,
 		Noclip = snap.Noclip,
 		God = snap.God,
+		Boosts = snap.Boosts, -- natural Humanoid values under a command boost (trust off)
+		CommandBoosts = snap.CommandBoosts, -- the same, whatever the trust setting
 		Frozen = snap.Frozen,
 		Moved = snap.Moved,
 	}
@@ -481,6 +490,7 @@ function DetectionEngine.Submit(player: any, partial: any, opts: any?): any
 		end
 		local ok, outcome = pcall(ActionService.Execute, player, decision, flag, {
 			Bands = bands,
+			Bans = AntiCheatConfig.Get("Bans"),
 			Modules = recentModules,
 			FlagIds = recentIds,
 		})
@@ -586,7 +596,7 @@ local function sample(player: Player, now: number)
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if root then
-		EvidenceService.AddSample(player.UserId, now, root.Position, root.AssemblyLinearVelocity)
+		EvidenceService.AddSample(player.UserId, now, root.Position, root.AssemblyLinearVelocity, root.CFrame.LookVector)
 	end
 	refreshSnapshot(player, now)
 end
