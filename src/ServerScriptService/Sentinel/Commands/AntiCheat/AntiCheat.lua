@@ -133,7 +133,7 @@ register({
 		local s = AntiCheatService.Status()
 		local lines = {
 			("AntiCheat %s | mode %s%s | %s"):format(if s.Enabled then "ON" else "OFF", s.Mode, if s.Panic then " | PANIC (actions off)" else "", s.Health),
-			("Modules: %d of %d enabled | cost %.2f ms/s (budget %.1f)"):format(s.EnabledModules, s.Modules, s.MsPerSec, s.Budget),
+			("Modules: %d of %d enabled | cost %.2f ms/s (budget %.1f) | %.1f checks/s, intervals x%.2f"):format(s.EnabledModules, s.Modules, s.MsPerSec, s.Budget, s.ChecksPerSec or 0, s.Stretch or 1),
 			("Flags awaiting review: %d (%d high severity) | review queue: %d"):format(s.Unreviewed, s.UnreviewedHigh, s.OpenReviews),
 		}
 		for _, w in ipairs(s.Warnings) do

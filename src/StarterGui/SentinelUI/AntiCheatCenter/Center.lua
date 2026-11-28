@@ -486,6 +486,7 @@ function Center.OpenPlayer(userId: number, name: string?)
 			table.insert(weights, ("%s x%.2f"):format(m, w))
 		end
 		kv(body, "False-positive weights", if #weights > 0 then table.concat(weights, ", ") else "none", 6)
+		kv(body, "Admin flight", if #(result.Flight or {}) > 0 then table.concat(result.Flight, ", ") .. " (movement checks paused)" else "none", 7)
 		Widgets.label(body, "Score", { Bold = true, LayoutOrder = 10 })
 		scoreGraph(body, result.History or {}, 11)
 		local actions = actionRow(body, 12)

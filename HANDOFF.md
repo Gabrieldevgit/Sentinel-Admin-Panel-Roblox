@@ -4,11 +4,11 @@
 > working on this project. It tells you what the project is, how to work in
 > it, what state it is in right now, and the rules every session follows.
 
-_Last updated: 2026-11-27 (Sentinel AntiCheat, session 3) - **AntiCheat
-committed in two commits: f161672 (build + UI fixes) and the cost work
-after it.** 50-player cost measured in Studio with `;acloadtest`: still
-over the 2 ms/s budget (§5 first item - user decision on sampling / live
-test). Start with §6._
+_Last updated: 2026-11-27 (Sentinel AntiCheat, session 6) - **live-tested
+and PUBLISHED (twice), NOT committed.** Small servers no longer stretch
+check intervals, Testing mode checks staff, tool scripts + world tools
+(Gear Wall) no longer flagged. Control Center re-tested live: works (user
+fixed + published). Start with §6._
 
 ---
 
@@ -1178,6 +1178,82 @@ Rules that keep it sound:
 
 ## 5. Known issues & open work
 
+- **Session 6 (2026-11-27) live findings + fixes (published, uncommitted).**
+  Read the user's live tests from `Sentinel_AC_Flags_v1` (key = UserId) and
+  the audit store (`Sentinel_AuditIndex_v1` ordered by time ->
+  `Sentinel_Audit_v1` pages `{E = entries}`) from Studio Edit.
+  - Slow / missed detections: one checked player costs ~1 ms/s (live
+    `;acstatus`: 1.01 ms/s, 7.9 checks/s), so 2+ checked players went over
+    the 2 ms budget and every interval stretched up to 12x. New
+    `Core.StretchMinPlayers` (10): servers with <= 10 players never stretch.
+    `;acstatus` now shows checks/s and the stretch factor.
+  - `;giveitem Sword` flagged by CharacterIntegrityCheck ("new script
+    Sword.SwordScript"): `ModuleUtil.Scripts` skips scripts inside tools.
+  - Gear Wall (`Workspace.Gear Wall`, InsertService gear dropped at a point,
+    touch pickup) gear "RockThunder" got the alt kicked by
+    ToolIntegrityCheck: AntiCheatService learns tools that appear in the
+    Workspace outside characters (`worldTools`, never cleared).
+  - Testing mode (`;actest`) now beats the staff-rank exemption, so staff
+    test on themselves live, log-only. Used for the live test.
+  - Live result (private server, main in Testing + alt): HD `:fly` ->
+    FlyCheck every ~3.5 s; alt: correct at ~14 s, kick at ~30 s (Strict,
+    score 40, ~3.7 points per fly flag) - kick latency is the scoring design.
+  - Control Center not opening on the live client: the user fixed it
+    (Studio-side, published); re-tested live 2026-11-27 22:13 in a fresh
+    private server: opens (~5 s after the first click), Overview + Live feed
+    show FlyCheck every ~3.5 s, Bell / Live Flags badges, cost 0.74 ms/s.
+    HD fly ending also gives JumpCheck ("Jumped 107 studs") - expected with
+    trust off. `;actest` off toast wording fixed locally (not published).
+  - Roblox chat on this PC: the top-bar chat icon is flaky; press Slash
+    (opens chat focused) then type.
+  - Live testing tips: the PC keyboard is AZERTY ("/" types "é": click the
+    chat box). Hold keys with `keybd_event` from PowerShell (pc-use-guard
+    only taps). HD fly: Space/Ctrl up/down, E toggles. Join the owner's
+    private server "GabrielDev's server" from the game page (fresh server,
+    `;acloadtest` allowed). Publishing = Studio File > Publish (Alt+P);
+    `save_place` never publishes.
+- **HD Admin flight trust toggle (2026-11-27, session 5, uncommitted).**
+  After session 4 the user reported "no detections any more, even with HD
+  Admin commands": the user USES HD Admin `:fly` / `:noclip` on alts to
+  test detections. New `Core.TrustExternalAdmins` (Settings > Core),
+  **default false**: HD Admin flight is measured like any cheat (flagged).
+  On = the session-4 behaviour below (approved tasks skipped). Engine was
+  never broken: a client-only hover by a non-exempt player is flagged by
+  FlyCheck in ~3 s. HD Admin `:speed` / `:tp` etc. run on the server and
+  were never flagged. Drawer shows "HD Admin fly (checked: trust off)".
+- **Testing trick (no shared-config change):** in Studio Play, the Server
+  DataModel can create a `Script` with `.Source` set; it shares the game's
+  require cache (unlike plugin `require`). Used to call
+  `ExemptionService.SetRankProvider(-> false)` + `SetTesting(uid)` in memory
+  only, and `HD Admin ServerAPI.requestCommand(":fly me", player)`.
+  NEVER change `Core.ExemptRank` from Studio: config is shared with live.
+  Studio "Server & Clients" windows don't show up in the Studio MCP.
+- **Sentinel AntiCheat - admin-tool false positives (fixed 2026-11-27,
+  uncommitted, re-test live with an alt).** User's live tests (Strict mode,
+  alt `gabrielgaming_offv1`): HD Admin `:fly` flagged ~90% of the time
+  (Speed "Moved 270-345 studs/s, WalkSpeed 100" + FlyCheck); Sentinel
+  `;speed` / `;fly` / `;jumppower` on another alt flagged 2-5%. Causes and
+  fixes:
+  - HD Admin (prefix `:`) flies on the CLIENT: `HDAdminFlyForce`
+    (BodyPosition) + `HDAdminFlyGyro` exist only client-side; the server
+    sees nothing. New `Systems/AntiCheat/ExternalAdmins.lua` asks HD
+    Admin's server API `ReplicatedStorage["HD Admin"].Core.ServerAPI`
+    `getTasks(name, userId)` for approved Fly / Fly2 / NoClip / Noclip2
+    tasks (cached 1 s, cleared on `onCommandRun`) -> snapshot Flying /
+    Noclip. Non-admins get no task, so it can't be faked. HD Admin
+    teleports (Teleport/Bring/GoTo/Apparate/Farland) use server PivotTo
+    and were already fine. Status in Analytics > Health; the player
+    drawer shows "Admin flight".
+  - Sentinel boosts: the window held steps from before the server lowered
+    WalkSpeed / JumpPower, or the flight that just ended. SpeedCheck now
+    uses the max WalkSpeed seen over window + 1 s, JumpCheck the max
+    allowance from 1 s before take-off, and flight ending (Sentinel attr
+    or HD task) starts Grace.FlightEndGrace (3 s) movement grace. No
+    blanket "WalkSpeed changed" grace: ShiftToRun lets clients trigger
+    WalkSpeed changes, so that would be a bypass.
+  - HD Admin internals note: `Core.MainModule` is an ObjectValue with a
+    CHILD named "Value"; `.Value` returns the property (the ReplicatedStorage
+    stub). Use `:FindFirstChild("Value")` to read the real server modules.
 - **Sentinel AntiCheat - server cost still over budget (user decision).**
   Measured 2026-11-27 in Studio Play with `;acloadtest 50 60` (50
   server-side dummies, not live) - see the build prompt's acceptance item
@@ -1497,7 +1573,13 @@ Rules that keep it sound:
 
 ## 6. Current state
 
-- **2026-11-26 (latest): Sentinel AntiCheat, NOT committed.** New:
+- **2026-11-27 (latest): AntiCheat sessions 4-6 NOT committed but
+  PUBLISHED to the live game** (session 6).
+- **2026-11-27: AntiCheat sessions 4 + 5 NOT committed**
+  (ExternalAdmins, WalkSpeed / jump history, flight-end grace,
+  `Core.TrustExternalAdmins` default off). Tests 221/221.
+
+- **2026-11-26: Sentinel AntiCheat, NOT committed.** New:
   `Systems/AntiCheat/*` (10 files + 14 modules), `Commands/AntiCheat/
   AntiCheat.lua`, `Tests/AntiCheat.spec.lua` (44 cases), `Shared/
   AntiCheatTypes.lua`, `SentinelUI/AntiCheatCenter/*` (14 files),
@@ -1693,6 +1775,36 @@ Rules that keep it sound:
 8. Continue with **W13**.
 
 ## 7. Session log (newest first)
+
+- **2026-11-27 (Sentinel AntiCheat, session 6)** - User: live test; some
+  modules slow, some don't detect. Read the user's live flags + audit, fixed
+  budget stretch on small servers (`Core.StretchMinPlayers`), tool scripts
+  in CharacterIntegrity, Gear Wall world tools in ToolIntegrity, Testing
+  beats rank exemption; `;acstatus` shows stretch. Tests 222/222. Published
+  twice (user OK'd), live-tested on the main in Testing mode in the
+  private server. Later: user fixed the live Control Center; re-tested
+  live - opens, live feed shows the flags. Toast wording fix unpublished.
+
+- **2026-11-27 (Sentinel AntiCheat, session 5)** - User: AC detects
+  nothing now, even HD Admin commands. Found: engine fine (non-exempt
+  client hover -> FlyCheck in 3 s); silence came from session 4's HD Admin
+  exemption. User chose a toggle, default off: `Core.TrustExternalAdmins`
+  (config, engine gate, drawer label, Health line, reset defaults, spec).
+  Tests 221/221. Play: HD Admin `:fly me` + client hover -> FlyCheck flag
+  with trust off. Some Testing-mode flags on the owner account were
+  written while testing. Not committed.
+
+- **2026-11-27 (Sentinel AntiCheat, session 4)** - User live-tested with
+  alts: HD Admin fly flagged ~90%, Sentinel speed / fly / jump 2-5%.
+  Found HD Admin fly is client-only (inspected in Studio Play), added
+  ExternalAdmins (HD Admin ServerAPI getTasks / onCommandRun), max
+  WalkSpeed / jump-allowance history, flight-end grace, Analytics
+  integration line, drawer "Admin flight". Tests 220/220. Verified in
+  Play through the Control Center's own remote: drawer field empty ->
+  "HD Admin fly" during `:fly me` -> empty after `:unfly me`; same for
+  `:noclip` / `:clip` and Sentinel `;fly` / `;unfly`; Analytics shows
+  "HD Admin: connected". Not committed (user didn't ask yet). The live
+  game runs in Strict mode.
 
 - **2026-11-27 (Sentinel AntiCheat, session 3)** - User: measure before
   choosing a budget, light redesign of the hot path, commit UI fixes apart

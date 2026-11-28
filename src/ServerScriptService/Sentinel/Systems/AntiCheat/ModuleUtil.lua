@@ -180,6 +180,10 @@ end
 -- Scripts under a character, as paths relative to it ("Head.Script"),
 -- kept current by DescendantAdded / DescendantRemoving after one scan, so
 -- CharacterIntegrityCheck never walks every descendant on a check.
+-- Scripts inside a tool (an equipped Tool / HopperBin) are left out: every
+-- tool brings its own scripts, and ToolIntegrityCheck already judges
+-- whether the server gave that tool (live: ;giveitem Sword was flagged as
+-- "new script Sword.SwordScript").
 local scriptSets: { [Instance]: { [Instance]: string } } = setmetatable({}, { __mode = "k" }) :: any
 
 local function relativeName(character: Instance, d: Instance): string
@@ -193,12 +197,12 @@ function ModuleUtil.Scripts(character: Instance): { string }
 		set = fresh
 		scriptSets[character] = fresh
 		for _, d in ipairs(character:GetDescendants()) do
-			if d:IsA("BaseScript") then
+			if d:IsA("BaseScript") and not d:FindFirstAncestorWhichIsA("BackpackItem") then
 				fresh[d] = relativeName(character, d)
 			end
 		end
 		character.DescendantAdded:Connect(function(d)
-			if d:IsA("BaseScript") then
+			if d:IsA("BaseScript") and not d:FindFirstAncestorWhichIsA("BackpackItem") then
 				fresh[d] = relativeName(character, d)
 			end
 		end)

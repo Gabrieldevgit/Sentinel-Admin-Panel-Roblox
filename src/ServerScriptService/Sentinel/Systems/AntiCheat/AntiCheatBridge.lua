@@ -359,7 +359,7 @@ local function analytics(payload: any): any
 		Accuracy = fpRates(),
 		Performance = stats,
 		RemoteCalls = AntiCheatService.RemoteCallsPerSecond(),
-		Health = { Stores = status.Stores, CrossServer = status.CrossServer, Warnings = status.Warnings },
+		Health = { Stores = status.Stores, CrossServer = status.CrossServer, Warnings = status.Warnings, Integrations = status.Integrations },
 	}
 end
 
@@ -497,11 +497,31 @@ handlers.player = function(player, payload)
 		notes = Note.GetNotes(uid)
 	end)
 	local p = Players:GetPlayerByUserId(uid)
+	-- Flight granted by an admin system: movement checks are paused for it
+	-- (HD Admin's only while Core.TrustExternalAdmins is on).
+	local flight = {}
+	if p then
+		if p:GetAttribute("SentinelFlying") == true then
+			table.insert(flight, "Sentinel fly")
+		end
+		if p:GetAttribute("SentinelNoclip") == true then
+			table.insert(flight, "Sentinel noclip")
+		end
+		local hdFly, hdNoclip = require(script.Parent:WaitForChild("ExternalAdmins")).Movement(uid, os.clock())
+		if hdFly then
+			local label = if hdNoclip then "HD Admin noclip" else "HD Admin fly"
+			if AntiCheatConfig.Get("Core").TrustExternalAdmins ~= true then
+				label ..= " (checked: trust off)"
+			end
+			table.insert(flight, label)
+		end
+	end
 	return {
 		Ok = true,
 		UserId = uid,
 		Name = nameOf(uid),
 		Row = if p then playerRow(p) else nil,
+		Flight = flight,
 		Score = ScoreService.Get(uid),
 		History = ScoreService.History(uid),
 		Flags = flags,
@@ -1070,7 +1090,7 @@ handlers.resetSection = function(player, payload)
 	local before = table.clone(AntiCheatConfig.Get(key))
 	if key == "Core" then
 		-- Never flip the master switch through a reset.
-		return handlers.saveSection(player, { Key = "Core", Values = { Mode = "observe", Panic = false, ExemptRank = "Admin", FrameBudget = 12, CostBudgetMs = 2 } })
+		return handlers.saveSection(player, { Key = "Core", Values = { Mode = "observe", Panic = false, ExemptRank = "Admin", TrustExternalAdmins = false, FrameBudget = 12, CostBudgetMs = 2, StretchMinPlayers = 10 } })
 	end
 	local ok, message = AntiCheatConfig.Reset(key, player)
 	if ok then

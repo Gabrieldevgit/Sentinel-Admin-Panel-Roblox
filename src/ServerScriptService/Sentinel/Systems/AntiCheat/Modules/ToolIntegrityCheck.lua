@@ -7,7 +7,8 @@
 	server's own view of the Backpack and the character is compared with
 	the known tool catalog: tools found at boot in StarterPack,
 	ServerStorage (including SentinelTools, which InventoryService gives),
-	ReplicatedStorage and Lighting, the player's StarterGear, the module's
+	ReplicatedStorage and Lighting, every tool the server put in the Workspace
+	(gear givers, pickups), the player's StarterGear, the module's
 	Allow list, and every tool the game registers with
 	AntiCheatService.RegisterTool. False positives handled: tools a game
 	gives from those places are known by name, so only truly unknown ones

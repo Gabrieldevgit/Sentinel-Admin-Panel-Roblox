@@ -422,6 +422,10 @@ return function(t)
 		end)
 		t.ok(ExemptionService.Check(-20, "FlyCheck"), "staff rank")
 		t.ok(not ExemptionService.Check(-21, "FlyCheck"), "normal player")
+		ExemptionService.SetTesting(-20, true, "self test")
+		t.ok(not ExemptionService.Check(-20, "FlyCheck"), "Testing mode: staff are checked (log-only)")
+		ExemptionService.SetTesting(-20, false)
+		t.ok(ExemptionService.Check(-20, "FlyCheck"), "Testing off: staff exempt again")
 		local e = ExemptionService.Add(-21, "bob", "FlyCheck", 3600, "glider map", "mod")
 		t.ok(e ~= nil)
 		t.ok(ExemptionService.Check(-21, "FlyCheck"), "module exemption")
@@ -677,5 +681,132 @@ return function(t)
 		t.ok(type(st.DeferredPerSec) == "number" and type(st.SkippedPerSec) == "number", "deferred / skipped")
 		t.ok(type(st.CrowdScale) == "number", "crowd scale")
 		t.ok(type(AntiCheatConfig.Get("Core").FrameMsCap) == "number" and type(AntiCheatConfig.Get("Core").CrowdPlayers) == "number", "config")
+	end)
+	-- -----------------------------------------------------------------------
+	-- False positives from admin tools (live test 2026-11-27)
+	-- -----------------------------------------------------------------------
+	local function shifted(samples: { any }, by: number): { any }
+		local out = {}
+		for _, sample in ipairs(samples) do
+			table.insert(out, { T = sample.T + by, P = sample.P })
+		end
+		return out
+	end
+
+	t.test("SpeedCheck: lowering WalkSpeed mid-move (;resetspeed) does not flag", function()
+		local def = mod("SpeedCheck")
+		local m = {}
+		local walk = track(6, Vector3.new(60 * 0.2, 0, 0)) -- 60 studs/s
+		local flag = nil
+		for i, ws in ipairs({ 100, 16, 16, 16 }) do
+			local now = 1 + (i - 1) * 0.5
+			local s = state(def, { WalkSpeed = ws, Now = now, Samples = shifted(walk, now - 1) })
+			s.Module = m
+			flag = def.Check(nil, s) or flag
+		end
+		t.eq(flag, nil, "the 100 WalkSpeed of 1.5 s ago still counts")
+		-- Two seconds later the old WalkSpeed is gone: running at 60 flags again.
+		for i = 1, 4 do
+			local now = 4 + i * 0.5
+			local s = state(def, { WalkSpeed = 16, Now = now, Samples = shifted(walk, now - 1) })
+			s.Module = m
+			flag = def.Check(nil, s) or flag
+		end
+		t.ok(flag ~= nil, "a real 60 studs/s at WalkSpeed 16 still flags")
+	end)
+
+	t.test("JumpCheck: lowering JumpPower mid-jump (;resetjump) does not flag", function()
+		local def = mod("JumpCheck")
+		local function run(allowances: { number }): any
+			local m = {}
+			local heights = { { H = 0, G = 20 }, { H = 60, G = 60 }, { H = 2, G = 3 } }
+			local result = nil
+			for i, step in ipairs(heights) do
+				local s = state(def, { Height = step.H, GroundDistance = step.G, GroundLimit = 4.5, AllowedHeight = allowances[i], Now = i * 0.5 })
+				s.Module = m
+				result = def.Check(nil, s) or result
+			end
+			return result
+		end
+		t.eq(run({ 100, 7.2, 7.2 }), nil, "a 60-stud jump made with JumpPower allowing 100")
+		t.ok(run({ 7.2, 7.2, 7.2 }) ~= nil, "the same jump with a normal JumpPower flags")
+	end)
+
+	t.test("ExternalAdmins: approved HD Admin flight tasks count, nothing else does", function()
+		local ExternalAdmins = require(AC:WaitForChild("ExternalAdmins"))
+		t.eq(select(1, ExternalAdmins.Movement(-31, 1)), false, "no HD Admin: not flying")
+		local tasks: { [string]: { [number]: boolean } } = { Fly = { [-31] = true }, NoClip = { [-32] = true } }
+		ExternalAdmins._SetProvider({
+			getTasks = function(name: string, userId: number)
+				return if tasks[name] and tasks[name][userId] then { {} } else {}
+			end,
+		})
+		local f1, n1 = ExternalAdmins.Movement(-31, 10)
+		t.ok(f1 == true and n1 == false, "Fly: flying, not noclip")
+		local f2, n2 = ExternalAdmins.Movement(-32, 10)
+		t.ok(f2 == true and n2 == true, "NoClip: flying and noclip")
+		t.eq(select(1, ExternalAdmins.Movement(-33, 10)), false, "no task: not flying")
+		tasks.Fly[-31] = nil
+		t.eq(select(1, ExternalAdmins.Movement(-31, 10.5)), true, "cached for a second")
+		t.eq(select(1, ExternalAdmins.Movement(-31, 11.5)), false, "then re-asked")
+		ExternalAdmins._SetProvider(nil)
+	end)
+
+	t.test("engine: flight ending (Sentinel attribute) starts a movement grace", function()
+		local flying = true
+		local p = fakePlayer(-777, "Flyer")
+		p.GetAttribute = function(_, key)
+			return if key == "SentinelFlying" then flying else nil
+		end
+		local def = mod("SpeedCheck")
+		DetectionEngine.BuildState(p, def, 100)
+		t.eq(ExemptionService.InGrace(-777, "SpeedCheck"), false, "flying: no grace needed yet")
+		flying = false
+		DetectionEngine.BuildState(p, def, 101)
+		t.eq(ExemptionService.InGrace(-777, "SpeedCheck"), true, "landing grace")
+		t.eq(ExemptionService.InGrace(-777, "HealthCheck"), false, "movement modules only")
+		ExemptionService.Forget(-777)
+	end)
+
+	t.test("engine: HD Admin flight is checked unless Core.TrustExternalAdmins is on", function()
+		local ExternalAdmins = require(AC:WaitForChild("ExternalAdmins"))
+		ExternalAdmins._SetProvider({
+			getTasks = function(name: string, userId: number)
+				return if name == "Fly" and userId == -778 then { {} } else {}
+			end,
+		})
+		local before = AntiCheatConfig.Get("Core").TrustExternalAdmins
+		local p = fakePlayer(-778, "HDFlyer")
+		p.GetAttribute = function()
+			return nil
+		end
+		local def = mod("FlyCheck")
+		AntiCheatConfig.SetValue("Core.TrustExternalAdmins", false)
+		t.eq(DetectionEngine.BuildState(p, def, 200).Flying, false, "trust off (default): HD Admin fly is measured")
+		AntiCheatConfig.SetValue("Core.TrustExternalAdmins", true)
+		t.eq(DetectionEngine.BuildState(p, def, 201).Flying, true, "trust on: approved HD Admin fly is skipped")
+		AntiCheatConfig.SetValue("Core.TrustExternalAdmins", before == true)
+		ExternalAdmins._SetProvider(nil)
+		ExemptionService.Forget(-778)
+		t.eq(AntiCheatConfig.SCHEMA.Core.TrustExternalAdmins.Default, false, "defaults to off")
+	end)
+
+	t.test("ModuleUtil.Scripts: scripts inside tools are left to ToolIntegrityCheck", function()
+		local ModuleUtil = require(AC:WaitForChild("ModuleUtil"))
+		local character = Instance.new("Model")
+		local head = Instance.new("Part")
+		head.Name = "Head"
+		head.Parent = character
+		Instance.new("Script", head).Name = "Injected"
+		local tool = Instance.new("Tool")
+		tool.Name = "Sword"
+		tool.Parent = character
+		Instance.new("Script", tool).Name = "SwordScript"
+		local names = ModuleUtil.Scripts(character)
+		t.ok(table.find(names, "Head.Injected") ~= nil, "body script listed")
+		t.eq(table.find(names, "Sword.SwordScript"), nil, "tool script ignored")
+		Instance.new("LocalScript", tool).Name = "Later"
+		t.eq(table.find(ModuleUtil.Scripts(character), "Sword.Later"), nil, "added later: still ignored")
+		character:Destroy()
 	end)
 end

@@ -53,6 +53,23 @@ return {
 	Check = function(_player: any, state: any): any
 		local cfg = state.Config or {}
 		local m = state.Module
+		-- WalkSpeed history: the window can hold steps from before the server
+		-- lowered WalkSpeed (;speed 100 then ;resetspeed, a sprint ending), so
+		-- the limit is the highest WalkSpeed seen over the window + 1 s. Only
+		-- the server can set WalkSpeed, so a client gains nothing from this.
+		local history = m.WalkSpeeds or {}
+		m.WalkSpeeds = history
+		table.insert(history, { T = state.Now, V = state.WalkSpeed or 16 })
+		local keep = (cfg.Window or 1) + 1
+		local walkSpeed = 0
+		for i = #history, 1, -1 do
+			local e = history[i]
+			if state.Now - e.T > keep then
+				table.remove(history, i)
+			elseif e.V > walkSpeed then
+				walkSpeed = e.V
+			end
+		end
 		if state.Seated or state.InVehicle or state.Flying or state.Frozen then
 			m.Strikes = 0
 			return nil
@@ -70,7 +87,7 @@ return {
 			return nil -- falling / launched: not a walking measurement
 		end
 		local speed = ModuleUtil.Horizontal(first.P, last.P) / dt
-		local allowed = (state.WalkSpeed or 16) * (state.Lag or 1) + (cfg.Margin or 4)
+		local allowed = walkSpeed * (state.Lag or 1) + (cfg.Margin or 4)
 		if speed <= allowed then
 			m.Strikes = math.max(0, (m.Strikes or 0) - 1)
 			return nil
@@ -82,8 +99,8 @@ return {
 		m.Strikes = 0
 		return {
 			Confidence = ModuleUtil.Confidence((speed / allowed - 1) * 2, 0.35, 1),
-			Reason = ("Moved %.1f studs/s, allowed %.1f (WalkSpeed %d)"):format(speed, allowed, state.WalkSpeed or 16),
-			Evidence = { Speed = speed, Allowed = allowed, WalkSpeed = state.WalkSpeed, Lag = state.Lag },
+			Reason = ("Moved %.1f studs/s, allowed %.1f (WalkSpeed %d)"):format(speed, allowed, walkSpeed),
+			Evidence = { Speed = speed, Allowed = allowed, WalkSpeed = walkSpeed, Lag = state.Lag },
 			Correct = "position",
 		}
 	end,

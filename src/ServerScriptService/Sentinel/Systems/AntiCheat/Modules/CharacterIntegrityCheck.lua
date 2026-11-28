@@ -12,7 +12,8 @@
 	accessories and scaling); Sentinel commands that legitimately change
 	the character (;size, ;scale, ;r6/;r15, morphs, ;removelimbs ...) and
 	AntiCheatService.Rebaseline(player) take a new baseline; dead characters
-	are skipped; accessories and tools are not body parts and are ignored;
+	are skipped; accessories and tools are not body parts and are ignored,
+	and scripts inside a tool don't count (ToolIntegrityCheck judges tools);
 	the size tolerance allows rounding.
 --]]
 

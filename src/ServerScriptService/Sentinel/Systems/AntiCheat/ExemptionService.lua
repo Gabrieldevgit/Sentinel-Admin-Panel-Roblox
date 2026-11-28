@@ -174,9 +174,15 @@ end
 
 -- Should this module skip this player entirely right now?
 function ExemptionService.Check(userId: number, module: string, now: number?): (boolean, string?)
-	local exempt, rank = rankExempt(userId)
-	if exempt then
-		return true, "staff rank " .. tostring(rank or "")
+	-- Testing mode beats the staff-rank exemption: staff put themselves in
+	-- Testing (;actest me) to see detections on their own character, live,
+	-- log-only (Testing never punishes), without lowering Core.ExemptRank
+	-- for every server.
+	if not testing[userId] then
+		local exempt, rank = rankExempt(userId)
+		if exempt then
+			return true, "staff rank " .. tostring(rank or "")
+		end
 	end
 	local list = exemptions[userId]
 	if list then

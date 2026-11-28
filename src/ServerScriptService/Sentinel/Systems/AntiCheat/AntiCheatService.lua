@@ -235,7 +235,7 @@ function AntiCheatService.Status(): any
 		table.insert(warnings, "Cross-server messaging unavailable: " .. crossServerError)
 	end
 	if stats.MsPerSec > (core.CostBudgetMs or 2) then
-		table.insert(warnings, ("Checks cost %.2f ms/s, over the %.1f ms budget (intervals stretched x%.2f)"):format(stats.MsPerSec, core.CostBudgetMs, stats.CostFactor))
+		table.insert(warnings, ("Checks cost %.2f ms/s, over the %.1f ms budget (%s)"):format(stats.MsPerSec, core.CostBudgetMs, if stats.CostFactor > 1 then ("intervals stretched x%.2f"):format(stats.CostFactor) else "small server: intervals not stretched"))
 	end
 	local health = if not core.Enabled then "Off" elseif #warnings > 0 then "Degraded" else "Healthy"
 	local enabledModules = 0
@@ -255,11 +255,19 @@ function AntiCheatService.Status(): any
 		EnabledModules = enabledModules,
 		MsPerSec = stats.MsPerSec,
 		Budget = core.CostBudgetMs,
+		Stretch = stats.CostFactor,
+		ChecksPerSec = stats.ChecksPerSec,
 		Unreviewed = EvidenceService.Unreviewed(),
 		UnreviewedHigh = AntiCheatService.UnreviewedHigh(),
 		OpenReviews = ActionService.OpenReviews(),
 		Stores = stores,
 		CrossServer = { Ok = crossServer ~= nil and crossServerError == nil, Error = crossServerError },
+		Integrations = {
+			require(script.Parent:WaitForChild("ExternalAdmins")).Status()
+				.. (if core.TrustExternalAdmins == true
+					then " - trusted: its approved Fly / NoClip are not flagged"
+					else " - not trusted (Core.TrustExternalAdmins off): its flight is flagged like any cheat"),
+		},
 	}
 end
 
@@ -312,7 +320,7 @@ function AntiCheatService.SetTesting(userId: number, name: string, on: boolean, 
 		ExemptionService.SetTesting(userId, was, "undo")
 		return true, ("testing mode %s again"):format(if was then "on" else "off")
 	end, { Old = was, New = on })
-	return true, ("Testing mode %s for %s: all checks log only."):format(if on then "on" else "off", name)
+	return true, if on then ("Testing mode on for %s: all checks log only."):format(name) else ("Testing mode off for %s: checks act normally again."):format(name)
 end
 
 function AntiCheatService.ResetScore(userId: number, name: string, actor: any): (boolean, string)
@@ -520,6 +528,32 @@ end
 -- ---------------------------------------------------------------------------
 -- Context for module Gather functions
 -- ---------------------------------------------------------------------------
+-- Tools the server put in the Workspace (outside any character): gear
+-- givers such as the place's "Gear Wall" (InsertService gear dropped at a
+-- point, picked up by touch), world pickups, dropped tools. A client can't
+-- create a tool the server sees, so these are server-made and picking one up
+-- is legitimate (live 2026-11-27: Gear Wall "RockThunder" got the alt
+-- kicked by ToolIntegrityCheck). Kept apart from knownTools, which
+-- scanCatalog clears every minute.
+local worldTools: { [string]: boolean } = {}
+
+local function inCharacter(d: Instance): boolean
+	local node = d.Parent
+	while node and node ~= Workspace do
+		if node:IsA("Model") and Players:GetPlayerFromCharacter(node) then
+			return true
+		end
+		node = node.Parent
+	end
+	return false
+end
+
+local function noteWorldTool(d: Instance)
+	if d:IsA("BackpackItem") and not inCharacter(d) then
+		worldTools[d.Name] = true
+	end
+end
+
 local function scanCatalog()
 	table.clear(knownTools)
 	table.clear(knownAnimations)
@@ -542,6 +576,9 @@ ctx.JoinedAt = function(userId: number): number?
 end
 ctx.KnownTools = function(player: Player): { [string]: boolean }
 	local out = table.clone(knownTools)
+	for name in pairs(worldTools) do
+		out[name] = true
+	end
 	for name in pairs(playerTools[player.UserId] or {}) do
 		out[name] = true
 	end
@@ -917,6 +954,8 @@ function AntiCheatService.Start()
 	end
 	AntiCheatService.Started = true
 	local count = DetectionEngine.LoadModules(script.Parent:WaitForChild("Modules"))
+	-- Other admin systems whose powers run on the client (HD Admin flight).
+	require(script.Parent:WaitForChild("ExternalAdmins")).Start()
 
 	ExemptionService.SetRankProvider(function(userId: number): (boolean, string?)
 		local player = Players:GetPlayerByUserId(userId)
@@ -988,6 +1027,10 @@ function AntiCheatService.Start()
 	ReplicatedStorage.DescendantAdded:Connect(watchRemote)
 
 	scanCatalog()
+	for _, d in ipairs(Workspace:GetDescendants()) do
+		noteWorldTool(d)
+	end
+	Workspace.DescendantAdded:Connect(noteWorldTool)
 	task.spawn(function()
 		while true do
 			task.wait(60)

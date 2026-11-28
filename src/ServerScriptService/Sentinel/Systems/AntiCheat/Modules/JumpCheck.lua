@@ -70,6 +70,18 @@ return {
 	Check = function(_player: any, state: any): any
 		local cfg = state.Config or {}
 		local m = state.Module
+		-- Allowance history: the server may lower JumpPower / JumpHeight
+		-- mid-jump (;resetjump), or between the take-off and the check that
+		-- sees it. A landing is measured against the highest allowance seen
+		-- from 1 s before take-off. Only the server sets these values.
+		local allowances = m.Allowances or {}
+		m.Allowances = allowances
+		table.insert(allowances, { T = state.Now, V = state.AllowedHeight or 7.2 })
+		for i = #allowances, 1, -1 do
+			if state.Now - allowances[i].T > 15 then
+				table.remove(allowances, i)
+			end
+		end
 		if state.Seated or state.InVehicle or state.Flying or state.HasMover or state.Height == nil then
 			m.Airborne = false
 			return nil
@@ -81,6 +93,7 @@ return {
 		if not grounded and not m.Airborne then
 			m.Airborne = true
 			m.TakeOff = state.Height
+			m.TakeOffT = state.Now
 			m.Peak = state.Height
 			table.insert(m.TakeOffs, state.Now)
 		elseif not grounded and m.Airborne then
@@ -88,7 +101,14 @@ return {
 		elseif grounded and m.Airborne then
 			m.Airborne = false
 			local rise = (m.Peak or state.Height) - (m.TakeOff or state.Height)
-			local allowed = (state.AllowedHeight or 7.2) * (state.Lag or 1) + (cfg.Margin or 3)
+			local allowedHeight = state.AllowedHeight or 7.2
+			local since = (m.TakeOffT or state.Now) - 1
+			for _, e in ipairs(allowances) do
+				if e.T >= since and e.V > allowedHeight then
+					allowedHeight = e.V
+				end
+			end
+			local allowed = allowedHeight * (state.Lag or 1) + (cfg.Margin or 3)
 			if rise > allowed then
 				result = {
 					Confidence = ModuleUtil.Confidence(rise / allowed - 0.6, 0.4, 0.9),

@@ -167,6 +167,10 @@ function AnalyticsPage.Build(frame: ScrollingFrame, Center: any): any
 			), { TextSize = 13, Wrap = true, AutoY = true, LayoutOrder = 9 + i, Color = if s.Ok then Theme.Colors.Text else Theme.Colors.Error })
 		end
 		Widgets.label(charts, ("MessagingService (cross-server): %s"):format(if r.Health.CrossServer.Ok then "OK" else ("unavailable - " .. tostring(r.Health.CrossServer.Error))), { TextSize = 13, Wrap = true, AutoY = true, LayoutOrder = 20, Color = if r.Health.CrossServer.Ok then Theme.Colors.Text else Theme.Colors.Warning })
+		for i, line in ipairs(r.Health.Integrations or {}) do
+			local ok = line:find("connected") ~= nil or line:find("not installed") ~= nil
+			Widgets.label(charts, line, { TextSize = 13, Wrap = true, AutoY = true, LayoutOrder = 20 + i, Color = if ok then Theme.Colors.Text else Theme.Colors.Warning })
+		end
 	end
 
 	return api

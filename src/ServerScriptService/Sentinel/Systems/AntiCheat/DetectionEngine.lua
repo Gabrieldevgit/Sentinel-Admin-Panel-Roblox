@@ -71,6 +71,7 @@ local ExemptionService = require(script.Parent:WaitForChild("ExemptionService"))
 local EvidenceService = require(script.Parent:WaitForChild("EvidenceService"))
 local ActionService = require(script.Parent:WaitForChild("ActionService"))
 local ModuleUtil = require(script.Parent:WaitForChild("ModuleUtil"))
+local ExternalAdmins = require(script.Parent:WaitForChild("ExternalAdmins"))
 local Logger = require(script.Parent.Parent.Parent:WaitForChild("Core"):WaitForChild("Logger"))
 
 local DetectionEngine = {}
@@ -280,6 +281,7 @@ end
 -- check of that player: one read of the character, ping and attributes
 -- per tick instead of one per module.
 local snapshots: { [number]: any } = {}
+local flightState: { [number]: boolean } = {} -- was flight granted last sample
 
 -- Largest distance between the newest sample and any sample of the last
 -- STILL_WINDOW seconds (math.huge when there are too few samples to say).
@@ -332,8 +334,27 @@ local function refreshSnapshot(player: Player, now: number): any
 	-- Fast part, every sample: state that can flip any moment.
 	local root = snap.Root :: BasePart?
 	snap.T = now
-	snap.Flying = player:GetAttribute("SentinelFlying") == true
-	snap.Noclip = player:GetAttribute("SentinelNoclip") == true
+	-- Flight granted on the server: Sentinel's attributes, or an approved
+	-- HD Admin flight task (its fly runs on the client - see ExternalAdmins)
+	-- when Core.TrustExternalAdmins is on. Off (default): HD Admin flight is
+	-- measured like any other client-side flight, so it gets flagged.
+	local externalFly, externalNoclip = false, false
+	if AntiCheatConfig.Get("Core").TrustExternalAdmins == true then
+		externalFly, externalNoclip = ExternalAdmins.Movement(player.UserId, now)
+	end
+	snap.Flying = player:GetAttribute("SentinelFlying") == true or externalFly
+	snap.Noclip = player:GetAttribute("SentinelNoclip") == true or externalNoclip
+	snap.ExternalFlight = externalFly
+	-- Flight just ended: the player is still in the air and the last second
+	-- of samples holds flight-speed steps. A short movement grace while they
+	-- land. Only server state can start it (attribute set by the server,
+	-- HD Admin task), so a client can't trigger it.
+	local airborneGrant = snap.Flying or snap.Noclip
+	if flightState[player.UserId] and not airborneGrant then
+		local seconds = AntiCheatConfig.Get("Grace").FlightEndGrace or 3
+		ExemptionService.MarkGrace(player.UserId, seconds, "movement", "admin flight ended")
+	end
+	flightState[player.UserId] = airborneGrant
 	snap.God = player:GetAttribute("SentinelGod") == true
 	snap.Frozen = player:GetAttribute("SentinelFrozen") == true or (root ~= nil and root.Anchored)
 	snap.Seated = ModuleUtil.Seated(snap.Humanoid) or ModuleUtil.InVehicle(root)
@@ -551,6 +572,8 @@ function DetectionEngine.Untrack(player: Player)
 	scratch[player.UserId] = nil
 	events[player.UserId] = nil
 	snapshots[player.UserId] = nil
+	flightState[player.UserId] = nil
+	ExternalAdmins.Forget(player.UserId)
 	rebuildJobs()
 end
 
@@ -666,8 +689,14 @@ local function rollWindow(now: number)
 	windowSkipped = 0
 	windowStart = now
 	-- Stay under the budget: stretch intervals while over it.
-	local budgetMs = AntiCheatConfig.Get("Core").CostBudgetMs or 2
-	if stretchLocked then
+	local core = AntiCheatConfig.Get("Core")
+	local budgetMs = core.CostBudgetMs or 2
+	-- Small servers never stretch: one checked player already costs ~1 ms/s,
+	-- so 2-3 players went over the 2 ms budget and every interval grew (up to
+	-- 12x) - detections felt slow or missed time windows (live 2026-11-27).
+	-- The budget exists for crowded servers.
+	local smallServer = trackedCount <= (core.StretchMinPlayers or 10)
+	if stretchLocked or smallServer then
 		costFactor = 1
 	elseif totalMsPerSecond > budgetMs then
 		costFactor = math.min(MAX_STRETCH, costFactor * 1.25)

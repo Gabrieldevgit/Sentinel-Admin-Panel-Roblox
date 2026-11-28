@@ -16,7 +16,8 @@
 		"anticheat.config").
 
 	Sections:
-		Core        Enabled, Mode, Panic, SetupDone, ExemptRank, FrameBudget, CostBudgetMs
+		Core        Enabled, Mode, Panic, SetupDone, ExemptRank, TrustExternalAdmins,
+		            FrameBudget, CostBudgetMs, StretchMinPlayers
 		Bands       Thresholds + the action of each band per mode, ban rules
 		Scoring     DecayPerMinute, ScoreCap, FalsePositiveFactor, MinPlayerWeight
 		Grace       SpawnGrace, TeleportGrace, SeatGrace, LagTolerance, MaxPingMs
@@ -86,10 +87,12 @@ AntiCheatConfig.SCHEMA = {
 		Panic = bool(false, "Panic: every automatic action off, detections keep logging"),
 		SetupDone = bool(false, "The setup wizard was finished"),
 		ExemptRank = str("Admin", 30, "Staff at or above this rank are exempt (None = nobody)"),
+		TrustExternalAdmins = bool(false, "Trust HD Admin flight: approved :fly / :noclip are not flagged (off = flagged like any cheat)"),
 		FrameBudget = int(12, 1, 200, "Most checks run in one frame"),
 		FrameMsCap = num(0.5, 0.1, 10, "Hard cap: ms of checks per frame; the rest wait for the next frame"),
 		CrowdPlayers = int(40, 5, 500, "Above this many players every interval scales by players / this"),
 		CostBudgetMs = num(2, 0.5, 50, "Budget: ms of server time per second for all checks"),
+		StretchMinPlayers = int(10, 0, 200, "Servers with this many players or fewer never stretch intervals for the budget (detections stay fast)"),
 	},
 	Bands = {
 		Band1 = int(20, 1, 999, "Score where band 2 starts (below = band 1)"),
@@ -116,6 +119,7 @@ AntiCheatConfig.SCHEMA = {
 		SpawnGrace = num(3, 0, 30, "Seconds without checks after spawn / character load"),
 		TeleportGrace = num(3, 0, 30, "Seconds without movement checks after a known teleport"),
 		SeatGrace = num(3, 0, 30, "Seconds without movement checks after leaving a seat"),
+		FlightEndGrace = num(3, 0, 30, "Seconds without movement checks after admin fly / noclip ends (landing)"),
 		LagTolerance = num(1.5, 1, 5, "Lag multiplier: thresholds widen by ping and server frame time"),
 		MaxPingMs = int(1000, 100, 5000, "Ping above this counts as this (caps the widening)"),
 	},
