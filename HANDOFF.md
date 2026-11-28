@@ -7,7 +7,7 @@
 _Last updated: 2026-11-27 (Sentinel AntiCheat, session 8) - AC ban
 settings (15-day temp bans, permanent off by default) + "Banned" sections
 in the Control Center and in Sentinel (Moderation > Banned). Sessions 4-8
-PUBLISHED (place v283), NOT committed. Start with §6._
+PUBLISHED (place v283) and committed + pushed (d856ee1). Start with §6._
 
 ---
 
@@ -1178,7 +1178,7 @@ Rules that keep it sound:
 ## 5. Known issues & open work
 
 - **Session 8 (2026-11-27): AC ban settings + Banned sections (PUBLISHED
-  v282 + fixes in v283, NOT committed).**
+  v282 + fixes in v283, committed + pushed in d856ee1).**
   - New config section **Bans** (Settings > "Bans (length, permanent
     bans)"): `BanDays` 15 (was Bands.BanDays 30, removed from Bands),
     `DefaultType` temporary | permanent, `AllowPermanent` **false**.
@@ -1695,15 +1695,15 @@ Rules that keep it sound:
 ## 6. Current state
 
 - **2026-11-27 (latest, session 8): AC ban settings + Banned sections,
-  PUBLISHED (v283), NOT committed.** New: `SentinelUI/BannedPage.lua`,
+  PUBLISHED (v283), committed + pushed (d856ee1, with session 7).** New: `SentinelUI/BannedPage.lua`,
   `AntiCheatCenter/BansPage.lua`. Edited: AntiCheatConfig, ActionService,
   DetectionEngine, AntiCheatBridge, Commands/AntiCheat, Ban.lua, UIBridge,
   RankService, AntiCheatTypes, Center, SettingsPage, Shell, UIPrefs,
   init.client, AntiCheat.spec. See §5.
 
-- **2026-11-27 (latest, session 7): AntiCheat - Sentinel command trust
-  toggle, path-length SpeedCheck, 4 new modules (18). PUBLISHED, NOT
-  committed** (sessions 4-7 all uncommitted). Changed: AntiCheatService,
+- **2026-11-27 (session 7): AntiCheat - Sentinel command trust
+  toggle, path-length SpeedCheck, 4 new modules (18). PUBLISHED, committed
+  + pushed in d856ee1.** Changed: AntiCheatService,
   DetectionEngine, ExemptionService, EvidenceService, AntiCheatConfig,
   AntiCheatBridge, Speed / Jump / TeleportCheck, AntiCheat.spec; new
   Modules/{HumanoidStats,AutoClicker,Aimbot,KillAura}Check.lua. Tests
